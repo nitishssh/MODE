@@ -10,7 +10,7 @@ Foundation acceptance was verified in [merged PR #26](https://github.com/nitishs
 4. Read `GET /api/members` with that session, restart the server, and read again: the new unpaid member remains present.
 5. Submit the same email again through the authorized API: expect 409 without adding another record.
 6. Check invalid name/email handling through the authorized API. Navigate all six web areas and confirm unfinished flows are marked as previews.
-7. Visit `/api/health`; it returns 200 and reports SQLite schema version 11.
+7. Visit `/api/health`; it returns 200 and reports SQLite schema version 12.
 8. Run `npm run check`, then `npm run test:foundation`. The first command includes typecheck, API documentation contracts, domain/API tests and the build; the second checks HTTP member/session persistence across a server restart using a temporary database.
 9. Set `MODE_DEMO_PASSWORD` before seeding a new production database, then run `npm start`. Public reads work; member creation requires an organizer/admin session. Verify missing authentication returns 401, insufficient permissions return 403, and cross-origin cookie writes return 403. Production ignores `MODE_CORS_ORIGINS`.
 
@@ -155,3 +155,34 @@ In PowerShell, set `$env:MODE_EXPO_WEB='1'` and `$env:MODE_DEMO_PASSWORD='your-p
 7. For Windows, serve via HTTPS or localhost, install through Edge/Chrome and verify restart behavior.
 
 Bundle compilation and local browser checks do not establish physical Expo Go or installed Windows PWA acceptance. Keep #10 open until those device checks and the remaining business screens are complete.
+
+## Automated semester journey (#15)
+
+Use Node 24 and run from the repository root. These commands create synthetic fixtures in unique OS temporary directories; they do not use or overwrite your normal `.data` database. The tests own and clean up their databases, receipt files and server processes.
+
+```sh
+npm ci
+npx tsx --test tests/journey.test.ts
+npm run check
+npm run test:foundation
+```
+
+The route test registers `journey@example.com` as a new member. Its test-only credentials are local fixtures. It then exercises these transitions through real route handlers:
+
+| Actor | Transition | Evidence asserted |
+|---|---|---|
+| New member / treasurer | Registration and officer-recorded dues | No paid period before dues; active membership afterward; member cannot record their own payment |
+| Member / organizer / treasurer / volunteer | Event, member-price ticket, payment and check-in | Hold posts no income; payment posts once; repeat scan does not admit twice |
+| Member / organizer / treasurer | Merchandise order and payment | Member discount, unpaid hold, exactly one realized income source |
+| Organizer / paid member | Announcement and inbox | New member receives one notification; private outbox access denied to member; replay preserves audience |
+| Organizer / volunteer | Assigned task | Non-assignee member denied; assigned volunteer can finish |
+| Member / treasurer / admin | Receipt, submitted expense, approval and payment | Receipt remains private; approval posts no expense; payment and replay produce one officer-attributed ledger row |
+| Expired member | Advance clock and sign in again | Old session rejected; new ticket/order use non-member prices; new publication excludes expired member; earlier audience and paid records remain intact |
+
+After each monetary transition, the test enumerates expected source IDs and checks amounts, paying officers, source links, both reconciliation directions and the expected balance delta. Existing contract tests run with `npm run check`, including real-process last-seat/stock races, hold expiry, stale confirmation, all door outcomes, membership dates/reminders, receipt validation and announcement rollback/fan-out.
+
+The foundation command starts a built Next.js server on an ephemeral loopback port with its own fresh database and generated password. It creates a second synthetic full journey, stops and restarts the process using the same store, and checks retained source IDs, membership, task, admission, private receipt bytes, announcement inbox/outbox and ledger entries. Replaying dues, ticket/order confirmation, expense payment and publication must leave the settled records and totals unchanged. Look for the final PASS line covering money sources, receipts, tasks, admission and duplicate-free retries.
+
+Run the client commands in the preceding Expo section, followed by an Expo-enabled production build and `npm run test:expo-web`. Save `git rev-parse HEAD`, Node version, command results and the CI run URL with release evidence. These automated checks establish API integration and restart persistence, not a completed interactive native/web journey.
+
+For final acceptance, record a separate row for Android/iOS and web/PWA with the exact release SHA, device/browser, API address, synthetic actors, each interaction above and observed restart/retry behavior. Keep a row blocked where a required client screen is absent. Do not substitute direct API calls for UI evidence or close #15 until the required native/web and LAN demonstrations are complete. Real payment gateways and external message delivery remain out of scope.

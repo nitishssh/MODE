@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-// Value: protects=HTTP member persistence across process restarts;
+// Value: protects=HTTP semester journey and private receipt persistence across process restarts;
 // fails_when=server storage becomes transient or rejected writes persist;
 // why_new=existing tests call handlers or reopen a DB, not the built server;
 // seam=none (real Next.js server and an isolated SQLite database).
@@ -104,14 +104,83 @@ try {
   assert.equal((await members()).length, before.length + 1, "Rejected submissions must not add rows");
   console.log("PASS: duplicate, invalid and malformed submissions rejected without writes");
 
+  const jsonRequest = async (path, actorHeaders, body, expected = 200) =>
+    (await request(path, expected, { headers: actorHeaders, ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }) })).json();
+  const login = async email => jsonRequest("/api/auth/login", { "Content-Type": "application/json" }, { email, password });
+  const authHeaders = session => ({ Authorization: `Bearer ${session.token}`, "Content-Type": "application/json" });
+  const treasurer = authHeaders(await login("treasurer@example.com"));
+  const volunteerSession = await login("volunteer@example.com");
+  const volunteer = authHeaders(volunteerSession);
+  const studentSession = await jsonRequest("/api/auth/register", { "Content-Type": "application/json" }, {
+    name: "Restart Student", email: "restart-student@example.com", password,
+  }, 201);
+  const student = authHeaders(studentSession);
+  assert.equal(studentSession.user.role, "member");
+  const initialLedger = await jsonRequest("/api/ledger/summary", treasurer);
+  const initialEntries = await jsonRequest("/api/ledger/entries", treasurer);
+  const duesBody = { memberId: studentSession.user.id, reference: "RESTART-DUES" };
+  const dues = await jsonRequest("/api/membership/dues", treasurer, duesBody, 201);
+  const { event } = await jsonRequest("/api/events", headers, {
+    title: "Synthetic restart gala", venue: "Test hall", startsAt: "2026-11-01T13:30:00Z",
+    capacity: 2, memberPricePaise: 5000, guestPricePaise: 10000,
+  }, 201);
+  const { ticket } = await jsonRequest(`/api/events/${event.id}/tickets`, student, {}, 201);
+  const ticketPath = `/api/tickets/${ticket.id}/confirm`;
+  const ticketBody = { reference: "RESTART-TICKET" };
+  await jsonRequest(ticketPath, treasurer, ticketBody, 201);
+  const admission = await jsonRequest(`/api/events/${event.id}/scan`, volunteer, { credential: ticket.shortCode });
+  assert.equal(admission.outcome, "admitted");
+  const { product } = await jsonRequest("/api/products", headers, {
+    name: "Synthetic restart shirt", pricePaise: 25000, variants: [{ size: "M", stock: 2 }],
+  }, 201);
+  const { order } = await jsonRequest("/api/orders", student, { variantId: product.variants[0].id }, 201);
+  const orderPath = `/api/orders/${order.id}/confirm`;
+  const orderBody = { reference: "RESTART-ORDER" };
+  await jsonRequest(orderPath, treasurer, orderBody, 201);
+  await jsonRequest(`/api/orders/${order.id}/fulfil`, headers, {});
+  const task = await jsonRequest("/api/tasks", headers, {
+    title: "Synthetic restart door duty", assigneeId: volunteerSession.user.id, eventId: event.id,
+  }, 201);
+  const completedTask = await jsonRequest(`/api/tasks/${task.id}/status`, volunteer, { status: "done" });
+  const receiptBytes = Buffer.from("%PDF-1.4 synthetic semester restart receipt\n%%EOF");
+  const form = new FormData();
+  form.append("file", new Blob([receiptBytes], { type: "application/pdf" }), "restart-receipt.pdf");
+  const receipt = await (await request("/api/receipts", 201, {
+    method: "POST", headers: { Authorization: student.Authorization }, body: form,
+  })).json();
+  const expense = await jsonRequest("/api/expenses", student, {
+    amountPaise: 12345, purpose: "Synthetic restart supplies", receiptId: receipt.id, eventId: event.id,
+  }, 201);
+  await jsonRequest(`/api/expenses/${expense.id}/approve`, treasurer, {});
+  const expensePath = `/api/expenses/${expense.id}/pay`;
+  const expenseBody = { paymentReference: "RESTART-EXPENSE" };
+  const paidExpense = await jsonRequest(expensePath, treasurer, expenseBody);
+  const settledLedger = await jsonRequest("/api/ledger/summary", treasurer);
+  assert.equal(settledLedger.inflowPaise, initialLedger.inflowPaise + dues.payment.amountPaise + 5000 + 25000);
+  assert.equal(settledLedger.outflowPaise, initialLedger.outflowPaise + 12345);
+  assert.equal(settledLedger.balancePaise, settledLedger.inflowPaise - settledLedger.outflowPaise);
+  const settledEntries = await jsonRequest("/api/ledger/entries", treasurer);
+  assert.equal(settledEntries.length, initialEntries.length + 4);
+  const sources = new Map();
+  for (const id of [dues.payment.id, ticket.id, order.id, expense.id]) {
+    const matching = settledEntries.filter(entry => entry.sourceId === id);
+    assert.equal(matching.length, 1, "Each paid source posts exactly once");
+    const entry = matching[0];
+    const source = await jsonRequest(`/api/ledger/entries/${entry.id}/source`, treasurer);
+    assert.equal(source.id, id);
+    assert.equal(source.type, entry.sourceType);
+    sources.set(entry.id, source);
+  }
+  console.log("PASS: synthetic dues, ticket admission, fulfilled order, volunteer task and receipt reimbursement over HTTP");
+
   const publicationBody = JSON.stringify({ idempotencyKey: "restart-notice", title: "Synthetic restart notice", body: "This publication must survive a server restart." });
   const publication = await (await request("/api/announcements", 201, { method: "POST", headers, body: publicationBody })).json();
-  assert.equal(publication.recipientCount, 3);
+  assert.equal(publication.recipientCount, 4);
   assert.equal(publication.delivery, "simulated");
   const announcementPath = `/api/announcements/${publication.announcement.id}`;
   assert.deepEqual(await (await request(announcementPath, 200)).json(), { announcement: publication.announcement });
   const delivery = await (await request(`${announcementPath}/outbox`, 200, { headers })).json();
-  assert.equal(delivery.messages.length, 3);
+  assert.equal(delivery.messages.length, 4);
   assert.ok(delivery.messages.every(row => row.status === "simulated"));
   await request(`${announcementPath}/outbox`, 401);
   const memberSession = await (await request("/api/auth/login", 200, {
@@ -120,18 +189,51 @@ try {
   })).json();
   const inbox = await (await request("/api/notifications", 200, { headers: { Authorization: `Bearer ${memberSession.token}` } })).json();
   assert.equal(inbox.notifications.filter(row => row.announcementId === publication.announcement.id).length, 1);
+  const studentInbox = await jsonRequest("/api/notifications", student);
+  assert.equal(studentInbox.notifications.filter(row => row.announcementId === publication.announcement.id).length, 1);
   console.log("PASS: built announcement routes publish, protect simulated outbox and notify active members");
 
   await stopServer();
   await startServer();
   const after = await members();
-  assert.equal(after.length, before.length + 1, "Restart must not reseed or lose rows");
+  assert.equal(after.length, before.length + 2, "Restart must not reseed or lose rows");
   assert.deepEqual(after.find(member => member.id === created.member.id), created.member);
   console.log("PASS: member and authenticated session persist across a real server restart");
   const replay = await (await request("/api/announcements", 200, { method: "POST", headers, body: publicationBody })).json();
   assert.deepEqual(replay, { ...publication, created: false });
-  assert.equal((await (await request(`${announcementPath}/outbox`, 200, { headers })).json()).messages.length, 3);
+  assert.equal((await (await request(`${announcementPath}/outbox`, 200, { headers })).json()).messages.length, 4);
   console.log("PASS: publication and recipient snapshot persist without duplicates across a real server restart");
+  assert.deepEqual(await jsonRequest(`${announcementPath}/outbox`, headers), delivery);
+  assert.deepEqual(await jsonRequest("/api/notifications", authHeaders(memberSession)), inbox);
+  assert.deepEqual(await jsonRequest("/api/notifications", student), studentInbox);
+  const persistedStudent = after.find(member => member.id === studentSession.user.id);
+  assert.equal(persistedStudent.membership, "active");
+  assert.equal(persistedStudent.expiresOn, dues.expiresOn);
+  assert.deepEqual(await jsonRequest(`/api/tasks/${task.id}`, volunteer), completedTask);
+  assert.deepEqual((await jsonRequest("/api/expenses", student)).find(row => row.id === expense.id), paidExpense);
+  assert.equal((await jsonRequest("/api/tickets/mine", student)).tickets.find(row => row.id === ticket.id).status, "paid");
+  assert.equal((await jsonRequest("/api/orders/mine", student)).orders.find(row => row.id === order.id).status, "fulfilled");
+  const repeatScan = await jsonRequest(`/api/events/${event.id}/scan`, volunteer, { credential: ticket.shortCode });
+  assert.equal(repeatScan.outcome, "already_checked_in");
+  assert.equal(repeatScan.checkedInAt, admission.checkedInAt);
+  for (const viewer of [student, treasurer]) {
+    const download = await request(`/api/receipts/${receipt.id}`, 200, { headers: viewer });
+    assert.equal(download.headers.get("Content-Type"), "application/pdf");
+    assert.match(download.headers.get("Content-Disposition"), /^attachment;/);
+    assert.deepEqual(Buffer.from(await download.arrayBuffer()), receiptBytes);
+  }
+  await request(`/api/receipts/${receipt.id}`, 401);
+  await request(`/api/receipts/${receipt.id}`, 403, { headers: volunteer });
+  const replayedDues = await jsonRequest("/api/membership/dues", treasurer, duesBody);
+  assert.deepEqual(replayedDues, { ...dues, created: false });
+  assert.equal((await jsonRequest(ticketPath, treasurer, ticketBody)).created, false);
+  assert.equal((await jsonRequest(orderPath, treasurer, orderBody)).created, false);
+  assert.deepEqual(await jsonRequest(expensePath, treasurer, expenseBody), paidExpense);
+  assert.deepEqual(await jsonRequest("/api/ledger/summary", treasurer), settledLedger);
+  assert.deepEqual(await jsonRequest("/api/ledger/entries", treasurer), settledEntries);
+  for (const [id, source] of sources) assert.deepEqual(await jsonRequest(`/api/ledger/entries/${id}/source`, treasurer), source);
+  console.log("PASS: money sources, private receipt bytes, tasks and admission survive restart; payment retries never duplicate ledger entries");
+
 } catch (error) {
   console.error("Foundation check failed:", error.message);
   process.exitCode = 1;
