@@ -8,7 +8,7 @@ import type { Permission } from "./permissions";
 export interface AuthorizeOptions {
   /** Required permission; omitted means "any signed-in member". */
   permission?: Permission;
-  /** State-changing request: also enforce the same-origin check. */
+  /** State-changing cookie request: also enforce the same-origin check. */
   mutation?: boolean;
 }
 
@@ -21,14 +21,17 @@ export function requireActor(
   db: Pick<ClubDatabase, "getActor">,
   options: AuthorizeOptions = {},
 ): Actor {
-  if (options.mutation) assertSameOrigin(request);
-  const actor = db.getActor(readSessionToken(request));
+  const actor = optionalActor(request, db);
   if (!actor) throw new UnauthorizedError();
+  // A bearer must resolve successfully before it can bypass cookie CSRF checks.
+  if (options.mutation && !request.headers.has("authorization")) assertSameOrigin(request);
   if (options.permission) assertPermission(actor, options.permission);
   return actor;
 }
 
 /** Optional identity for public reads that reveal more to signed-in officers. */
 export function optionalActor(request: Request, db: Pick<ClubDatabase, "getActor">): Actor | null {
-  return db.getActor(readSessionToken(request));
+  const actor = db.getActor(readSessionToken(request));
+  if (request.headers.has("authorization") && !actor) throw new UnauthorizedError();
+  return actor;
 }
