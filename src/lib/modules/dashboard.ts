@@ -31,7 +31,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
       guestPricePaise: int(row.guest_price_paise),
     }));
     const announcements: Announcement[] = (
-      db.prepare("SELECT * FROM announcements ORDER BY published_at DESC, id").all() as Row[]
+      db.prepare("SELECT * FROM announcements WHERE club_id = ? AND status = 'published' ORDER BY published_at DESC, id").all(clubId) as Row[]
     ).map((row) => ({
       id: text(row.id),
       title: text(row.title),

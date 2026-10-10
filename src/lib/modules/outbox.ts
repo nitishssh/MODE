@@ -13,6 +13,8 @@ export interface EnqueueInput {
   body: string;
   /** Stable key per logical message so retries and repeated triggers never duplicate a send. */
   dedupeKey: string;
+  /** Optional id of the record this message belongs to (e.g. announcement id). */
+  referenceId?: string | null;
 }
 
 /** Local demos only have the preview transport. Real email is configured, never faked. */
@@ -47,8 +49,8 @@ export function createOutboxModule(ctx: DbContext) {
   function enqueue(input: EnqueueInput): boolean {
     try {
       db.prepare(
-        `INSERT INTO outbox_messages (id, club_id, kind, recipient_member_id, recipient_email, subject, body, dedupe_key, status, attempts, last_error, created_at, delivered_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, NULL, ?, NULL)`,
+        `INSERT INTO outbox_messages (id, club_id, kind, recipient_member_id, recipient_email, subject, body, dedupe_key, status, attempts, last_error, created_at, delivered_at, reference_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, NULL, ?, NULL, ?)`,
       ).run(
         randomUUID(),
         input.clubId,
@@ -59,6 +61,7 @@ export function createOutboxModule(ctx: DbContext) {
         input.body,
         input.dedupeKey,
         ctx.now().toISOString(),
+        input.referenceId ?? null,
       );
       return true;
     } catch (error) {
@@ -119,12 +122,22 @@ export function createOutboxModule(ctx: DbContext) {
     return { transport, previewed, remaining: countPending(actor.clubId) };
   }
 
+  /** Delivery counts for one referenced record, without exposing recipients. */
+  function countByReference(clubId: string, kind: string, referenceId: string) {
+    const rows = db
+      .prepare("SELECT status, COUNT(*) AS n FROM outbox_messages WHERE club_id = ? AND kind = ? AND reference_id = ? GROUP BY status")
+      .all(clubId, kind, referenceId) as Row[];
+    const byStatus = { pending: 0, previewed: 0, sent: 0, failed: 0 };
+    for (const row of rows) byStatus[text(row.status) as keyof typeof byStatus] = int(row.n);
+    return { recipients: rows.reduce((sum, row) => sum + int(row.n), 0), byStatus };
+  }
+
   function countPending(clubId: string): number {
     const row = db.prepare("SELECT COUNT(*) AS n FROM outbox_messages WHERE club_id = ? AND status IN ('pending', 'failed')").get(clubId) as Row;
     return int(row.n);
   }
 
-  return { enqueue, list, preview, dispatch, countPending };
+  return { enqueue, list, preview, dispatch, countPending, countByReference };
 }
 
 export type OutboxModule = ReturnType<typeof createOutboxModule>;

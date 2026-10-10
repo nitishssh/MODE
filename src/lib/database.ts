@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { DbContext } from "./db/core";
 import { SCHEMA_VERSION, migrate } from "./db/migrations";
+import { createAnnouncementsModule } from "./modules/announcements";
 import { createDashboardModule } from "./modules/dashboard";
 import { createEventsModule } from "./modules/events";
 import { createIdentityModule } from "./modules/identity";
@@ -41,6 +42,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date; 
   const merchandise = createMerchandiseModule(ctx, identity, membership, ledger);
   const receiptDirectory = options.receiptDirectory ?? (path === ":memory:" ? resolve(".data", "receipts-memory") : join(dirname(path), "receipts"));
   const treasury = createTreasuryModule(ctx, identity, ledger, { receiptDirectory });
+  const announcements = createAnnouncementsModule(ctx, identity, membership, outbox);
   let closed = false;
 
   return {
@@ -52,6 +54,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date; 
     events,
     merchandise,
     treasury,
+    announcements,
     health: () => {
       db.prepare("SELECT 1").get();
       return { status: "ok" as const, database: "sqlite" as const, schemaVersion: SCHEMA_VERSION };
