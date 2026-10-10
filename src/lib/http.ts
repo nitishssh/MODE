@@ -1,5 +1,6 @@
-import type { ZodType } from "zod";
+import { ZodError, type ZodType } from "zod";
 import { DomainError, ValidationError } from "./errors";
+import { toValidationError } from "./validation";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
@@ -15,16 +16,12 @@ export async function readJson<T>(request: Request, schema: ZodType<T>): Promise
     throw new ValidationError("The request must contain valid JSON.");
   }
   const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError(
-      "Please check the submitted fields.",
-      parsed.error.issues.map(({ path, message }) => ({ field: path.join("."), message })),
-    );
-  }
+  if (!parsed.success) throw toValidationError(parsed.error);
   return parsed.data;
 }
 
 export function errorResponse(error: unknown, context: string): Response {
+  if (error instanceof ZodError) error = toValidationError(error);
   if (error instanceof DomainError) {
     return json(
       { error: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) },

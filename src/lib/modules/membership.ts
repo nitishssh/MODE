@@ -6,6 +6,7 @@ import { ConflictError, NotFoundError, ValidationError } from "../errors";
 import { assertPermission, type Actor, type IdentityModule } from "./identity";
 import type { LedgerModule } from "./ledger";
 import type { OutboxModule } from "./outbox";
+import { parseInput } from "../validation";
 
 export const recordDuesSchema = z
   .object({
@@ -146,7 +147,7 @@ export function createMembershipModule(
   /** Officer records dues (or a free enrolment). Renewal extends validity from the current expiry. */
   function recordDues(actor: Actor, input: z.infer<typeof recordDuesSchema>) {
     assertPermission(actor, "membership:record_payment");
-    const data = recordDuesSchema.parse(input);
+    const data = parseInput(recordDuesSchema, input);
     return transaction(ctx, () => {
       const member = identity.requireMember(actor.clubId, data.memberId);
       const plan = requirePlan(actor.clubId, data.planId);
@@ -227,7 +228,7 @@ export function createMembershipModule(
    */
   function runRenewalReminders(actor: Actor, input: { daysAhead?: number } = {}) {
     assertPermission(actor, "membership:reminders");
-    const { daysAhead } = reminderRunSchema.parse(input);
+    const { daysAhead } = parseInput(reminderRunSchema, input);
     const today = clubDate(ctx.now());
     const horizon = addDays(today, daysAhead);
     const rows = db

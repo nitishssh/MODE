@@ -7,6 +7,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from ".
 import { assertPermission, type Actor, type IdentityModule } from "./identity";
 import type { LedgerModule } from "./ledger";
 import type { MembershipModule } from "./membership";
+import { parseInput } from "../validation";
 
 export const productInputSchema = z
   .object({
@@ -95,7 +96,7 @@ export function createMerchandiseModule(
 
   function createProduct(actor: Actor, input: z.infer<typeof productInputSchema>): ProductDetails {
     assertPermission(actor, "products:write");
-    const data = productInputSchema.parse(input);
+    const data = parseInput(productInputSchema, input);
     const sizes = new Set(data.variants.map((variant) => variant.size.toUpperCase()));
     if (sizes.size !== data.variants.length) throw new ValidationError("Each size may appear only once.", [{ field: "variants", message: "Duplicate size." }]);
     return transaction(ctx, () => {
@@ -118,7 +119,7 @@ export function createMerchandiseModule(
 
   function setVariantStock(actor: Actor, variantId: string, stock: number): ProductDetails {
     assertPermission(actor, "products:write");
-    variantStockSchema.parse({ stock });
+    parseInput(variantStockSchema, { stock });
     return transaction(ctx, () => {
       const variant = db.prepare("SELECT product_id FROM product_variants WHERE club_id = ? AND id = ?").get(actor.clubId, variantId) as Row | undefined;
       if (!variant) throw new NotFoundError("Product size not found.");
@@ -141,7 +142,7 @@ export function createMerchandiseModule(
    */
   function createOrder(actor: Actor, input: z.infer<typeof orderInputSchema>): Order {
     assertPermission(actor, "orders:create");
-    const data = orderInputSchema.parse(input);
+    const data = parseInput(orderInputSchema, input);
     return transaction(ctx, () => {
       const variant = db
         .prepare("SELECT v.*, p.price_paise, p.member_price_paise, p.active FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.club_id = ? AND v.id = ?")
@@ -172,7 +173,7 @@ export function createMerchandiseModule(
   /** Confirm payment once; the same reference replays safely and posts a single ledger row. */
   function confirmOrder(actor: Actor, orderId: string, input: z.infer<typeof confirmOrderSchema>): { order: Order; created: boolean } {
     assertPermission(actor, "payments:confirm");
-    const data = confirmOrderSchema.parse(input);
+    const data = parseInput(confirmOrderSchema, input);
     return transaction(ctx, () => {
       const order = requireOrder(actor.clubId, orderId);
       const existingPayment = membership.findPayment(actor.clubId, data.paymentReference);

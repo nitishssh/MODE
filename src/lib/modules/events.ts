@@ -7,6 +7,7 @@ import { hasPermission } from "../auth/permissions";
 import { assertPermission, type Actor, type IdentityModule } from "./identity";
 import type { LedgerModule } from "./ledger";
 import type { MembershipModule } from "./membership";
+import { parseInput } from "../validation";
 
 export const RESERVATION_HOLD_MS = 30 * 60 * 1000;
 
@@ -95,7 +96,7 @@ export function createEventsModule(
 
   function createEvent(actor: Actor, input: z.infer<typeof eventInputSchema>): EventDetails {
     assertPermission(actor, "events:write");
-    const data = eventInputSchema.parse(input);
+    const data = parseInput(eventInputSchema, input);
     const id = randomUUID();
     const now = ctx.now().toISOString();
     db.prepare(
@@ -108,7 +109,7 @@ export function createEventsModule(
 
   function updateEvent(actor: Actor, eventId: string, input: z.infer<typeof eventUpdateSchema>): EventDetails {
     assertPermission(actor, "events:write");
-    const data = eventUpdateSchema.parse(input);
+    const data = parseInput(eventUpdateSchema, input);
     return transaction(ctx, () => {
       const current = requireEvent(actor.clubId, eventId);
       if (data.capacity !== undefined && data.capacity < current.registered) {
@@ -200,7 +201,7 @@ export function createEventsModule(
   /** Confirm payment for a reservation. Same reference replayed returns the same ticket. */
   function confirmBooking(actor: Actor, bookingId: string, input: z.infer<typeof confirmBookingSchema>): { booking: Booking; created: boolean } {
     assertPermission(actor, "payments:confirm");
-    const data = confirmBookingSchema.parse(input);
+    const data = parseInput(confirmBookingSchema, input);
     return transaction(ctx, () => {
       const booking = requireBooking(actor.clubId, bookingId);
       const existingPayment = membership.findPayment(actor.clubId, data.paymentReference);

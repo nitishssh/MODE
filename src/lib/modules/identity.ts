@@ -25,6 +25,7 @@ import {
   ValidationError,
 } from "../errors";
 import { createMemberSchema } from "../member-validation";
+import { parseInput } from "../validation";
 
 /** The authenticated caller. Every module scopes its queries to `clubId`. */
 export interface Actor {
@@ -94,7 +95,7 @@ export function createIdentityModule(ctx: DbContext) {
     input: CreateMemberInput & { password?: string; role?: Role; clubId?: string },
   ): Member {
     // Validate here as well so server callers cannot bypass the API boundary.
-    const { name, email } = createMemberSchema.parse({ name: input.name, email: input.email });
+    const { name, email } = parseInput(createMemberSchema, { name: input.name, email: input.email });
     const member: Member = {
       id: randomUUID(),
       name,
@@ -141,7 +142,7 @@ export function createIdentityModule(ctx: DbContext) {
 
   /** Self-service sign-up. New accounts always start as plain members of the default club. */
   function register(input: { name: string; email: string; password: string }): IssuedSession {
-    const parsed = registerSchema.parse(input);
+    const parsed = parseInput(registerSchema, input);
     return transaction(ctx, () => {
       const member = insertMember({ ...parsed, role: "member", clubId: DEFAULT_CLUB_ID });
       return issueSession(member, DEFAULT_CLUB_ID);
@@ -149,7 +150,7 @@ export function createIdentityModule(ctx: DbContext) {
   }
 
   function login(input: { email: string; password: string }): IssuedSession {
-    const parsed = loginSchema.parse(input);
+    const parsed = parseInput(loginSchema, input);
     const row = db.prepare("SELECT * FROM members WHERE email = ?").get(parsed.email) as Row | undefined;
     // Same error for unknown email and wrong password.
     if (!row || !verifyPassword(parsed.password, nullableText(row.password_hash))) {
@@ -225,7 +226,7 @@ export function createIdentityModule(ctx: DbContext) {
   /** Lets an admin grant credentials to an officer-created member. */
   function setPassword(actor: Actor, memberId: string, password: string): void {
     assertPermission(actor, "roles:manage");
-    passwordSchema.parse(password);
+    parseInput(passwordSchema, password);
     transaction(ctx, () => {
       requireMember(actor.clubId, memberId);
       db.prepare("UPDATE members SET password_hash = ? WHERE id = ? AND club_id = ?").run(hashPassword(password), memberId, actor.clubId);
@@ -253,8 +254,8 @@ export function createIdentityModule(ctx: DbContext) {
   function listAudit(actor: Actor, entityType?: string) {
     assertPermission(actor, "roles:manage");
     const rows = entityType
-      ? db.prepare("SELECT * FROM audit_events WHERE club_id = ? AND entity_type = ? ORDER BY occurred_at DESC").all(actor.clubId, entityType)
-      : db.prepare("SELECT * FROM audit_events WHERE club_id = ? ORDER BY occurred_at DESC").all(actor.clubId);
+      ? db.prepare("SELECT * FROM audit_events WHERE club_id = ? AND entity_type = ? ORDER BY occurred_at DESC, rowid DESC").all(actor.clubId, entityType)
+      : db.prepare("SELECT * FROM audit_events WHERE club_id = ? ORDER BY occurred_at DESC, rowid DESC").all(actor.clubId);
     return (rows as Row[]).map((row) => ({
       id: text(row.id),
       actorId: nullableText(row.actor_id),
