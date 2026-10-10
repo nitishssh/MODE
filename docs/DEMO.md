@@ -10,7 +10,7 @@ Foundation acceptance was verified in [merged PR #26](https://github.com/nitishs
 4. Read `GET /api/members` with that session, restart the server, and read again: the new unpaid member remains present.
 5. Submit the same email again through the authorized API: expect 409 without adding another record.
 6. Check invalid name/email handling through the authorized API. Navigate all six web areas and confirm unfinished flows are marked as previews.
-7. Visit `/api/health`; it returns 200 and reports SQLite schema version 10.
+7. Visit `/api/health`; it returns 200 and reports SQLite schema version 11.
 8. Run `npm run check`, then `npm run test:foundation`. The first command includes typecheck, API documentation contracts, domain/API tests and the build; the second checks HTTP member/session persistence across a server restart using a temporary database.
 9. Set `MODE_DEMO_PASSWORD` before seeding a new production database, then run `npm start`. Public reads work; member creation requires an organizer/admin session. Verify missing authentication returns 401, insufficient permissions return 403, and cross-origin cookie writes return 403. Production ignores `MODE_CORS_ORIGINS`.
 
@@ -70,7 +70,7 @@ On a fresh database the first publication returns `created:true`, `recipientCoun
 
 Repeat after restarting with the same database: the saved key still returns the original publication. Changing the body while keeping the key returns 409. Publishing as a member, volunteer or treasurer returns 403; anonymous publishing or outbox inspection returns 401. No real email or WhatsApp is sent.
 
-Run `node --import tsx --test tests/announcements.test.ts` for reproducible validation, role checks, IST expiry boundaries, database uniqueness, injected delivery/audit failure rollback, retry persistence, notification isolation and v9 migration coverage. After `npm run build`, `npm run test:foundation` also checks publication, protected outbox, member notifications and replay through the built HTTP server across a real restart. The publishing/inbox/outbox UI remains the separate #12 frontend task.
+Run `node --import tsx --test tests/announcements.test.ts` for reproducible validation, role checks, IST expiry boundaries, database uniqueness, injected delivery/audit failure rollback, retry persistence, notification isolation and v10 migration coverage. After `npm run build`, `npm run test:foundation` also checks publication, protected outbox, member notifications and replay through the built HTTP server across a real restart. The publishing/inbox/outbox UI remains the separate #12 frontend task.
 
 ## Full MVP acceptance — integration and remaining tickets
 

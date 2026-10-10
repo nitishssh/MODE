@@ -71,7 +71,7 @@ Roles: `member`, `volunteer`, `organizer`, `treasurer`, `admin` (club lead). Sel
 | `outbox:manage` | | | ✓ | | ✓ |
 | `tasks:write` | | | ✓ | | ✓ |
 
-Announcement permissions remain reserved for the unfinished publishing workflow. Implemented membership, ticket, merchandise, task and reimbursement routes are documented below.
+Announcement publication and outbox inspection use the permissions above. Implemented membership, ticket, merchandise, task, reimbursement and announcement routes are documented below.
 
 ### Demo accounts
 
@@ -83,7 +83,7 @@ Schema v2 seeds four synthetic officer accounts in the sample club: `lead@exampl
 - **Member pass**: every member has a unique 128-bit base64url `qrToken` and a unique 10-character Crockford base32 `shortCode` (bounded collision retry, max 5). `GET /api/auth/me` returns `pass:{qrToken,shortCode,membership,expiresOn}` to the member themselves; `Member` exposes `shortCode` only. Door scanning resolves a pass by token or code, never by sequential id (`findMemberByPass`).
 - **Ledger**: `transactions` gains `sourceType`, `sourceId`, `recordedBy` with a UNIQUE index on the source pair. The three starter rows are backfilled as `opening_balance` entries with "Opening balance (pre-system): …" descriptions. Financial modules call `postLedgerEntry()` inside the same transaction as the source transition; it rejects non-positive or non-integer paise and a second post for the same source.
 - **Reconciliation**: `reconcileLedger(db)` reports balance, opening balances, duplicates, unsourced rows and orphans (rows whose source no longer resolves). It also walks dues, paid tickets, paid/fulfilled merchandise and paid expenses: `missing` identifies money sources without a ledger row; `mismatched` identifies inconsistent amount, direction, club or officer attribution. Free tickets/orders and unpaid sources require no entry. Expenses retain their paying officer in the ledger; the claim's reviewer may be different. A clean report requires every anomaly array to be empty and `unsourced` to be zero. New financial modules must extend both `SOURCE_RESOLVERS` and the source enumeration in `reconcileLedger`, with missing/mismatched-source coverage.
-- **Demo accounts**: `active@example.com` (membership active, expires in 300 days) and `expired@example.com` (expired 10 days ago), password `MODE_DEMO_PASSWORD`, join the four officer accounts. The current schema version is 10.
+- **Demo accounts**: `active@example.com` (membership active, expires in 300 days) and `expired@example.com` (expired 10 days ago), password `MODE_DEMO_PASSWORD`, join the four officer accounts. The current schema version is 11.
 
 ## Membership dues, renewals and reminders (#4, P1)
 
@@ -250,7 +250,7 @@ The event report preserves ticket counts, attendance and realized revenue, and a
 
 EXPO_PUBLIC_API_URL remains configuration for a future Expo client. Browser sign-in and native bearer authentication exist, but the Expo UI is not included. MODE_CORS_ORIGINS follows the development-only policy above.
 
-## Announcements and simulated delivery (schema v10, #8)
+## Announcements and simulated delivery (schema v11, #8)
 
 | Method | Path | Access | Response |
 |---|---|---|---|
@@ -272,7 +272,7 @@ Publication takes a SQLite write lock and selects recipients using the shared P0
 
 `Notification` is `{id,kind,title,body,createdAt,readAt,announcementId}`. Announcement rows use `kind:"announcement"`; existing dues notifications have `announcementId:null`. Query parameters cannot change the recipient. All these responses use `Cache-Control: no-store`. Missing sessions return 401 on protected endpoints, insufficient roles and cross-origin cookie writes return 403, malformed input returns 400, and missing/foreign-club details return 404. Valid bearer mutations retain the existing native-client behavior.
 
-Schema v10 follows v9 (rather than filling a skipped version), keeps starter announcements as default-club archive entries without retroactive delivery, and adds nullable announcement links to existing notification/outbox rows. Legacy dues reminders remain intact. Published content has no update/delete API; publish a correction with a fresh key.
+Schema v11 follows the released receipt migration v10 (rather than filling a skipped version), keeps starter announcements as default-club archive entries without retroactive delivery, and adds nullable announcement links to existing notification/outbox rows. Legacy dues reminders remain intact. Published content has no update/delete API; publish a correction with a fresh key.
 
 ### Authentication status
 
