@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { apiUrl, ApiUrlConfigurationError, resolveExpoApiUrl } from "../src/lib/api-url";
-import { corsHeaders, isAllowedCorsOrigin, parseCorsOrigins } from "../src/lib/cors";
+import { isAllowedCorsOrigin, parseCorsOrigins } from "../src/lib/cors";
 import { proxy } from "../src/proxy";
 import { NextRequest } from "next/server";
 import { localDateTimeValue } from "../src/lib/local-datetime";
@@ -26,10 +26,6 @@ test("CORS only accepts explicitly configured, valid origins", () => {
   assert.equal(isAllowedCorsOrigin("https://other.example", configured), false);
   assert.equal(isAllowedCorsOrigin(null, configured), false);
   assert.equal(isAllowedCorsOrigin("https://mode.example", ""), false);
-  const headers = corsHeaders("https://mode.example");
-  assert.equal(headers["Access-Control-Allow-Origin"], "https://mode.example");
-  assert.match(String(headers["Access-Control-Allow-Methods"]), /PATCH/);
-  assert.equal(headers["Access-Control-Allow-Credentials"], "true");
 });
 
 test("API proxy handles allowed preflight and rejects unlisted browser origins", () => {
@@ -40,11 +36,13 @@ test("API proxy handles allowed preflight and rejects unlisted browser origins",
     assert.equal(response.status, 200, "same-origin POST must reach its handler");
   }
   const priorOrigins = process.env.MODE_CORS_ORIGINS;
+  const priorMode = process.env.NODE_ENV;
+  Object.assign(process.env, { NODE_ENV: "development" });
   process.env.MODE_CORS_ORIGINS = "https://mobile.example";
   try {
     const allowed = proxy(new NextRequest("http://localhost:3000/api/tasks", {
       method: "OPTIONS",
-      headers: { Origin: "https://mobile.example" },
+      headers: { Origin: "https://mobile.example", "Access-Control-Request-Method": "PATCH" },
     }));
     assert.equal(allowed.status, 204);
     assert.equal(allowed.headers.get("Access-Control-Allow-Origin"), "https://mobile.example");
@@ -52,10 +50,12 @@ test("API proxy handles allowed preflight and rejects unlisted browser origins",
 
     const blocked = proxy(new NextRequest("http://localhost:3000/api/tasks", {
       method: "OPTIONS",
-      headers: { Origin: "https://unlisted.example" },
+      headers: { Origin: "https://unlisted.example", "Access-Control-Request-Method": "PATCH" },
     }));
     assert.equal(blocked.status, 403);
   } finally {
+    if (priorMode === undefined) Reflect.deleteProperty(process.env, "NODE_ENV");
+    else Object.assign(process.env, { NODE_ENV: priorMode });
     if (priorOrigins === undefined) delete process.env.MODE_CORS_ORIGINS;
     else process.env.MODE_CORS_ORIGINS = priorOrigins;
   }

@@ -113,7 +113,7 @@ test("receipt upload is owned by session and private across accounts",async()=>{
   });
 });
 
-test("schema v3 upgrades preserve members, passes, sessions and opening balances",()=>{
+test("schema v6 upgrades preserve members, passes, sessions and opening balances",()=>{
   const directory=mkdtempSync(join(tmpdir(),"mode-migration-"));
   const path=join(directory,"test.sqlite");
   try{
@@ -121,18 +121,92 @@ test("schema v3 upgrades preserve members, passes, sessions and opening balances
     const session=db.login({email:DEMO.admin,password:"mode-demo-2026"});
     const pass=db.getPass(session.member.id),balance=db.ledger.balance(),count=db.getMembers().length;
     db.close();
-    // Reconstruct the actual v3 shape by removing only v4's additive schema.
+    // Reconstruct the released v6 shape by removing only v7's additive schema.
     const raw=new DatabaseSync(path);
     raw.exec("DROP TABLE expenses; DROP TABLE receipts; DROP INDEX tasks_club_idx;");
     for(const column of ["club_id","description","assignee_id","event_id","due_at","created_at"])raw.exec("ALTER TABLE tasks DROP COLUMN "+column);
     for(const column of ["club_id","event_id"])raw.exec("ALTER TABLE transactions DROP COLUMN "+column);
-    raw.exec("ALTER TABLE events DROP COLUMN club_id; ALTER TABLE events DROP COLUMN fundraiser_goal_paise; PRAGMA user_version=3;");raw.close();
+    raw.exec("ALTER TABLE events DROP COLUMN fundraiser_goal_paise; PRAGMA user_version=6;");raw.close();
     db=openClubDatabase(path,{now:()=>FIXED_NOW});
-    assert.equal(db.health().schemaVersion,4);assert.equal(db.getMembers().length,count);
+    assert.equal(db.health().schemaVersion,7);assert.equal(db.getMembers().length,count);
     assert.equal(db.ledger.balance(),balance);assert.deepEqual(db.getPass(session.member.id),pass);
     assert.equal(db.getActor(session.token)?.memberId,session.member.id);
     assert.equal(db.getTasks(db.getActor(session.token)!).length,3);
     db.close();
   }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
+
+test("task editing clears nullable fields and filters overdue work correctly", () => {
+  const {db}=memoryDatabase();
+  try {
+    const actor=actorFor(db,DEMO.organizer), volunteer=actorFor(db,DEMO.volunteer);
+    const task=db.createTask(actor,{title:"Original",description:"Details",assigneeId:volunteer.memberId,eventId:"demo-event-1",dueAt:"2026-10-09T12:00:00Z"});
+    assert.equal(db.getTasks(actor,{overdue:true,eventId:"demo-event-1",assigneeId:volunteer.memberId,status:"todo"}).length,1);
+    const edited=db.patchTask(actor,task.id,{title:"Edited",description:null,assigneeId:null,eventId:null,dueAt:null});
+    assert.equal(edited.title,"Edited");
+    assert.deepEqual([edited.description,edited.assigneeId,edited.eventId,edited.dueAt],[null,null,null,null]);
+    assert.equal(db.getTasks(actor,{overdue:true}).some(t=>t.id===task.id),false);
+    assert.equal(db.getTaskById(actor,task.id).assignee,null);
+    assert.deepEqual(db.patchTask(actor,task.id,{}),edited);
+  } finally {db.close();}
+});
+
+test("expense rejection and CSV export preserve decisions and escape spreadsheet cells",async()=>{
+  await withRouteDatabase(async()=>{
+    const member=await loginCookie("active@example.com"), reviewer=await loginCookie(DEMO.treasurer);
+    const db=getDatabase(),treasurer=actorFor(db,DEMO.treasurer);
+    const expense=await (await submit(apiRequest("/api/expenses",{cookie:member,body:{amountPaise:175,purpose:'=SUM(1,2) "test"'}}))).json();
+    assert.equal((await action(apiRequest("/api/expenses",{cookie:reviewer,body:{note:"Duplicate invoice"}}),routeParams({id:expense.id,action:"reject"}))).status,200);
+    assert.equal(db.getExpenseById(treasurer,expense.id).rejectionNote,"Duplicate invoice");
+    assert.equal((await action(apiRequest("/api/expenses",{cookie:reviewer,body:{}}),routeParams({id:expense.id,action:"approve"}))).status,409);
+    assert.equal((await action(apiRequest("/api/expenses",{cookie:reviewer,body:{}}),routeParams({id:expense.id,action:"missing"}))).status,404);
+    assert.equal((await action(apiRequest("/api/expenses",{cookie:reviewer,body:{paymentReference:""}}),routeParams({id:expense.id,action:"pay"}))).status,400);
+    const payable=db.submitExpense(actorFor(db,"active@example.com"),{amountPaise:175,purpose:'=SUM(1,2) "test"'});
+    db.approveExpense(treasurer,payable.id);db.payExpense(treasurer,payable.id,"REF-CSV");
+    const {GET:csv}=await import("../src/app/api/ledger/export/route");
+    assert.equal((await csv(apiRequest("/api/ledger/export"))).status,401);
+    assert.equal((await csv(apiRequest("/api/ledger/export",{cookie:member}))).status,403);
+    const output=await (await csv(apiRequest("/api/ledger/export",{cookie:reviewer}))).text();
+    assert.ok(output.includes('"\'=SUM(1,2) ""test"""'));
+    assert.ok(output.includes("REF-CSV"));assert.ok(output.includes("-1.75"));
+  });
+});
+
+test("receipt validation rejects empty, oversized and disguised files",async()=>{
+  await withRouteDatabase(async()=>{
+    const cookie=await loginCookie("active@example.com");
+    for(const [bytes,name,type,expected] of [
+      ["","empty.pdf","application/pdf",400],
+      ["not an image","fake.png","image/png",415],
+      [new Uint8Array(2*1024*1024+1),"large.pdf","application/pdf",413],
+    ] as const){
+      const form=new FormData();form.append("file",new File([bytes],name,{type}));
+      assert.equal((await upload(new Request("http://localhost:3000/api/receipts",{method:"POST",headers:{Cookie:cookie,Origin:"http://localhost:3000"},body:form}))).status,expected);
+    }
+    assert.equal((await upload(apiRequest("/api/receipts",{cookie,body:{}}))).status,400);
+  });
+});
+
+test("dues, ticket income and expenses share scoped treasury and combined event reports",async()=>{
+  await withRouteDatabase(async()=>{
+    const db=getDatabase(),admin=actorFor(db,DEMO.admin),member=actorFor(db,"active@example.com");
+    const event=db.events.createEvent(admin,{title:"Integration event",startsAt:"2026-11-01T13:30:00Z",venue:"Hall",capacity:10,memberPricePaise:5000,guestPricePaise:10000});
+    const ticket=db.events.bookTicket(member,event.id);
+    db.events.confirmTicket(admin,ticket.id,{reference:"TICKET-REF"});
+    db.dues.recordDues(admin,{memberId:member.memberId,reference:"DUES-REF"});
+    db.createTask(admin,{title:"Prepare hall",eventId:event.id,dueAt:"2026-10-09T12:00:00Z"});
+    const entries=db.getLedgerEntries(admin);
+    assert.ok(entries.some(e=>e.reference==="TICKET-REF" && e.eventId===event.id && e.category==="events"));
+    assert.ok(entries.some(e=>e.reference==="DUES-REF" && e.category==="membership"));
+    const {GET:report}=await import("../src/app/api/events/[id]/report/route");
+    const response=await report(apiRequest("/api/events/report",{cookie:await loginCookie(DEMO.admin)}),routeParams({id:event.id}));
+    assert.equal(response.status,200);
+    const result=await response.json();
+    assert.equal(result.ticketsSold,1);assert.equal(result.realizedRevenuePaise,5000);
+    assert.equal(result.fundraiser.raisedPaise,5000);assert.equal(result.tasks.overdue,1);
+    assert.equal(db.getLedgerSummary(admin).balancePaise,db.ledger.balance());
+    assert.deepEqual(db.ledger.reconcile().orphans,[]);
+  });
 });
 

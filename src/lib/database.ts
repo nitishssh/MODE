@@ -5,6 +5,8 @@ import { transaction, type DbContext } from "./db/core";
 import { SCHEMA_VERSION, migrate } from "./db/migrations";
 import { createWorkspaceModule } from "./modules/workspace";
 import { createDashboardModule } from "./modules/dashboard";
+import { createDuesModule } from "./modules/dues";
+import { createEventsModule } from "./modules/events";
 import { createIdentityModule } from "./modules/identity";
 import { ledgerBalance, listLedger, postLedgerEntry, reconcileLedger, type LedgerEntryInput } from "./modules/ledger";
 
@@ -30,12 +32,16 @@ export function openClubDatabase(filename: string, options: { now?: () => Date; 
   const ctx: DbContext = { db, now, depth: 0 };
   const identity = createIdentityModule(ctx);
   const dashboard = createDashboardModule(ctx, identity);
+  const dues = createDuesModule(ctx, identity);
+  const events = createEventsModule(ctx, identity);
   let closed = false;
 
   return {
     ...identity,
     ...dashboard,
     ...createWorkspaceModule(ctx, identity, options.receiptsDir ?? resolve(dirname(path === ":memory:" ? ".data/mode.sqlite" : path), "receipts")),
+    dues,
+    events,
     ledger: {
       post: (input: LedgerEntryInput) => postLedgerEntry(ctx, input),
       list: () => listLedger(db),

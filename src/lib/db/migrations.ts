@@ -18,7 +18,9 @@ const MIGRATIONS: Migration[] = [
   { version: 1, up: createStarterSchema },
   { version: 2, up: addIdentityAndRoles },
   { version: 3, up: addLedgerSourcesAndMemberPasses },
-  { version: 4, up: addWorkspaceFlows },
+  { version: 4, up: addMembershipDues },
+  { version: 6, up: addEventTickets },
+  { version: 7, up: addWorkspaceFlows },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -246,11 +248,104 @@ function addLedgerSourcesAndMemberPasses(db: DatabaseSync, now: Date) {
 }
 
 // ---------------------------------------------------------------------------
-// v4 — volunteer tasks, receipts and reimbursements (#7, #9, #13)
+// v4 — P1 (#4): club dues configuration, dues payments, reminders, notifications
 // ---------------------------------------------------------------------------
-function addWorkspaceFlows(db: DatabaseSync, now: Date) {
+export const DEFAULT_ANNUAL_DUES_PAISE = 50000;
+
+function addMembershipDues(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE clubs ADD COLUMN annual_dues_paise INTEGER NOT NULL DEFAULT ${DEFAULT_ANNUAL_DUES_PAISE} CHECK (annual_dues_paise > 0);
+    CREATE TABLE dues_payments (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      member_id TEXT NOT NULL REFERENCES members(id),
+      reference TEXT NOT NULL,
+      amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
+      previous_expires_on TEXT,
+      new_expires_on TEXT NOT NULL,
+      recorded_by TEXT NOT NULL REFERENCES members(id),
+      recorded_at TEXT NOT NULL,
+      UNIQUE (club_id, reference)
+    );
+    CREATE INDEX dues_payments_member_idx ON dues_payments (club_id, member_id);
+    CREATE TABLE membership_reminders (
+      member_id TEXT NOT NULL REFERENCES members(id),
+      expires_on TEXT NOT NULL,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      sent_at TEXT NOT NULL,
+      UNIQUE (member_id, expires_on)
+    );
+    CREATE TABLE notifications (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      member_id TEXT NOT NULL REFERENCES members(id),
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      read_at TEXT
+    );
+    CREATE INDEX notifications_member_idx ON notifications (member_id, created_at);
+    CREATE TABLE outbox_messages (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      member_id TEXT REFERENCES members(id),
+      kind TEXT NOT NULL,
+      recipient_email TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('simulated', 'pending', 'sent', 'failed')),
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX membership_expiry_idx ON members (club_id, expires_on);
+  `);
+}
+
+// ---------------------------------------------------------------------------
+// v6 — P2 (#5): event status/club scope, tickets with 30-minute holds, door check-in
+// ---------------------------------------------------------------------------
+function addEventTickets(db: DatabaseSync) {
   db.exec(`
     ALTER TABLE events ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
+    ALTER TABLE events ADD COLUMN status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('draft', 'published', 'cancelled'));
+    ALTER TABLE events ADD COLUMN description TEXT NOT NULL DEFAULT '';
+    CREATE INDEX events_club_idx ON events (club_id, starts_at);
+    CREATE TABLE tickets (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      event_id TEXT NOT NULL REFERENCES events(id),
+      member_id TEXT REFERENCES members(id),
+      guest_name TEXT,
+      guest_email TEXT,
+      pricing TEXT NOT NULL CHECK (pricing IN ('member', 'guest')),
+      price_paise INTEGER NOT NULL CHECK (price_paise >= 0),
+      status TEXT NOT NULL CHECK (status IN ('pending_payment', 'paid', 'cancelled', 'expired')),
+      hold_expires_at TEXT,
+      paid_at TEXT,
+      payment_reference TEXT,
+      confirmed_by TEXT REFERENCES members(id),
+      qr_token TEXT NOT NULL UNIQUE,
+      short_code TEXT NOT NULL UNIQUE,
+      checked_in_at TEXT,
+      checked_in_by TEXT REFERENCES members(id),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK ((member_id IS NULL) + (guest_email IS NULL) = 1),
+      CHECK (status <> 'pending_payment' OR hold_expires_at IS NOT NULL)
+    );
+    CREATE INDEX tickets_event_status_hold_idx ON tickets (event_id, status, hold_expires_at);
+    CREATE INDEX tickets_status_hold_idx ON tickets (status, hold_expires_at);
+    CREATE INDEX tickets_member_idx ON tickets (member_id, created_at);
+    CREATE UNIQUE INDEX tickets_member_event_live_idx ON tickets (event_id, member_id)
+      WHERE member_id IS NOT NULL AND status IN ('pending_payment', 'paid');
+    CREATE UNIQUE INDEX tickets_guest_event_live_idx ON tickets (event_id, guest_email)
+      WHERE guest_email IS NOT NULL AND status IN ('pending_payment', 'paid');
+  `);
+}
+
+// v7 — tasks, receipts and expenses; follows already-released ticket schema v6.
+function addWorkspaceFlows(db: DatabaseSync, now: Date) {
+  db.exec(`
     ALTER TABLE transactions ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
     ALTER TABLE transactions ADD COLUMN event_id TEXT REFERENCES events(id);
     ALTER TABLE events ADD COLUMN fundraiser_goal_paise INTEGER NOT NULL DEFAULT 0
@@ -263,7 +358,7 @@ function addWorkspaceFlows(db: DatabaseSync, now: Date) {
     ALTER TABLE tasks ADD COLUMN created_at TEXT;
     UPDATE tasks
        SET assignee_id = (SELECT id FROM members WHERE members.name = tasks.assignee LIMIT 1),
-           created_at = '${now.toISOString()}';
+           created_at = NULL;
     CREATE INDEX tasks_club_idx ON tasks (club_id, created_at);
 
     CREATE TABLE receipts (
@@ -297,6 +392,14 @@ function addWorkspaceFlows(db: DatabaseSync, now: Date) {
     );
     CREATE INDEX expenses_club_status_idx ON expenses (club_id, status, submitted_at);
     CREATE INDEX expenses_submitter_idx ON expenses (club_id, submitter_id, submitted_at);
+  `);
+  db.prepare("UPDATE tasks SET created_at = ? WHERE created_at IS NULL").run(now.toISOString());
+  db.exec(`
+    UPDATE transactions SET club_id = COALESCE(
+      (SELECT club_id FROM dues_payments WHERE source_type = 'dues_payment' AND dues_payments.id = transactions.source_id),
+      (SELECT club_id FROM tickets WHERE source_type = 'ticket' AND tickets.id = transactions.source_id), club_id);
+    UPDATE transactions SET event_id = (SELECT event_id FROM tickets WHERE source_type = 'ticket' AND tickets.id = transactions.source_id)
+      WHERE source_type = 'ticket';
   `);
   db.prepare("UPDATE events SET fundraiser_goal_paise = ? WHERE id = ?").run(500000, "demo-event-1");
   db.prepare("UPDATE events SET fundraiser_goal_paise = ? WHERE id = ?").run(1000000, "demo-event-2");

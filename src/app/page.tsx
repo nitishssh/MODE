@@ -7,7 +7,7 @@ import { localDateTimeValue } from "@/lib/local-datetime";
 import type {
   Dashboard,
   Event,
-  EventReport,
+  WorkspaceEventReport as EventReport,
   Expense,
   ExpenseLedgerEntry as LedgerEntry,
   SessionUser,

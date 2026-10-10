@@ -183,9 +183,14 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     });
   }
   function ledgerRows(actor: Actor): ExpenseLedgerEntry[] {
-    return db.prepare(`SELECT l.*, e.title AS event_title, x.payment_reference FROM transactions l LEFT JOIN events e ON e.id = l.event_id
-      LEFT JOIN expenses x ON l.source_type = 'expense' AND x.id = l.source_id WHERE l.club_id = ? ORDER BY l.occurred_at DESC, l.rowid DESC`)
-      .all(actor.clubId).map(row => ({id: String(row.id), type: row.kind === "income" ? "income" : "expense_paid", description: String(row.description), amountPaise: Number(row.amount_paise), category: row.source_type === "expense" ? "expense" : "opening_balance", eventId: row.event_id === null ? null : String(row.event_id), eventTitle: row.event_title === null ? null : String(row.event_title), reference: row.payment_reference === null ? null : String(row.payment_reference), occurredAt: String(row.occurred_at)}));
+    return db.prepare(`SELECT l.*, e.title AS event_title,
+      COALESCE(x.payment_reference, tk.payment_reference, dp.reference) AS payment_reference
+      FROM transactions l LEFT JOIN events e ON e.id = l.event_id
+      LEFT JOIN expenses x ON l.source_type = 'expense' AND x.id = l.source_id
+      LEFT JOIN tickets tk ON l.source_type = 'ticket' AND tk.id = l.source_id
+      LEFT JOIN dues_payments dp ON l.source_type = 'dues_payment' AND dp.id = l.source_id
+      WHERE l.club_id = ? ORDER BY l.occurred_at DESC, l.rowid DESC`)
+      .all(actor.clubId).map(row => ({id: String(row.id), type: row.kind === "income" ? "income" : "expense_paid", description: String(row.description), amountPaise: Number(row.amount_paise), category: row.source_type === "dues_payment" ? "membership" : row.source_type === "ticket" ? "events" : String(row.source_type), eventId: row.event_id === null ? null : String(row.event_id), eventTitle: row.event_title === null ? null : String(row.event_title), reference: row.payment_reference === null ? null : String(row.payment_reference), occurredAt: String(row.occurred_at)}));
   }
   function getLedgerEntries(actor: Actor) { assertPermission(actor, "ledger:read"); return ledgerRows(actor); }
   function getLedgerSummary(actor: Actor): LedgerSummary {
