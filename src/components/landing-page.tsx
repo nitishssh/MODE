@@ -26,11 +26,13 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
   useLayoutEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const context = gsap.context(() => {
-      [capabilitiesRef.current, closingRef.current].forEach((panel) => {
+      [capabilitiesRef.current, closingRef.current].forEach((panel, index) => {
         if (!panel) return;
-        gsap.fromTo(panel, { xPercent: 100, autoAlpha: 0.65 }, {
+        const finalColor = index === 0 ? "#fdfaf5" : "#f2e5dd";
+        gsap.fromTo(panel, { xPercent: 100, autoAlpha: 0.65, backgroundColor: "#fdfaf5" }, {
           xPercent: 0,
           autoAlpha: 1,
+          backgroundColor: finalColor,
           ease: "none",
           scrollTrigger: {
             trigger: panel,
