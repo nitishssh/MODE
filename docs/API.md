@@ -172,6 +172,26 @@ Expense body: `{amountPaise, purpose, receiptId? | receiptReference?, eventId?}`
 - **Reconciliation**: `summary` returns inflow, outflow, balance, per-category totals and a per-event breakdown (`inflow`, `outflow`, `net`) joining ticket income and event-tagged expenses. The dashboard balance and the ledger summary are computed from the same rows. `export` is a plain CSV of all entries.
 - Approved institution-approved payment channels are just the `paymentReference` string (UPI id, bank reference, cash voucher) and stay configurable by the club.
 
+## Announcements and mailing-list delivery (#8)
+
+An announcement is drafted, then published once. Publication puts it in the dated website archive and queues one outbox message per eligible member. Delivery is tracked per recipient in the outbox; the website and the API only ever expose counts.
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/announcements` | public (published, newest first) · `?scope=all` with `announcements:write` includes drafts | 200 `{announcements}` | 500 |
+| POST | `/api/announcements` | `announcements:write` | 201 `{announcement:AnnouncementDetails}` | 400; 401; 403 |
+| GET | `/api/announcements/{id}` | public for published | 200 `{announcement}` | 404 |
+| PATCH | `/api/announcements/{id}` | `announcements:write` | 200 `{announcement}` | 400; 401; 403; 404; 409 `announcement_published` |
+| POST | `/api/announcements/{id}/publish` | `announcements:write` | 201 first publication · 200 repeat `{announcement,firstPublish,queued,alreadyQueued,delivery}` | 401; 403; 404 |
+| GET | `/api/announcements/{id}/delivery` | `announcements:write` | 200 `{delivery:DeliverySummary}` | 401; 403; 404 |
+
+Draft body: `{title, body, audience?}` with `audience` `all` (every club member) or `active` (members with a current membership under the #4 rule). Publish body: optional `{audience}` override.
+
+- **Draft vs published**: drafts are invisible to the public and editable; once published, `publishedAt` is fixed and the text is frozen so the archive matches what members received. Publish a correction as a new announcement.
+- **Recipients are never exposed**: publish and delivery responses contain counts only (`recipients`, `byStatus`). Officers see masked addresses in `/api/outbox`; nothing lists members to other members.
+- **Exactly-once queueing**: each recipient gets one outbox row keyed `announcement:<id>:<memberId>`. Re-publishing queues only members who were not queued before (for example someone who joined later) and reports `alreadyQueued` for the rest. Dispatch retries only `pending`/`failed` rows, so retries cannot duplicate a send.
+- **Honest status**: with the local `preview` transport, dispatch marks rows `previewed`, never `sent`. `DeliverySummary.transport` tells the UI which mode is active so the screen can label the outbox as a preview.
+
 ## Starter routes
 
 | Method | Path | Permission | Success | Failure |
@@ -201,7 +221,6 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 
 These are design constraints for future tickets, not implemented endpoints:
 
-- Announcements: distinguish draft, publication and notification delivery; local outbox is not actual delivery in #8.
 - Volunteers: task owner, deadline and status are separate from service-hour reporting in #9.
 
 Payment and notification adapters must expose pending, succeeded and failed states honestly. Secrets and demo credentials live in environment configuration, never in code.
