@@ -2,30 +2,32 @@
 
 Issue: https://github.com/nitishssh/MODE/issues/10
 
-Status: In progress. This is a draft handoff checklist, not an implementation or acceptance sign-off.
+Status: In progress. The Expo shell is merged; physical-device and installed-PWA acceptance remain open. This checklist does not close issue #10.
 
 Owners: @Azmanshaikh, @nitishssh.
 
-Snapshot: 10 October 2026, main `771ec78d7ecec9e5c0d597951877e5968ead7e84`. Recheck this snapshot when implementation resumes; the linked issue remains the acceptance source of truth.
+Snapshot: 10 October 2026, main `9b115f74b46f4f58a030120f5de8af1d7c7d8553`. Recheck against the linked issue when work resumes.
 
-## Existing work
+## Delivered in PR #35
 
-PRs #21 and #25 delivered the responsive authenticated Next.js workspace, role navigation and PWA metadata. The client/ Expo package is absent at the checked main commit.
+- SDK 57 Expo Router package in `client/`, with React Native and react-native-web.
+- Thinking Ledger light/dark tokens, Literata, Anek Latin/Devanagari and JetBrains Mono.
+- Role-aware navigation, login/logout and session-expiry handling. Native tokens use SecureStore; web uses same-origin HttpOnly cookies without browser token persistence.
+- Generated client contracts, drift detection and client typecheck/lint/test/export checks in CI.
+- Loading, empty, unauthorized and row-error handling with cached timestamps in the delivered shell screens.
+- Opt-in same-origin Expo web serving, SPA fallback, PWA manifest/icons and the retained `/legacy` workspace.
 
-## Dependencies
+PR #35 records browser checks for admin/member authentication, task persistence, permissions, responsive navigation and logout; Android/iOS bundle exports are compilation evidence, not physical-device execution. See [the implementation review](../reviews/pr35-expo-shell.md) and [demo steps](../DEMO.md).
 
-#2 and #3 provide backend identity/contracts. Coordinate #14; #11–#13 extend this shell.
+## Remaining acceptance
 
-## Completion checklist
+- [ ] Record physical Android and iOS Expo Go sign-in, logout, session revocation and permission-driven navigation using synthetic accounts.
+- [ ] Verify Windows Edge PWA installation and launch, navigation, authentication and logout from the installed app.
+- [ ] Coordinate #14 for physical-phone LAN/API reachability and record the actual environment and release commit.
+- [ ] Verify required loading, empty, unauthorized and retry states on native and installed web; retain outstanding failures explicitly.
+- [ ] Coordinate full business screens and end-to-end journeys with #11-#13; do not treat the shell as their completion.
+- [ ] Reconcile all issue #10 acceptance criteria with recorded evidence before closing that issue.
 
-- [ ] Add the client/ Expo Router package with React Native and react-native-web; verify the issue's SDK target against the supported runtime before pinning dependencies.
-- [ ] Port the Thinking Ledger / Ruled Paper theme, typography and layout tokens into client/src/constants/theme.ts.
-- [ ] Implement role-aware navigation, login/logout and 401 handling. Store native bearer tokens in expo-secure-store; web uses same-origin HttpOnly cookies without browser token persistence.
-- [ ] Generate client contracts from src/lib/contracts.ts, add sync-contracts and client typecheck/lint, and fail CI on drift.
-- [ ] Implement loading, empty, unauthorized and row-error states with cached as-of timestamps.
-- [ ] Coordinate Expo web export and same-origin serving with #14; retain the current web page until the export works.
-- [ ] Record native and web sign-in, logout, session revocation and role navigation evidence.
+## Verification boundary
 
-## Evidence required before completion
-
-Link the implementation commits and passing checks; record reproducible demo steps and any required physical-device evidence. Keep unchecked items visible and do not mark the issue complete because this checklist is merged. Payments and outbox delivery remain simulated under the MVP scope. Final acceptance target in the issue: 11 October 2026, 10:00 AM IST.
+This update reconciles documentation with merged source and PR #35's recorded evidence. It performs no new device or installed-PWA testing. Payments and outbox delivery remain simulated. The issue's final acceptance target is 11 October 2026, 10:00 AM IST.
