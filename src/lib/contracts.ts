@@ -264,3 +264,21 @@ export interface ExpenseRequest {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Announcements and mailing-list delivery (#8) */
+export interface AnnouncementDetails extends Omit<Announcement, "publishedAt"> {
+  status: "draft" | "published";
+  audience: "all" | "active";
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
+}
+
+export interface DeliverySummary {
+  announcementId: string;
+  transport: "preview" | "smtp";
+  /** Counts only; recipient addresses are never returned. */
+  recipients: number;
+  byStatus: { pending: number; previewed: number; sent: number; failed: number };
+}

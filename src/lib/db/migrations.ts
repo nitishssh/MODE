@@ -19,6 +19,7 @@ const MIGRATIONS: Migration[] = [
   { version: 4, up: addEventTicketing },
   { version: 5, up: addMerchandiseOrders },
   { version: 6, up: addTreasuryWorkflow },
+  { version: 7, up: addAnnouncementPublishing },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -384,4 +385,34 @@ function addTreasuryWorkflow(db: DatabaseSync) {
     CREATE INDEX expense_requests_status_idx ON expense_requests (club_id, status);
     CREATE UNIQUE INDEX expense_requests_payment_idx ON expense_requests (club_id, payment_reference) WHERE payment_reference IS NOT NULL;
   `);
+}
+
+// ---------------------------------------------------------------------------
+// v7 — announcement drafts, publication and delivery tracking (#8)
+// ---------------------------------------------------------------------------
+function addAnnouncementPublishing(db: DatabaseSync, now: Date) {
+  // SQLite cannot relax NOT NULL on published_at, so rebuild the table with the same ids.
+  db.exec(`
+    CREATE TABLE announcements_v7 (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('draft', 'published')),
+      audience TEXT NOT NULL DEFAULT 'all' CHECK (audience IN ('all', 'active')),
+      created_by TEXT REFERENCES members(id),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      published_at TEXT,
+      CHECK (status = 'draft' OR published_at IS NOT NULL)
+    );
+    INSERT INTO announcements_v7 (id, club_id, title, body, status, audience, created_by, created_at, updated_at, published_at)
+      SELECT id, '${DEFAULT_CLUB_ID}', title, body, 'published', 'all', NULL, published_at, published_at, published_at FROM announcements;
+    DROP TABLE announcements;
+    ALTER TABLE announcements_v7 RENAME TO announcements;
+    CREATE INDEX announcements_published_idx ON announcements (club_id, status, published_at);
+    ALTER TABLE outbox_messages ADD COLUMN reference_id TEXT;
+    CREATE INDEX outbox_reference_idx ON outbox_messages (kind, reference_id);
+  `);
+  void now;
 }
