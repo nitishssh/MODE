@@ -26,13 +26,12 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
   useLayoutEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const context = gsap.context(() => {
-      [capabilitiesRef.current, closingRef.current].forEach((panel, index) => {
+      [capabilitiesRef.current, closingRef.current].forEach((panel) => {
         if (!panel) return;
-        const finalColor = index === 0 ? "#fdfaf5" : "#f2e5dd";
-        gsap.fromTo(panel, { xPercent: 100, autoAlpha: 0.65, backgroundColor: "#fdfaf5" }, {
+        gsap.fromTo(panel, { xPercent: 100, autoAlpha: 0.65, backgroundColor: "#302b27" }, {
           xPercent: 0,
           autoAlpha: 1,
-          backgroundColor: finalColor,
+          backgroundColor: "#302b27",
           ease: "none",
           scrollTrigger: {
             trigger: panel,
@@ -88,8 +87,6 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
     </section>
 
     <LandingTimeline />
-
-    <div className="landing-color-bridge" aria-hidden="true" />
 
     <section className="landing-capabilities landing-scroll-panel" ref={capabilitiesRef} id="built-for-clubs" aria-labelledby="capabilities-title">
       <div><p className="landing-kicker"><span aria-hidden="true" /> Built around the work, not the paperwork</p><h2 id="capabilities-title">Every club has moving parts.<br /><em>MODE keeps them legible.</em></h2></div>
