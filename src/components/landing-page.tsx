@@ -89,6 +89,8 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
 
     <LandingTimeline />
 
+    <div className="landing-color-bridge" aria-hidden="true" />
+
     <section className="landing-capabilities landing-scroll-panel" ref={capabilitiesRef} id="built-for-clubs" aria-labelledby="capabilities-title">
       <div><p className="landing-kicker"><span aria-hidden="true" /> Built around the work, not the paperwork</p><h2 id="capabilities-title">Every club has moving parts.<br /><em>MODE keeps them legible.</em></h2></div>
       <div className="landing-capability-list">{capabilities.map(([label, copy], index) => <article key={label}><span>0{index + 1}</span><div><p>{label}</p><h3>{copy}</h3></div><b aria-hidden="true">↗</b></article>)}</div>
