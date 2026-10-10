@@ -17,6 +17,8 @@ Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, a
 
 Optional configuration is documented in `.env.example`; copy it to `.env.local` if needed. Never commit `.env.local` or the local database. To try a separate dataset without changing the existing one, set `SQLITE_PATH` to a new filename.
 
+The repository's `.nvmrc` selects Node 24 for version managers that support it. To verify a fresh checkout, follow [the foundation acceptance check](docs/FOUNDATION.md), including the automated server restart test.
+
 ```sh
 npm run typecheck
 npm test
