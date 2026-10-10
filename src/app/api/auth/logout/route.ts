@@ -9,11 +9,14 @@ export const dynamic = "force-dynamic";
 
 export const POST = route("logout", (request) => {
   const db = getDatabase();
-  if (request.headers.has("authorization")) {
+  const bearerAuth = request.headers.has("authorization");
+  if (bearerAuth) {
     requireActor(request, db, { mutation: true });
   } else {
     assertSameOrigin(request);
   }
   db.logout(readSessionToken(request));
+  // A bearer request must not change an unrelated ambient browser session.
+  if (bearerAuth) return json({ ok: true });
   return json({ ok: true }, { headers: { "Set-Cookie": clearedSessionCookie() } });
 });

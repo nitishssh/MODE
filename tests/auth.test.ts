@@ -194,9 +194,11 @@ test("native login returns the same session as the cookie and bearer writes stil
       authorization: `Bearer ${volunteerToken}`, origin: "https://other.example",
     }))).status, 403, "organizer cookie must not grant volunteer permission");
 
-    assert.equal((await logout(apiRequest("/api/auth/logout", {
+    const logoutResponse = await logout(apiRequest("/api/auth/logout", {
       method: "POST", authorization, cookie: cookieFrom(volunteer), origin: "https://other.example",
-    }))).status, 200);
+    }));
+    assert.equal(logoutResponse.status, 200);
+    assert.equal(logoutResponse.headers.get("set-cookie"), null, "bearer logout must not clear an unrelated browser session");
     assert.equal((await me(apiRequest("/api/auth/me", { authorization }))).status, 401);
     assert.equal((await me(apiRequest("/api/auth/me", { cookie }))).status, 401, "logout revokes both transports for that session");
     assert.equal((await me(apiRequest("/api/auth/me", { cookie: cookieFrom(volunteer) }))).status, 200, "unselected session is not revoked");
