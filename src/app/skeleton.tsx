@@ -1,15 +1,19 @@
+"use client";
+
 import React from "react";
+import { useI18n } from "@/i18n/client";
 
 export function WorkspaceMainSkeleton() {
+  const { t } = useI18n();
   return (
-    <div className="skeleton-container" aria-busy="true" aria-label="Loading workspace">
+    <div className="skeleton-container" aria-busy="true" aria-label={t("skeleton.loading")}>
       <div className="skeleton-status-pill">
         <span className="skeleton-status-dot" aria-hidden="true" />
-        <span>Syncing club records · Loading workspace…</span>
+        <span>{t("skeleton.syncing")}</span>
       </div>
 
       {/* Metrics Row Skeleton */}
-      <section className="metrics-grid" aria-label="Loading metrics">
+      <section className="metrics-grid" aria-label={t("skeleton.metrics")}>
         {/* Metric 1: Lavender */}
         <article className="metric-card skeleton-metric-card">
           <div className="metric-top">
@@ -147,6 +151,16 @@ export function WorkspaceMainSkeleton() {
 }
 
 export function WorkspaceShellSkeleton() {
+  const { t } = useI18n();
+  const navNames = [
+    t("nav.overview"),
+    t("nav.members"),
+    t("nav.events"),
+    t("nav.tasks"),
+    t("nav.treasury"),
+    t("skeleton.store"),
+    t("skeleton.messages"),
+  ];
   return (
     <div className="workspace">
       {/* Sidebar Skeleton */}
@@ -168,9 +182,9 @@ export function WorkspaceShellSkeleton() {
           </div>
         </div>
 
-        <div className="nav-caption">NAVIGATION</div>
+        <div className="nav-caption">{t("skeleton.navigationKicker")}</div>
         <nav style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          {["Overview", "Members", "Events", "Tasks", "Treasury", "Store", "Messages"].map((name, i) => (
+          {navNames.map((name, i) => (
             <div
               key={name}
               className={`nav-item ${i === 0 ? "active" : ""}`}
@@ -187,11 +201,11 @@ export function WorkspaceShellSkeleton() {
           <div className="sidebar-note">
             <span className="small-star">✳</span>
             <h3>
-              Made for the
+              {t("nav.noteTitleLine1")}
               <br />
-              people who make it happen.
+              {t("nav.noteTitleLine2")}
             </h3>
-            <p>One home for your campus community.</p>
+            <p>{t("nav.noteBody")}</p>
           </div>
         </div>
       </aside>
@@ -200,9 +214,9 @@ export function WorkspaceShellSkeleton() {
       <div className="workspace-body">
         <header className="topbar">
           <div className="breadcrumb">
-            <span>Workspace</span>
+            <span>{t("app.workspace")}</span>
             <span>/</span>
-            <strong>Overview</strong>
+            <strong>{t("nav.overview")}</strong>
           </div>
           <div className="topbar-right" style={{ display: "flex", alignItems: "center", gap: "14px" }}>
             <div className="skeleton" style={{ width: "34px", height: "34px", borderRadius: "10px" }} />
@@ -218,12 +232,12 @@ export function WorkspaceShellSkeleton() {
                 <span className="skeleton skeleton-text" style={{ width: "180px", height: "10px" }} />
               </div>
               <h1 style={{ marginTop: "10px" }}>
-                Your club, <span>in sync.</span>
+                {t("hero.titleLine1")} <span>{t("hero.titleLine2")}</span>
               </h1>
-              <p>Memberships, events, tasks, and finances — all in one notebook.</p>
+              <p>{t("skeleton.tagline")}</p>
             </div>
             <button className="button primary" type="button" disabled style={{ opacity: 0.7 }}>
-              Add member
+              {t("members.addMember")}
             </button>
           </div>
 

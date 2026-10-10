@@ -201,6 +201,10 @@ These are the ticket design constraints. The membership, ticket, merchandise, ta
 
 Payment and notification adapters must expose pending, succeeded and failed states honestly. Secrets and demo credentials live in environment configuration, never in code.
 
+## Interface language
+
+The HTML pages (not the JSON API) are served in the language resolved from, in order: a valid `mode_lang` cookie (`en`, `hi`, `bn`, `mr`, `te`, `ta`, `gu`, `ur`, `kn`, `ml`, `pa`, `as`), the request's `Accept-Language` header, then English. The cookie is a plain preference set by the browser (`Path=/; Max-Age=1y; SameSite=Lax`), not a credential, and is never read by API routes. API error bodies keep their English `error` text; clients should localize from the stable `code` field, which is what the web workspace does.
+
 ## Local demo clock
 
 `MODE_DEMO_NOW=<ISO timestamp>` freezes the server clock so expiry, reminders and deadlines can be demonstrated deterministically. Tests use an injected clock instead of this variable.

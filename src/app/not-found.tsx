@@ -2,8 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { LanguageSwitcher, useI18n } from "@/i18n/client";
 
 export default function NotFound() {
+  const { t } = useI18n();
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
@@ -23,11 +25,13 @@ export default function NotFound() {
     });
   }
 
+  const themeLabel = isDark ? t("topbar.lightTheme") : t("topbar.darkTheme");
+
   return (
     <div className="not-found-page">
       {/* Top Brand Bar */}
       <header className="not-found-header">
-        <Link href="/" className="brand" aria-label="Return to MODE Home">
+        <Link href="/" className="brand" aria-label={t("notFound.returnHome")}>
           <div className="brand-mark" aria-hidden="true">
             <span />
             <span />
@@ -37,12 +41,13 @@ export default function NotFound() {
         </Link>
 
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <LanguageSwitcher />
           <button
             type="button"
             className="theme-toggle"
             onClick={toggleTheme}
-            aria-label={isDark ? "Use light theme" : "Use dark theme"}
-            title={isDark ? "Use light theme" : "Use dark theme"}
+            aria-label={themeLabel}
+            title={themeLabel}
           >
             {isDark ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -56,7 +61,7 @@ export default function NotFound() {
             )}
           </button>
           <Link href="/" className="button primary" style={{ minHeight: "36px", padding: "8px 16px" }}>
-            Workspace
+            {t("app.workspace")}
           </Link>
         </div>
       </header>
@@ -66,60 +71,57 @@ export default function NotFound() {
         <div className="not-found-card">
           <div className="not-found-badge">
             <span className="tiny-dot" style={{ background: "#cc785c" }} />
-            <span>404 · PAGE NOT FOUND</span>
+            <span>{t("notFound.badge")}</span>
           </div>
 
           <h1 className="not-found-title">
-            This page stepped out of the <span>club agenda.</span>
+            {t("notFound.titleLine1")} <span>{t("notFound.titleLine2")}</span>
           </h1>
 
-          <p className="not-found-description">
-            The page or resource you requested doesn't exist, has been rescheduled, or was moved to another section.
-            Let's get you back on track with the club.
-          </p>
+          <p className="not-found-description">{t("notFound.body")}</p>
 
           <div className="not-found-actions">
             <Link href="/" className="button primary" style={{ minWidth: "160px" }}>
-              ← Return to workspace
+              ← {t("notFound.back")}
             </Link>
           </div>
 
           {/* Quick Roster Links */}
           <div className="not-found-shortcuts">
             <span className="nav-caption" style={{ margin: "0 0 10px 0", display: "block" }}>
-              OR JUMP STRAIGHT TO
+              {t("notFound.jumpKicker")}
             </span>
             <div className="not-found-shortcut-grid">
               <Link href="/" className="not-found-shortcut-item">
-                <strong>Overview</strong>
-                <span>Club balance & live updates</span>
+                <strong>{t("nav.overview")}</strong>
+                <span>{t("notFound.overviewHint")}</span>
               </Link>
               <Link href="/#members" className="not-found-shortcut-item">
-                <strong>Members</strong>
-                <span>Directory & active dues</span>
+                <strong>{t("nav.members")}</strong>
+                <span>{t("notFound.membersHint")}</span>
               </Link>
               <Link href="/#events" className="not-found-shortcut-item">
-                <strong>Events</strong>
-                <span>Calendar & upcoming meetups</span>
+                <strong>{t("nav.events")}</strong>
+                <span>{t("notFound.eventsHint")}</span>
               </Link>
               <Link href="/#treasury" className="not-found-shortcut-item">
-                <strong>Treasury</strong>
-                <span>Inflow, expenses & ledger</span>
+                <strong>{t("nav.treasury")}</strong>
+                <span>{t("notFound.treasuryHint")}</span>
               </Link>
             </div>
           </div>
 
-          <div className="sidebar-note" style={{ marginTop: "28px", textAlign: "left" }}>
+          <div className="sidebar-note" style={{ marginTop: "28px", textAlign: "start" }}>
             <span className="small-star">✳</span>
-            <h3>Looking for your club records?</h3>
-            <p>All active memberships, event registries, and finances are safely saved in your main workspace.</p>
+            <h3>{t("notFound.recordsTitle")}</h3>
+            <p>{t("notFound.recordsBody")}</p>
           </div>
         </div>
       </main>
 
       {/* Footer */}
       <footer className="workspace-footer" style={{ justifyContent: "center", padding: "20px 0" }}>
-        <span>MODE Student Organization Workspace</span>
+        <span>{t("notFound.footer")}</span>
       </footer>
     </div>
   );

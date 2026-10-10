@@ -507,3 +507,36 @@ th{background:#faf7f2;border-color:#eee7df;color:#746c64}td{color:#716a63;border
   .sidebar nav { flex-direction: column; }
   .nav-item { width: 100%; }
 }
+
+/* ── Internationalization: language switcher, scripts and right-to-left ── */
+.language-switcher{display:inline-flex;align-items:center}
+.language-switcher .filter-select{height:34px;padding:0 10px;min-width:0;max-width:150px;border-radius:10px;background:var(--paper,#fff)}
+.auth-card-tools{display:flex;justify-content:flex-end;margin-bottom:12px}
+/* DM Sans carries Latin only; Indic and Arabic glyphs fall back to the system script fonts. */
+html:not(:lang(en)) body{font-family:var(--font),"Noto Sans","Nirmala UI","Kohinoor Devanagari","Mukta","Segoe UI",system-ui,sans-serif}
+html:lang(ur) body{font-family:"Noto Nastaliq Urdu","Noto Naskh Arabic","Urdu Typesetting","Segoe UI",system-ui,sans-serif;line-height:1.75}
+/* Tracking tuned for Latin capitals does not suit other scripts. */
+html:not(:lang(en)) h1,html:not(:lang(en)) h2,html:not(:lang(en)) .brand{letter-spacing:0}
+html:not(:lang(en)) .eyebrow,html:not(:lang(en)) .nav-caption{letter-spacing:.4px;text-transform:none}
+/* Right-to-left layout (Urdu): mirror the fixed sidebar and directional spacing. */
+[dir=rtl] .sidebar{inset:0 0 0 auto;border-right:0;border-left:1px solid var(--line)}
+[dir=rtl] .workspace-body{margin-left:0;margin-right:256px}
+[dir=rtl] .nav-item{text-align:right}
+[dir=rtl] .nav-count{margin-left:0;margin-right:auto}
+[dir=rtl] .brand-mark{margin-right:0;margin-left:12px}
+[dir=rtl] .brand-dot{margin-left:0;margin-right:1px}
+[dir=rtl] .workspace-footer p{text-align:left}
+[dir=rtl] .skip-link{left:auto;right:15px}
+[dir=rtl] .amount-cell,[dir=rtl] td.amount-cell,[dir=rtl] th.amount-cell{direction:ltr;unicode-bidi:isolate}
+[dir=rtl] .icon{transform:scaleX(-1)}
+[dir=rtl] .not-found-shortcuts{text-align:right}
+@media(max-width:1200px){[dir=rtl] .workspace-body{margin-right:214px}}
+@media(max-width:960px){[dir=rtl] .workspace-body{margin-right:190px}}
+@media(max-width:760px){
+  [dir=rtl] .workspace-body{margin-right:0}
+  [dir=rtl] .sidebar{transform:translateX(105%);box-shadow:-12px 0 35px #24201e2e}
+  [dir=rtl] .sidebar.mobile-open{transform:translateX(0)}
+  [dir=rtl] .topbar-right{margin-left:0;margin-right:auto}
+  [dir=rtl] .workspace-footer p{text-align:right}
+  .language-switcher .filter-select{max-width:110px}
+}

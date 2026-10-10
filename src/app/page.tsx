@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { WorkspaceMainSkeleton } from "./skeleton";
 import { localDateTimeValue } from "@/lib/local-datetime";
+import { LanguageSwitcher, useI18n } from "@/i18n/client";
+import type { DictionaryKey } from "@/i18n/dictionaries/en";
 import { MAX_RECEIPT_SIZE_BYTES } from "@/lib/contracts";
 import type {
   Dashboard,
@@ -21,14 +23,14 @@ import type {
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type Section =
-  | "Overview"
-  | "Members"
-  | "Events"
-  | "Announcements"
-  | "Merchandise"
-  | "Tasks"
-  | "My Expenses"
-  | "Treasury";
+  | "overview"
+  | "members"
+  | "events"
+  | "announcements"
+  | "merchandise"
+  | "tasks"
+  | "expenses"
+  | "treasury";
 
 type IconName =
   | "grid"
@@ -52,50 +54,32 @@ type IconName =
   | "sun"
   | "moon";
 
-const navigation: { label: Section; icon: IconName }[] = [
-  { label: "Overview", icon: "grid" },
-  { label: "Members", icon: "people" },
-  { label: "Events", icon: "calendar" },
-  { label: "Announcements", icon: "megaphone" },
-  { label: "Merchandise", icon: "bag" },
-  { label: "Tasks", icon: "check" },
-  { label: "My Expenses", icon: "receipt" },
-  { label: "Treasury", icon: "wallet" },
+const navigation: { id: Section; icon: IconName }[] = [
+  { id: "overview", icon: "grid" },
+  { id: "members", icon: "people" },
+  { id: "events", icon: "calendar" },
+  { id: "announcements", icon: "megaphone" },
+  { id: "merchandise", icon: "bag" },
+  { id: "tasks", icon: "check" },
+  { id: "expenses", icon: "receipt" },
+  { id: "treasury", icon: "wallet" },
 ];
 
-const descriptions: Record<Section, string> = {
-  Overview: "A little less admin. A lot more campus life.",
-  Members: "The people who make your community happen.",
-  Events: "Bring people together, from the first ticket to the last check-in.",
-  Announcements: "Give every update a home your members can find.",
-  Merchandise: "Club essentials, with orders and stock in one place.",
-  Tasks: "Who is doing the work, what is due, and what still needs to get done.",
-  "My Expenses": "Submit expense requests and track their approval status.",
-  Treasury: "A clear view of what comes in, what goes out, and what is owed.",
+const sectionFromHash: Record<string, Section> = {
+  overview: "overview",
+  members: "members",
+  events: "events",
+  announcements: "announcements",
+  merchandise: "merchandise",
+  tasks: "tasks",
+  expenses: "expenses",
+  "my-expenses": "expenses",
+  treasury: "treasury",
 };
 
+type TaskStatus = "todo" | "in_progress" | "done";
+
 // ── Formatters ─────────────────────────────────────────────────────────────────
-
-const currency = (paise: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 2,
-  }).format(paise / 100);
-
-const date = (value: string) =>
-  new Intl.DateTimeFormat("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "Asia/Kolkata",
-  }).format(new Date(value));
-
-const day = (value: string) =>
-  new Intl.DateTimeFormat("en-IN", { day: "2-digit", timeZone: "Asia/Kolkata" }).format(new Date(value));
-
-const month = (value: string) =>
-  new Intl.DateTimeFormat("en-IN", { month: "short", timeZone: "Asia/Kolkata" }).format(new Date(value));
 
 const initials = (name: string) =>
   name
@@ -104,21 +88,17 @@ const initials = (name: string) =>
     .map((part) => part[0])
     .join("");
 
-const taskLabel = { todo: "To do", in_progress: "In progress", done: "Done" };
-
-const expenseStatusLabel: Record<string, string> = {
-  submitted: "Pending review",
-  approved: "Approved",
-  rejected: "Rejected",
-  paid: "Paid",
-};
-
 const expenseStatusClass: Record<string, string> = {
   submitted: "amber",
   approved: "purple",
   rejected: "red",
   paid: "green",
 };
+
+const expenseStatusKey = (status: string): DictionaryKey | null =>
+  status === "submitted" || status === "approved" || status === "rejected" || status === "paid"
+    ? `expenses.status.${status}`
+    : null;
 
 // ── Icon Component ─────────────────────────────────────────────────────────────
 
@@ -220,6 +200,7 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return (
     <svg
       aria-hidden="true"
+      className="icon"
       width={size}
       height={size}
       viewBox="0 0 24 24"
@@ -249,30 +230,28 @@ function Empty({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function PreviewNote({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   return (
     <div className="preview-note">
-      <span className="badge neutral">Starter preview</span>
+      <span className="badge neutral">{t("common.starterPreview")}</span>
       <p>{children}</p>
     </div>
   );
 }
 
 function MemberTable({ members }: { members: Member[] }) {
+  const { t, fmt } = useI18n();
   if (!members.length)
-    return (
-      <Empty title="Your community starts here">
-        Add your first member to start building the club directory.
-      </Empty>
-    );
+    return <Empty title={t("members.emptyTitle")}>{t("members.emptyBody")}</Empty>;
   return (
     <div className="table-scroll">
       <table>
         <thead>
           <tr>
-            <th scope="col">Member</th>
-            <th scope="col">Joined</th>
-            <th scope="col">Membership dues</th>
-            <th scope="col">Expires</th>
+            <th scope="col">{t("members.colMember")}</th>
+            <th scope="col">{t("members.colJoined")}</th>
+            <th scope="col">{t("members.colDues")}</th>
+            <th scope="col">{t("members.colExpires")}</th>
           </tr>
         </thead>
         <tbody>
@@ -287,13 +266,13 @@ function MemberTable({ members }: { members: Member[] }) {
                   </span>
                 </div>
               </td>
-              <td>{date(member.joinedAt)}</td>
+              <td>{fmt.date(member.joinedAt)}</td>
               <td>
                 <span className={`badge ${member.duesStatus === "paid" ? "green" : "amber"}`}>
-                  {member.duesStatus === "paid" ? "Paid" : "Unpaid"}
+                  {member.duesStatus === "paid" ? t("members.paid") : t("members.unpaid")}
                 </span>
               </td>
-              <td>{member.expiresOn ? date(member.expiresOn) : "Not set"}</td>
+              <td>{member.expiresOn ? fmt.date(member.expiresOn) : t("common.notSet")}</td>
             </tr>
           ))}
         </tbody>
@@ -359,7 +338,7 @@ function PanelHeading({
 // ── Task Board ─────────────────────────────────────────────────────────────────
 
 type TaskFilter = {
-  status: "" | "todo" | "in_progress" | "done";
+  status: "" | TaskStatus;
   assigneeId: string;
   eventId: string;
   overdue: boolean;
@@ -367,6 +346,7 @@ type TaskFilter = {
 };
 
 function TaskBoard({ members, events, user, onChanged }: { members: Member[]; events: Event[]; user: SessionUser; onChanged: () => Promise<void> }) {
+  const { t, apiError } = useI18n();
   const canWrite = user.permissions.includes("tasks:write");
   const [tasks, setTasks] = useState<TaskDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -390,14 +370,14 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
       if (filter.overdue) params.set("overdue", "true");
       if (filter.mine) params.set("mine", "true");
       const res = await fetch(`/api/tasks?${params}`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Could not load tasks.");
+      if (!res.ok) throw new Error(t("tasks.loadFailed"));
       setTasks(await res.json() as TaskDetails[]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load tasks.");
+      setError(e instanceof Error ? e.message : t("tasks.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, t]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (showCreate) titleRef.current?.focus(); }, [showCreate]);
@@ -425,19 +405,19 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result = await res.json() as { error?: string };
-      if (!res.ok) throw new Error(result.error || "Failed to create task.");
+      const result = await res.json() as { error?: string; code?: string };
+      if (!res.ok) throw new Error(apiError(result, "tasks.createFailed"));
       setShowCreate(false);
       form.reset();
       await Promise.all([load(), onChanged()]);
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : "Failed to create task.");
+      setCreateError(e instanceof Error ? e.message : t("tasks.createFailed"));
     } finally {
       setCreating(false);
     }
   }
 
-  async function handleStatusChange(id: string, status: "todo" | "in_progress" | "done") {
+  async function handleStatusChange(id: string, status: TaskStatus) {
     setUpdatingId(id);
     try {
       const res = await fetch(`/api/tasks/${id}/status`, {
@@ -446,24 +426,24 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
         body: JSON.stringify({ status }),
       });
       if (!res.ok) {
-        const r = await res.json() as { error?: string };
-        throw new Error(r.error || "Failed to update status.");
+        const r = await res.json() as { error?: string; code?: string };
+        throw new Error(apiError(r, "tasks.statusFailed"));
       }
       await Promise.all([load(), onChanged()]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update status.");
+      setError(e instanceof Error ? e.message : t("tasks.statusFailed"));
     } finally {
       setUpdatingId(null);
     }
   }
 
-  const statusColumns: ("todo" | "in_progress" | "done")[] = ["todo", "in_progress", "done"];
+  const statusColumns: TaskStatus[] = ["todo", "in_progress", "done"];
 
   if (loading) {
     return (
       <div className="loading-state" role="status" aria-live="polite">
         <span className="loader" />
-        <span>Loading tasks…</span>
+        <span>{t("tasks.loading")}</span>
       </div>
     );
   }
@@ -471,10 +451,10 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
   if (error) {
     return (
       <div className="error-state" role="alert">
-        <h2>Couldn't load tasks.</h2>
+        <h2>{t("tasks.errorTitle")}</h2>
         <p>{error}</p>
         <button className="button primary" type="button" onClick={() => void load()}>
-          Try again
+          {t("common.tryAgain")}
         </button>
       </div>
     );
@@ -484,34 +464,34 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
     <div>
       {/* Toolbar */}
       <div className="task-toolbar">
-        <div className="task-filters" role="group" aria-label="Task filters">
+        <div className="task-filters" role="group" aria-label={t("tasks.filters")}>
           <select
             className="filter-select"
             value={filter.status}
-            aria-label="Filter by status"
+            aria-label={t("tasks.filterStatus")}
             onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value as TaskFilter["status"] }))}
           >
-            <option value="">All statuses</option>
-            <option value="todo">To do</option>
-            <option value="in_progress">In progress</option>
-            <option value="done">Done</option>
+            <option value="">{t("tasks.allStatuses")}</option>
+            <option value="todo">{t("tasks.status.todo")}</option>
+            <option value="in_progress">{t("tasks.status.in_progress")}</option>
+            <option value="done">{t("tasks.status.done")}</option>
           </select>
           <select
             className="filter-select"
             value={filter.assigneeId}
-            aria-label="Filter by assignee"
+            aria-label={t("tasks.filterAssignee")}
             onChange={(e) => setFilter((f) => ({ ...f, assigneeId: e.target.value }))}
           >
-            <option value="">All assignees</option>
+            <option value="">{t("tasks.allAssignees")}</option>
             {members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
           </select>
           <select
             className="filter-select"
             value={filter.eventId}
-            aria-label="Filter by event"
+            aria-label={t("tasks.filterEvent")}
             onChange={(e) => setFilter((f) => ({ ...f, eventId: e.target.value }))}
           >
-            <option value="">All events</option>
+            <option value="">{t("tasks.allEvents")}</option>
             {events.map((event) => <option key={event.id} value={event.id}>{event.title}</option>)}
           </select>
           <label className="filter-toggle">
@@ -520,7 +500,7 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
               checked={filter.overdue}
               onChange={(e) => setFilter((f) => ({ ...f, overdue: e.target.checked }))}
             />
-            Overdue only
+            {t("tasks.overdueOnly")}
           </label>
           <label className="filter-toggle">
             <input
@@ -528,7 +508,7 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
               checked={filter.mine}
               onChange={(e) => setFilter((f) => ({ ...f, mine: e.target.checked }))}
             />
-            Assigned to me
+            {t("tasks.assignedToMe")}
           </label>
         </div>
         <button
@@ -538,7 +518,7 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
           disabled={!canWrite}
         >
           <Icon name="plus" size={16} />
-          New task
+          {t("tasks.newTask")}
         </button>
       </div>
 
@@ -547,13 +527,13 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
         <section className="panel task-create-panel" aria-labelledby="task-create-heading">
           <div className="form-heading">
             <div>
-              <h2 id="task-create-heading">Create a task</h2>
-              <p>Assign work, set a deadline, and track progress.</p>
+              <h2 id="task-create-heading">{t("tasks.createTitle")}</h2>
+              <p>{t("tasks.createBody")}</p>
             </div>
             <button
               type="button"
               className="icon-button"
-              aria-label="Close task form"
+              aria-label={t("tasks.closeForm")}
               onClick={() => setShowCreate(false)}
               disabled={creating}
             >
@@ -563,11 +543,11 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
           <form onSubmit={handleCreateTask}>
             <div className="task-form-grid">
               <label>
-                Task title *
+                {t("tasks.titleLabel")}
                 <input
                   ref={titleRef}
                   name="title"
-                  placeholder="e.g. Set up registration table"
+                  placeholder={t("tasks.titlePlaceholder")}
                   minLength={1}
                   maxLength={200}
                   required
@@ -575,19 +555,19 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
                 />
               </label>
               <label>
-                Description
+                {t("common.description")}
                 <textarea
                   name="description"
-                  placeholder="Additional details…"
+                  placeholder={t("tasks.descriptionPlaceholder")}
                   maxLength={2000}
                   disabled={creating}
                   rows={3}
                 />
               </label>
               <label>
-                Assign to
+                {t("tasks.assignTo")}
                 <select name="assigneeId" disabled={creating}>
-                  <option value="">Unassigned</option>
+                  <option value="">{t("common.unassigned")}</option>
                   {members.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
@@ -596,20 +576,20 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
                 </select>
               </label>
               <label>
-                Event
+                {t("common.event")}
                 <select name="eventId" disabled={creating}>
-                  <option value="">No event</option>
+                  <option value="">{t("common.noEvent")}</option>
                   {events.map((event) => <option key={event.id} value={event.id}>{event.title}</option>)}
                 </select>
               </label>
               <label>
-                Due date
+                {t("common.dueDate")}
                 <input name="dueAt" type="datetime-local" disabled={creating} />
               </label>
             </div>
             <div className="form-actions">
               <button type="submit" className="button primary" disabled={creating}>
-                {creating ? "Creating…" : "Create task"}
+                {creating ? t("tasks.creating") : t("tasks.create")}
               </button>
               <button
                 type="button"
@@ -617,7 +597,7 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
                 onClick={() => setShowCreate(false)}
                 disabled={creating}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
             </div>
             {createError && (
@@ -632,24 +612,22 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
       {/* Kanban board */}
       {tasks.length === 0 && !showCreate ? (
         <section className="panel">
-          <Empty title="No tasks match your filters">
-            Clear the filters or create a new task to get started.
-          </Empty>
+          <Empty title={t("tasks.emptyTitle")}>{t("tasks.emptyBody")}</Empty>
         </section>
       ) : (
         <div className="kanban-grid">
           {statusColumns.map((status) => {
-            const colTasks = filter.status ? tasks : tasks.filter((t) => t.status === status);
+            const colTasks = filter.status ? tasks : tasks.filter((task) => task.status === status);
             if (filter.status && filter.status !== status) return null;
             return (
-              <section key={status} className="kanban-column" aria-label={taskLabel[status]}>
+              <section key={status} className="kanban-column" aria-label={t(`tasks.status.${status}`)}>
                 <h2>
                   <span className={`status-dot ${status}`} />
-                  {taskLabel[status]}
+                  {t(`tasks.status.${status}`)}
                   <span className="column-count">{colTasks.length}</span>
                 </h2>
                 {colTasks.length === 0 && (
-                  <p className="column-empty">No tasks here yet.</p>
+                  <p className="column-empty">{t("tasks.columnEmpty")}</p>
                 )}
                 {colTasks.map((task) => (
                   <TaskCard
@@ -692,12 +670,13 @@ function TaskCard({
   canChangeStatus: boolean;
   members: Member[];
   updating: boolean;
-  onStatusChange: (id: string, status: "todo" | "in_progress" | "done") => void;
+  onStatusChange: (id: string, status: TaskStatus) => void;
   onEdit: () => void;
   showEdit: boolean;
   onEditDone: () => void;
   events: Event[];
 }) {
+  const { t, fmt, apiError } = useI18n();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
@@ -724,11 +703,11 @@ function TaskCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result = await res.json() as { error?: string };
-      if (!res.ok) throw new Error(result.error || "Failed to update task.");
+      const result = await res.json() as { error?: string; code?: string };
+      if (!res.ok) throw new Error(apiError(result, "tasks.updateFailed"));
       onEditDone();
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Failed to update task.");
+      setSaveError(e instanceof Error ? e.message : t("tasks.updateFailed"));
     } finally {
       setSaving(false);
     }
@@ -741,15 +720,15 @@ function TaskCard({
         <h3>{task.title}</h3>
         <div className="task-card-actions">
           {isOverdue && (
-            <span className="badge red task-overdue-badge" title="Overdue">
+            <span className="badge red task-overdue-badge" title={t("tasks.overdue")}>
               <Icon name="alert" size={10} />
-              Overdue
+              {t("tasks.overdue")}
             </span>
           )}
           <button
             type="button"
             className="icon-button"
-            aria-label={showEdit ? "Close edit" : "Edit task"}
+            aria-label={showEdit ? t("tasks.closeEdit") : t("tasks.edit")}
             disabled={!canEdit}
             onClick={onEdit}
           >
@@ -763,12 +742,12 @@ function TaskCard({
           <span className="avatar small">
             {task.assignee ? initials(task.assignee) : "?"}
           </span>
-          <span className="task-assignee">{task.assignee || "Unassigned"}</span>
+          <span className="task-assignee">{task.assignee || t("common.unassigned")}</span>
         </div>
         {task.dueAt && (
           <span className={`task-due ${isOverdue ? "overdue-text" : ""}`}>
             <Icon name="clock" size={12} />
-            {date(task.dueAt)}
+            {fmt.date(task.dueAt)}
           </span>
         )}
       </div>
@@ -780,7 +759,7 @@ function TaskCard({
       )}
       {/* Status updater */}
       <div className="task-status-row">
-        <span className="task-status-label">Move to:</span>
+        <span className="task-status-label">{t("tasks.moveTo")}</span>
         {(["todo", "in_progress", "done"] as const)
           .filter((s) => s !== task.status)
           .map((s) => (
@@ -791,7 +770,7 @@ function TaskCard({
               disabled={updating || !canChangeStatus}
               onClick={() => onStatusChange(task.id, s)}
             >
-              {taskLabel[s]}
+              {t(`tasks.status.${s}`)}
             </button>
           ))}
       </div>
@@ -799,11 +778,11 @@ function TaskCard({
       {showEdit && (
         <form className="task-edit-form" onSubmit={handleEdit}>
           <label>
-            Title
+            {t("common.title")}
             <input name="title" defaultValue={task.title} maxLength={200} disabled={saving} />
           </label>
           <label>
-            Description
+            {t("common.description")}
             <textarea
               name="description"
               defaultValue={task.description ?? ""}
@@ -813,9 +792,9 @@ function TaskCard({
             />
           </label>
           <label>
-            Assignee
+            {t("tasks.assignee")}
             <select name="assigneeId" defaultValue={task.assigneeId ?? ""} disabled={saving}>
-              <option value="">Unassigned</option>
+              <option value="">{t("common.unassigned")}</option>
               {members.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
@@ -824,14 +803,14 @@ function TaskCard({
             </select>
           </label>
           <label>
-            Event
+            {t("common.event")}
             <select name="eventId" defaultValue={task.eventId ?? ""} disabled={saving}>
-              <option value="">No event</option>
+              <option value="">{t("common.noEvent")}</option>
               {events.map((event) => <option key={event.id} value={event.id}>{event.title}</option>)}
             </select>
           </label>
           <label>
-            Due date
+            {t("common.dueDate")}
             <input
               name="dueAt"
               type="datetime-local"
@@ -840,7 +819,7 @@ function TaskCard({
             />
           </label>
           <button type="submit" className="button primary" disabled={saving} style={{ marginTop: 10 }}>
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? t("tasks.saving") : t("tasks.save")}
           </button>
           {saveError && (
             <p className="form-error" role="alert">
@@ -856,6 +835,7 @@ function TaskCard({
 // ── My Expenses ────────────────────────────────────────────────────────────────
 
 function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
+  const { t, fmt, apiError } = useI18n();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -874,14 +854,14 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
     try {
       const url = selfMember ? `/api/expenses?submitterId=${selfMember.id}` : "/api/expenses";
       const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error("Could not load expenses.");
+      if (!res.ok) throw new Error(t("expenses.loadFailed"));
       setExpenses(await res.json() as Expense[]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load expenses.");
+      setError(e instanceof Error ? e.message : t("expenses.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [selfMember]);
+  }, [selfMember, t]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -897,27 +877,27 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
     const eventId = String(fd.get("eventId") ?? "").trim();
 
     if (!amountStr || !purpose) {
-      setSubmitError("Amount and purpose are required.");
+      setSubmitError(t("expenses.required"));
       return;
     }
 
     const amountPaise = Math.round(parseFloat(amountStr) * 100);
     if (isNaN(amountPaise) || amountPaise < 1) {
-      setSubmitError("Please enter a valid amount in rupees.");
+      setSubmitError(t("expenses.invalidAmount"));
       return;
     }
     if (!file || file.size === 0) {
-      setSubmitError("Attach a JPG, PNG, or PDF receipt.");
+      setSubmitError(t("expenses.fileRequired"));
       return;
     }
     if (file) {
       const allowedTypes = new Set(["image/jpeg", "image/png", "application/pdf"]);
       if (file.size > MAX_RECEIPT_SIZE_BYTES) {
-        setSubmitError("Receipt files must be 5 MB or smaller.");
+        setSubmitError(t("expenses.fileTooLarge"));
         return;
       }
       if (file.type && !allowedTypes.has(file.type)) {
-        setSubmitError("Receipt must be a JPG, PNG, or PDF file.");
+        setSubmitError(t("expenses.fileType"));
         return;
       }
     }
@@ -931,12 +911,12 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
 
       // Handle file upload if provided
       if (file) {
-        setUploadProgress("Uploading receipt…");
+        setUploadProgress(t("expenses.uploading"));
         const uploadFd = new FormData();
         uploadFd.append("file", file);
         const uploadRes = await fetch("/api/receipts", { method: "POST", body: uploadFd });
-        const uploadResult = await uploadRes.json() as { id?: string; error?: string };
-        if (!uploadRes.ok) throw new Error(uploadResult.error || "Receipt upload failed.");
+        const uploadResult = await uploadRes.json() as { id?: string; error?: string; code?: string };
+        if (!uploadRes.ok) throw new Error(apiError(uploadResult, "expenses.uploadFailed"));
         receiptId = uploadResult.id;
         setUploadProgress("");
       }
@@ -954,14 +934,14 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result = await res.json() as { error?: string };
-      if (!res.ok) throw new Error(result.error || "Failed to submit expense.");
-      setSubmitSuccess("Your expense has been submitted for review.");
+      const result = await res.json() as { error?: string; code?: string };
+      if (!res.ok) throw new Error(apiError(result, "expenses.submitFailed"));
+      setSubmitSuccess(t("expenses.submitted"));
       form.reset();
       setShowForm(false);
       await load();
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : "Failed to submit expense.");
+      setSubmitError(e instanceof Error ? e.message : t("expenses.submitFailed"));
     } finally {
       setSubmitting(false);
       setUploadProgress("");
@@ -973,7 +953,7 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
     return (
       <div className="loading-state" role="status" aria-live="polite">
         <span className="loader" />
-        <span>Loading your expense requests…</span>
+        <span>{t("expenses.loading")}</span>
       </div>
     );
   }
@@ -981,10 +961,10 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
   if (error) {
     return (
       <div className="error-state" role="alert">
-        <h2>Couldn't load expenses.</h2>
+        <h2>{t("expenses.errorTitle")}</h2>
         <p>{error}</p>
         <button className="button primary" type="button" onClick={() => void load()}>
-          Try again
+          {t("common.tryAgain")}
         </button>
       </div>
     );
@@ -1000,7 +980,7 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
           onClick={() => { setShowForm(true); setSubmitError(""); setSubmitSuccess(""); }}
         >
           <Icon name="plus" size={16} />
-          Submit expense
+          {t("expenses.submit")}
         </button>
       </div>
 
@@ -1015,15 +995,15 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
         <section className="panel task-create-panel" aria-labelledby="expense-form-heading">
           <div className="form-heading">
             <div>
-              <h2 id="expense-form-heading">Submit an expense</h2>
+              <h2 id="expense-form-heading">{t("expenses.formTitle")}</h2>
               <p>
-                Submitting as <strong>{selfMember?.name ?? "Demo member"}</strong>
+                {t("expenses.submittingAs")} <strong>{selfMember?.name ?? t("expenses.demoMember")}</strong>
               </p>
             </div>
             <button
               type="button"
               className="icon-button"
-              aria-label="Close expense form"
+              aria-label={t("expenses.closeForm")}
               onClick={() => setShowForm(false)}
               disabled={submitting}
             >
@@ -1033,22 +1013,22 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
           <form onSubmit={handleSubmit}>
             <div className="task-form-grid">
               <label>
-                Amount (₹) *
+                {t("expenses.amountLabel")}
                 <input
                   name="amount"
                   type="number"
                   step="0.01"
                   min="0.01"
-                  placeholder="e.g. 250.00"
+                  placeholder={t("expenses.amountPlaceholder")}
                   required
                   disabled={submitting}
                 />
               </label>
               <label>
-                Purpose *
+                {t("expenses.purposeLabel")}
                 <input
                   name="purpose"
-                  placeholder="What was the expense for?"
+                  placeholder={t("expenses.purposePlaceholder")}
                   minLength={3}
                   maxLength={500}
                   required
@@ -1056,23 +1036,23 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
                 />
               </label>
               <label>
-                Invoice / receipt reference
+                {t("expenses.referenceLabel")}
                 <input
                   name="receiptReference"
-                  placeholder="e.g. INV-2026-001"
+                  placeholder={t("expenses.referencePlaceholder")}
                   maxLength={200}
                   disabled={submitting}
                 />
               </label>
               <label>
-                Event
+                {t("common.event")}
                 <select name="eventId" disabled={submitting}>
-                  <option value="">No event</option>
+                  <option value="">{t("common.noEvent")}</option>
                   {events.map((event) => <option key={event.id} value={event.id}>{event.title}</option>)}
                 </select>
               </label>
               <label>
-                Receipt file (JPG, PNG, or PDF · max 5 MB) *
+                {t("expenses.fileLabel")}
                 <input
                   name="receiptFile"
                   type="file"
@@ -1091,7 +1071,7 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
             )}
             <div className="form-actions">
               <button type="submit" className="button primary" disabled={submitting || uploading}>
-                {submitting ? "Submitting…" : "Submit expense"}
+                {submitting ? t("expenses.submitting") : t("expenses.submit")}
               </button>
               <button
                 type="button"
@@ -1099,7 +1079,7 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
                 onClick={() => setShowForm(false)}
                 disabled={submitting}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
             </div>
             {submitError && (
@@ -1112,63 +1092,61 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
       )}
 
       <section className="panel">
-        <PanelHeading kicker="YOUR EXPENSE REQUESTS" title="Submitted expenses" />
+        <PanelHeading kicker={t("expenses.listKicker")} title={t("expenses.listTitle")} />
         {expenses.length === 0 ? (
-          <Empty title="No expense requests yet">
-            Submit your first expense request using the button above.
-          </Empty>
+          <Empty title={t("expenses.emptyTitle")}>{t("expenses.emptyBody")}</Empty>
         ) : (
           <div className="table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th scope="col">Purpose</th>
-                  <th scope="col">Amount</th>
-                  <th scope="col">Date</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Notes</th>
+                  <th scope="col">{t("common.purpose")}</th>
+                  <th scope="col">{t("common.amount")}</th>
+                  <th scope="col">{t("common.date")}</th>
+                  <th scope="col">{t("common.status")}</th>
+                  <th scope="col">{t("common.notes")}</th>
                 </tr>
               </thead>
               <tbody>
-                {expenses.map((exp) => (
-                  <tr key={exp.id}>
-                    <td>
-                      <strong>{exp.purpose}</strong>
-                      {exp.eventTitle && (
-                        <span className="subtext">
-                          <Icon name="calendar" size={10} /> {exp.eventTitle}
+                {expenses.map((exp) => {
+                  const statusKey = expenseStatusKey(exp.status);
+                  return (
+                    <tr key={exp.id}>
+                      <td>
+                        <strong>{exp.purpose}</strong>
+                        {exp.eventTitle && (
+                          <span className="subtext">
+                            <Icon name="calendar" size={10} /> {exp.eventTitle}
+                          </span>
+                        )}
+                      </td>
+                      <td className="amount-cell">{fmt.currency(exp.amountPaise)}</td>
+                      <td>{fmt.date(exp.submittedAt)}</td>
+                      <td>
+                        <span className={`badge ${expenseStatusClass[exp.status] ?? "neutral"}`}>
+                          {statusKey ? t(statusKey) : exp.status}
                         </span>
-                      )}
-                    </td>
-                    <td className="amount-cell">{currency(exp.amountPaise)}</td>
-                    <td>{date(exp.submittedAt)}</td>
-                    <td>
-                      <span className={`badge ${expenseStatusClass[exp.status] ?? "neutral"}`}>
-                        {expenseStatusLabel[exp.status] ?? exp.status}
-                      </span>
-                    </td>
-                    <td>
-                      {exp.status === "rejected" && exp.rejectionNote && (
-                        <span className="rejection-note">{exp.rejectionNote}</span>
-                      )}
-                      {exp.status === "paid" && exp.paymentReference && (
-                        <span className="payment-ref">Ref: {exp.paymentReference}</span>
-                      )}
-                      {exp.status === "approved" && (
-                        <span className="subtext">Approved · payment pending</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td>
+                        {exp.status === "rejected" && exp.rejectionNote && (
+                          <span className="rejection-note">{exp.rejectionNote}</span>
+                        )}
+                        {exp.status === "paid" && exp.paymentReference && (
+                          <span className="payment-ref">{t("common.ref", { reference: exp.paymentReference })}</span>
+                        )}
+                        {exp.status === "approved" && (
+                          <span className="subtext">{t("expenses.approvedPending")}</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </section>
-      <PreviewNote>
-        Expense amounts are in rupees. Approval and payment are managed by the treasurer in the Treasury section.
-        Approved but unpaid expenses are counted as outstanding liabilities, not actual outflows.
-      </PreviewNote>
+      <PreviewNote>{t("expenses.preview")}</PreviewNote>
     </div>
   );
 }
@@ -1176,6 +1154,7 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
 // ── Treasury ───────────────────────────────────────────────────────────────────
 
 function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
+  const { t, fmt, apiError } = useI18n();
   const [summary, setSummary] = useState<LedgerSummary | null>(null);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -1203,7 +1182,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
         fetch("/api/ledger/entries", { cache: "no-store" }),
         fetch("/api/expenses", { cache: "no-store" }),
       ]);
-      if (!summaryRes.ok || !entriesRes.ok || !expensesRes.ok) throw new Error("Could not load treasury data.");
+      if (!summaryRes.ok || !entriesRes.ok || !expensesRes.ok) throw new Error(t("treasury.loadFailed"));
       const [s, e, ex] = await Promise.all([
         summaryRes.json() as Promise<LedgerSummary>,
         entriesRes.json() as Promise<LedgerEntry[]>,
@@ -1213,11 +1192,11 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
       setEntries(e);
       setExpenses(ex);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load treasury data.");
+      setError(e instanceof Error ? e.message : t("treasury.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -1226,7 +1205,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
     setExportError("");
     try {
       const res = await fetch("/api/ledger/export.csv");
-      if (!res.ok) throw new Error("Export failed.");
+      if (!res.ok) throw new Error(t("treasury.exportFailed"));
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1235,28 +1214,35 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setExportError(e instanceof Error ? e.message : "Export failed.");
+      setExportError(e instanceof Error ? e.message : t("treasury.exportFailed"));
     } finally {
       setExporting(false);
     }
   }
+
+  const actionFailedKey: Record<"approve" | "reject" | "pay", DictionaryKey> = {
+    approve: "treasury.approveFailed",
+    reject: "treasury.rejectFailed",
+    pay: "treasury.payFailed",
+  };
 
   async function handleExpenseAction(expenseId: string, action: "approve" | "reject" | "pay", extra: Record<string, string> = {}) {
     if (actionBusy) return;
     setActionError("");
     const expense = expenses.find((e) => e.id === expenseId);
     if (!expense) return;
+    const amount = fmt.currency(expense.amountPaise);
     if (action === "pay") {
-      if (!extra.paymentReference?.trim()) { setActionError("Enter the payment reference before marking paid."); return; }
+      if (!extra.paymentReference?.trim()) { setActionError(t("treasury.paymentRequired")); return; }
       extra = { paymentReference: extra.paymentReference.trim() };
     }
     if (action === "reject") {
-      const note = window.prompt("Reason for rejecting this expense (optional):");
+      const note = window.prompt(t("treasury.promptReject"));
       if (note === null) return;
       extra = { note: note.trim() };
     }
-    if (action === "approve" && !window.confirm(`Approve ${currency(expense.amountPaise)} for ${expense.purpose}?`)) return;
-    if (action === "reject" && !window.confirm(`Reject the expense "${expense.purpose}"?`)) return;
+    if (action === "approve" && !window.confirm(t("treasury.confirmApprove", { amount, purpose: expense.purpose }))) return;
+    if (action === "reject" && !window.confirm(t("treasury.confirmReject", { purpose: expense.purpose }))) return;
     setActionBusy(true);
     try {
       const body: Record<string, string> = { ...extra };
@@ -1265,12 +1251,12 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result = await res.json() as { error?: string };
-      if (!res.ok) throw new Error(result.error || `Failed to ${action} expense.`);
+      const result = await res.json() as { error?: string; code?: string };
+      if (!res.ok) throw new Error(apiError(result, actionFailedKey[action]));
       if (action === "pay") { setPaymentExpense(null); setPaymentReference(""); }
       await Promise.all([load(), onChanged()]);
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : `Failed to ${action} expense.`);
+      setActionError(e instanceof Error ? e.message : t(actionFailedKey[action]));
     } finally {
       setActionBusy(false);
     }
@@ -1283,11 +1269,11 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
     setSourceBusy(true);
     try {
       const res = await fetch(`/api/ledger/entries/${encodeURIComponent(entryId)}/source`, { cache: "no-store" });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Could not load the source record.");
-      setSource(result as LedgerSource);
+      const result = await res.json() as { error?: string; code?: string };
+      if (!res.ok) throw new Error(apiError(result, "treasury.sourceFailed"));
+      setSource(result as unknown as LedgerSource);
     } catch (error) {
-      setSourceError(error instanceof Error ? error.message : "Could not load the source record.");
+      setSourceError(error instanceof Error ? error.message : t("treasury.sourceFailed"));
     } finally { setSourceBusy(false); }
   }
 
@@ -1305,7 +1291,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
     return (
       <div className="loading-state" role="status" aria-live="polite">
         <span className="loader" />
-        <span>Loading treasury data…</span>
+        <span>{t("treasury.loading")}</span>
       </div>
     );
   }
@@ -1313,10 +1299,10 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
   if (error) {
     return (
       <div className="error-state" role="alert">
-        <h2>Couldn't load treasury.</h2>
+        <h2>{t("treasury.errorTitle")}</h2>
         <p>{error}</p>
         <button className="button primary" type="button" onClick={() => void load()}>
-          Try again
+          {t("common.tryAgain")}
         </button>
       </div>
     );
@@ -1324,37 +1310,38 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
 
   const pendingExpenses = expenses.filter((e) => e.status === "submitted");
   const approvedExpenses = expenses.filter((e) => e.status === "approved");
+  const tabLabel = { overview: t("treasury.tabOverview"), expenses: t("treasury.tabExpenses"), ledger: t("treasury.tabLedger") };
 
   return (
     <div>
       {/* Summary cards */}
       {summary && (
-        <section className="metrics-grid treasury-metrics" aria-label="Financial summary">
+        <section className="metrics-grid treasury-metrics" aria-label={t("treasury.summaryLabel")}>
           <Metric
-            label="Total inflow"
-            value={currency(summary.inflowPaise)}
-            detail="Recorded income entries"
+            label={t("treasury.totalInflow")}
+            value={fmt.currency(summary.inflowPaise)}
+            detail={t("treasury.inflowDetail")}
             icon="arrow"
             color="mint"
           />
           <Metric
-            label="Paid outflow"
-            value={currency(summary.outflowPaise)}
-            detail="Expenses that have been paid"
+            label={t("treasury.paidOutflow")}
+            value={fmt.currency(summary.outflowPaise)}
+            detail={t("treasury.outflowDetail")}
             icon="wallet"
             color="peach"
           />
           <Metric
-            label="Current balance"
-            value={currency(summary.balancePaise)}
-            detail="Inflow minus paid outflow"
+            label={t("treasury.currentBalance")}
+            value={fmt.currency(summary.balancePaise)}
+            detail={t("treasury.balanceDetail")}
             icon="coin"
             color="dark"
           />
           <Metric
-            label="Approved · unpaid"
-            value={currency(summary.approvedUnpaidPaise)}
-            detail="Approved but not yet disbursed"
+            label={t("treasury.approvedUnpaid")}
+            value={fmt.currency(summary.approvedUnpaidPaise)}
+            detail={t("treasury.approvedUnpaidDetail")}
             icon="clock"
             color="lavender"
           />
@@ -1372,7 +1359,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
             aria-selected={activeTab === tab}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === "overview" ? "Overview" : tab === "expenses" ? "Expense approvals" : "Ledger"}
+            {tabLabel[tab]}
             {tab === "expenses" && pendingExpenses.length > 0 && (
               <span className="nav-count">{pendingExpenses.length}</span>
             )}
@@ -1393,25 +1380,25 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
           {/* Category breakdown */}
           {summary.byCategory.length > 0 && (
             <section className="panel">
-              <PanelHeading kicker="CATEGORY BREAKDOWN" title="By category" />
+              <PanelHeading kicker={t("treasury.categoryKicker")} title={t("treasury.categoryTitle")} />
               <div className="table-scroll">
                 <table>
                   <thead>
                     <tr>
-                      <th scope="col">Category</th>
-                      <th scope="col" className="amount-cell">Inflow</th>
-                      <th scope="col" className="amount-cell">Outflow</th>
-                      <th scope="col" className="amount-cell">Net</th>
+                      <th scope="col">{t("common.category")}</th>
+                      <th scope="col" className="amount-cell">{t("common.inflow")}</th>
+                      <th scope="col" className="amount-cell">{t("common.outflow")}</th>
+                      <th scope="col" className="amount-cell">{t("common.net")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {summary.byCategory.map((cat) => (
                       <tr key={cat.category}>
                         <td><strong>{cat.category}</strong></td>
-                        <td className="amount-cell positive">+{currency(cat.inflowPaise)}</td>
-                        <td className="amount-cell">{cat.outflowPaise > 0 ? `−${currency(cat.outflowPaise)}` : "—"}</td>
+                        <td className="amount-cell positive">+{fmt.currency(cat.inflowPaise)}</td>
+                        <td className="amount-cell">{cat.outflowPaise > 0 ? `−${fmt.currency(cat.outflowPaise)}` : "—"}</td>
                         <td className={`amount-cell ${cat.inflowPaise - cat.outflowPaise >= 0 ? "positive" : ""}`}>
-                          {currency(cat.inflowPaise - cat.outflowPaise)}
+                          {fmt.currency(cat.inflowPaise - cat.outflowPaise)}
                         </td>
                       </tr>
                     ))}
@@ -1423,22 +1410,22 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
           {/* Event breakdown */}
           {summary.byEvent.length > 0 && (
             <section className="panel">
-              <PanelHeading kicker="EVENT BREAKDOWN" title="By event" />
+              <PanelHeading kicker={t("treasury.eventKicker")} title={t("treasury.eventTitle")} />
               <div className="table-scroll">
                 <table>
                   <thead>
                     <tr>
-                      <th scope="col">Event</th>
-                      <th scope="col" className="amount-cell">Inflow</th>
-                      <th scope="col" className="amount-cell">Outflow</th>
+                      <th scope="col">{t("common.event")}</th>
+                      <th scope="col" className="amount-cell">{t("common.inflow")}</th>
+                      <th scope="col" className="amount-cell">{t("common.outflow")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {summary.byEvent.map((ev) => (
                       <tr key={ev.eventId}>
                         <td><strong>{ev.eventTitle}</strong></td>
-                        <td className="amount-cell positive">+{currency(ev.inflowPaise)}</td>
-                        <td className="amount-cell">{ev.outflowPaise > 0 ? `−${currency(ev.outflowPaise)}` : "—"}</td>
+                        <td className="amount-cell positive">+{fmt.currency(ev.inflowPaise)}</td>
+                        <td className="amount-cell">{ev.outflowPaise > 0 ? `−${fmt.currency(ev.outflowPaise)}` : "—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1451,11 +1438,8 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
             <div className="outstanding-notice">
               <Icon name="alert" size={16} />
               <div>
-                <strong>Outstanding liability</strong>
-                <p>
-                  {currency(summary.approvedUnpaidPaise)} in approved expenses are awaiting payment.
-                  These are not counted in the current balance.
-                </p>
+                <strong>{t("treasury.liabilityTitle")}</strong>
+                <p>{t("treasury.liabilityBody", { amount: fmt.currency(summary.approvedUnpaidPaise) })}</p>
               </div>
             </div>
           )}
@@ -1467,16 +1451,16 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
         <div>
           {pendingExpenses.length > 0 && (
             <section className="panel">
-              <PanelHeading kicker="AWAITING REVIEW" title="Pending approvals" />
+              <PanelHeading kicker={t("treasury.pendingKicker")} title={t("treasury.pendingTitle")} />
               <div className="table-scroll">
                 <table>
                   <thead>
                     <tr>
-                      <th scope="col">Submitted by</th>
-                      <th scope="col">Purpose</th>
-                      <th scope="col" className="amount-cell">Amount</th>
-                      <th scope="col">Date</th>
-                      <th scope="col">Actions</th>
+                      <th scope="col">{t("treasury.submittedBy")}</th>
+                      <th scope="col">{t("common.purpose")}</th>
+                      <th scope="col" className="amount-cell">{t("common.amount")}</th>
+                      <th scope="col">{t("common.date")}</th>
+                      <th scope="col">{t("common.actions")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1484,11 +1468,11 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
                       <tr key={exp.id}>
                         <td><strong>{exp.submitterName}</strong></td>
                         <td>{exp.purpose}
-                          {exp.receiptId && <div><a href={`/api/receipts/${encodeURIComponent(exp.receiptId)}`} target="_blank" rel="noreferrer">View receipt</a></div>}
-                          {exp.receiptReference && <div>Receipt reference: {exp.receiptReference}</div>}
+                          {exp.receiptId && <div><a href={`/api/receipts/${encodeURIComponent(exp.receiptId)}`} target="_blank" rel="noreferrer">{t("common.viewReceipt")}</a></div>}
+                          {exp.receiptReference && <div>{t("common.receiptReference", { reference: exp.receiptReference })}</div>}
                         </td>
-                        <td className="amount-cell">{currency(exp.amountPaise)}</td>
-                        <td>{date(exp.submittedAt)}</td>
+                        <td className="amount-cell">{fmt.currency(exp.amountPaise)}</td>
+                        <td>{fmt.date(exp.submittedAt)}</td>
                         <td>
                           <div className="expense-action-row">
                             <button
@@ -1497,7 +1481,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
                               onClick={() => void handleExpenseAction(exp.id, "approve")}
                               disabled={actionBusy}
                             >
-                              Approve
+                              {t("treasury.approve")}
                             </button>
                             <button
                               type="button"
@@ -1505,7 +1489,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
                               onClick={() => void handleExpenseAction(exp.id, "reject")}
                               disabled={actionBusy}
                             >
-                              Reject
+                              {t("treasury.reject")}
                             </button>
                           </div>
                         </td>
@@ -1518,15 +1502,15 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
           )}
           {approvedExpenses.length > 0 && (
             <section className="panel" style={{ marginTop: 20 }}>
-              <PanelHeading kicker="APPROVED · AWAITING PAYMENT" title="Ready to pay" />
+              <PanelHeading kicker={t("treasury.readyKicker")} title={t("treasury.readyTitle")} />
               <div className="table-scroll">
                 <table>
                   <thead>
                     <tr>
-                      <th scope="col">Member</th>
-                      <th scope="col">Purpose</th>
-                      <th scope="col" className="amount-cell">Amount</th>
-                      <th scope="col">Actions</th>
+                      <th scope="col">{t("common.member")}</th>
+                      <th scope="col">{t("common.purpose")}</th>
+                      <th scope="col" className="amount-cell">{t("common.amount")}</th>
+                      <th scope="col">{t("common.actions")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1534,10 +1518,10 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
                       <tr key={exp.id}>
                         <td><strong>{exp.submitterName}</strong></td>
                         <td>{exp.purpose}
-                          {exp.receiptId && <div><a href={`/api/receipts/${encodeURIComponent(exp.receiptId)}`} target="_blank" rel="noreferrer">View receipt</a></div>}
-                          {exp.receiptReference && <div>Receipt reference: {exp.receiptReference}</div>}
+                          {exp.receiptId && <div><a href={`/api/receipts/${encodeURIComponent(exp.receiptId)}`} target="_blank" rel="noreferrer">{t("common.viewReceipt")}</a></div>}
+                          {exp.receiptReference && <div>{t("common.receiptReference", { reference: exp.receiptReference })}</div>}
                         </td>
-                        <td className="amount-cell">{currency(exp.amountPaise)}</td>
+                        <td className="amount-cell">{fmt.currency(exp.amountPaise)}</td>
                         <td>
                           <button
                             type="button"
@@ -1545,7 +1529,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
                             onClick={() => { setPaymentExpense(exp); setPaymentReference(""); setActionError(""); }}
                             disabled={actionBusy}
                           >
-                            Mark paid
+                            {t("treasury.markPaid")}
                           </button>
                         </td>
                       </tr>
@@ -1557,47 +1541,48 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
           )}
           {pendingExpenses.length === 0 && approvedExpenses.length === 0 && (
             <section className="panel">
-              <Empty title="No expenses awaiting action">
-                All expense requests are settled.
-              </Empty>
+              <Empty title={t("treasury.settledTitle")}>{t("treasury.settledBody")}</Empty>
             </section>
           )}
           <div className="all-expenses-section">
             <section className="panel" style={{ marginTop: 20 }}>
-              <PanelHeading kicker="ALL EXPENSE REQUESTS" title="Complete history" />
+              <PanelHeading kicker={t("treasury.historyKicker")} title={t("treasury.historyTitle")} />
               <div className="table-scroll">
                 <table>
                   <thead>
                     <tr>
-                      <th scope="col">Member</th>
-                      <th scope="col">Purpose</th>
-                      <th scope="col" className="amount-cell">Amount</th>
-                      <th scope="col">Status</th>
-                      <th scope="col">Submitted</th>
+                      <th scope="col">{t("common.member")}</th>
+                      <th scope="col">{t("common.purpose")}</th>
+                      <th scope="col" className="amount-cell">{t("common.amount")}</th>
+                      <th scope="col">{t("common.status")}</th>
+                      <th scope="col">{t("treasury.submittedCol")}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {expenses.map((exp) => (
-                      <tr key={exp.id}>
-                        <td><strong>{exp.submitterName}</strong></td>
-                        <td>
-                          {exp.purpose}
-                          {exp.rejectionNote && (
-                            <span className="subtext rejection-note">{exp.rejectionNote}</span>
-                          )}
-                          {exp.paymentReference && (
-                            <span className="subtext payment-ref">Ref: {exp.paymentReference}</span>
-                          )}
-                        </td>
-                        <td className="amount-cell">{currency(exp.amountPaise)}</td>
-                        <td>
-                          <span className={`badge ${expenseStatusClass[exp.status] ?? "neutral"}`}>
-                            {expenseStatusLabel[exp.status] ?? exp.status}
-                          </span>
-                        </td>
-                        <td>{date(exp.submittedAt)}</td>
-                      </tr>
-                    ))}
+                    {expenses.map((exp) => {
+                      const statusKey = expenseStatusKey(exp.status);
+                      return (
+                        <tr key={exp.id}>
+                          <td><strong>{exp.submitterName}</strong></td>
+                          <td>
+                            {exp.purpose}
+                            {exp.rejectionNote && (
+                              <span className="subtext rejection-note">{exp.rejectionNote}</span>
+                            )}
+                            {exp.paymentReference && (
+                              <span className="subtext payment-ref">{t("common.ref", { reference: exp.paymentReference })}</span>
+                            )}
+                          </td>
+                          <td className="amount-cell">{fmt.currency(exp.amountPaise)}</td>
+                          <td>
+                            <span className={`badge ${expenseStatusClass[exp.status] ?? "neutral"}`}>
+                              {statusKey ? t(statusKey) : exp.status}
+                            </span>
+                          </td>
+                          <td>{fmt.date(exp.submittedAt)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1608,22 +1593,22 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
 
       {paymentExpense && activeTab === "expenses" && (
         <section className="panel task-create-panel" aria-labelledby="payment-heading">
-          <h2 id="payment-heading">Record completed payment</h2>
-          <p>{paymentExpense.purpose} · {currency(paymentExpense.amountPaise)} · {paymentExpense.submitterName}</p>
-          <p>This records an officer-confirmed reimbursement. It does not transfer money.</p>
+          <h2 id="payment-heading">{t("treasury.paymentTitle")}</h2>
+          <p>{paymentExpense.purpose} · {fmt.currency(paymentExpense.amountPaise)} · {paymentExpense.submitterName}</p>
+          <p>{t("treasury.paymentNote")}</p>
           <form onSubmit={event => {
             event.preventDefault();
             void handleExpenseAction(paymentExpense.id, "pay", { paymentReference });
           }}>
-            <label>Payment reference
+            <label>{t("treasury.paymentReference")}
               <input value={paymentReference} onChange={event => setPaymentReference(event.target.value)}
                 required maxLength={200} disabled={actionBusy} autoFocus />
             </label>
             <div className="expense-action-row">
               <button className="button primary" type="submit" disabled={actionBusy}>
-                {actionBusy ? "Recording…" : "Confirm paid"}
+                {actionBusy ? t("treasury.recording") : t("treasury.confirmPaid")}
               </button>
-              <button className="button" type="button" disabled={actionBusy} onClick={() => setPaymentExpense(null)}>Cancel</button>
+              <button className="button" type="button" disabled={actionBusy} onClick={() => setPaymentExpense(null)}>{t("common.cancel")}</button>
             </div>
           </form>
         </section>
@@ -1633,16 +1618,16 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <div className="eyebrow">EVERY RUPEE, ACCOUNTED FOR</div>
-              <h2>Transaction ledger</h2>
+              <div className="eyebrow">{t("treasury.ledgerKicker")}</div>
+              <h2>{t("treasury.ledgerTitle")}</h2>
             </div>
             <div className="ledger-actions">
               <input
                 className="ledger-search"
                 type="search"
-                placeholder="Search transactions…"
+                placeholder={t("treasury.searchPlaceholder")}
                 value={search}
-                aria-label="Search ledger entries"
+                aria-label={t("treasury.searchLabel")}
                 onChange={(e) => setSearch(e.target.value)}
               />
               <button
@@ -1652,7 +1637,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
                 disabled={exporting}
               >
                 <Icon name="download" size={15} />
-                {exporting ? "Exporting…" : "Export CSV"}
+                {exporting ? t("treasury.exporting") : t("treasury.exportCsv")}
               </button>
             </div>
           </div>
@@ -1662,59 +1647,59 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
             </p>
           )}
           {sourceEntryId && (
-            <section className="task-create-panel" aria-label="Ledger source record">
-              <button type="button" className="button-small" disabled={sourceBusy} onClick={() => { setSourceEntryId(null); setSource(null); }}>Close source</button>
-              {sourceBusy && <p role="status">Loading source record…</p>}
-              {sourceError && <p role="alert">{sourceError} <button className="button-small" onClick={() => void showSource(sourceEntryId)}>Retry source</button></p>}
+            <section className="task-create-panel" aria-label={t("treasury.sourceLabel")}>
+              <button type="button" className="button-small" disabled={sourceBusy} onClick={() => { setSourceEntryId(null); setSource(null); }}>{t("treasury.closeSource")}</button>
+              {sourceBusy && <p role="status">{t("treasury.sourceLoading")}</p>}
+              {sourceError && <p role="alert">{sourceError} <button className="button-small" onClick={() => void showSource(sourceEntryId)}>{t("treasury.retrySource")}</button></p>}
               {source && <>
                 <h3>{source.title}</h3>
                 <p>{source.type} · {source.id}</p>
                 <dl>{source.details.map(detail => <div key={detail.label}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>)}</dl>
-                {source.receiptId && <a href={`/api/receipts/${encodeURIComponent(source.receiptId)}`} download>Download receipt</a>}
+                {source.receiptId && <a href={`/api/receipts/${encodeURIComponent(source.receiptId)}`} download>{t("treasury.downloadReceipt")}</a>}
               </>}
             </section>
           )}
           {filteredEntries.length === 0 ? (
-            <Empty title="No transactions found">
-              {search ? "Try a different search term." : "No ledger entries have been recorded yet."}
+            <Empty title={t("treasury.noTransactions")}>
+              {search ? t("treasury.differentSearch") : t("treasury.noEntries")}
             </Empty>
           ) : (
             <div className="table-scroll">
               <table>
                 <thead>
                   <tr>
-                    <th scope="col">Description</th>
-                    <th scope="col">Date</th>
-                    <th scope="col">Category</th>
-                    <th scope="col">Event</th>
-                    <th scope="col">Reference</th>
-                    <th scope="col">Recorded by</th>
-                    <th scope="col">Source</th>
-                    <th scope="col">Type</th>
-                    <th scope="col" className="amount-cell">Amount</th>
+                    <th scope="col">{t("common.description")}</th>
+                    <th scope="col">{t("common.date")}</th>
+                    <th scope="col">{t("common.category")}</th>
+                    <th scope="col">{t("common.event")}</th>
+                    <th scope="col">{t("common.reference")}</th>
+                    <th scope="col">{t("treasury.recordedBy")}</th>
+                    <th scope="col">{t("treasury.source")}</th>
+                    <th scope="col">{t("common.type")}</th>
+                    <th scope="col" className="amount-cell">{t("common.amount")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredEntries.map((entry) => (
                     <tr key={entry.id}>
                       <td><strong>{entry.description}</strong></td>
-                      <td>{date(entry.occurredAt)}</td>
+                      <td>{fmt.date(entry.occurredAt)}</td>
                       <td>{entry.category ?? "—"}</td>
                       <td>{entry.eventTitle ?? "—"}</td>
                       <td>{entry.reference ?? "—"}</td>
-                      <td>{entry.recordedByName ?? (entry.sourceType === "opening_balance" ? "System opening balance" : "Unknown officer")}</td>
+                      <td>{entry.recordedByName ?? (entry.sourceType === "opening_balance" ? t("treasury.systemOpeningBalance") : t("treasury.unknownOfficer"))}</td>
                       <td>{entry.sourceId ? <a href={`/api/ledger/entries/${encodeURIComponent(entry.id)}/source`}
                         onClick={event => { event.preventDefault(); if (!sourceBusy) void showSource(entry.id); }}>
                         {entry.sourceType} · {entry.sourceId}
-                      </a> : "Opening balance"}</td>
+                      </a> : t("treasury.openingBalance")}</td>
                       <td>
                         <span className={`badge ${entry.type === "income" ? "green" : "neutral"}`}>
-                          {entry.type === "income" ? "Income" : "Expense (paid)"}
+                          {entry.type === "income" ? t("treasury.income") : t("treasury.expensePaid")}
                         </span>
                       </td>
                       <td className={`amount-cell ${entry.type === "income" ? "positive" : ""}`}>
                         {entry.type === "income" ? "+" : "−"}
-                        {currency(entry.amountPaise)}
+                        {fmt.currency(entry.amountPaise)}
                       </td>
                     </tr>
                   ))}
@@ -1724,15 +1709,13 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
           )}
         </section>
       )}
-      <PreviewNote>
-        Only paid expenses appear in the ledger as actual outflows. Approved-but-unpaid expenses are shown
-        separately above. Ledger entries and CSV export are restricted to treasurers in production.
-      </PreviewNote>
+      <PreviewNote>{t("treasury.preview")}</PreviewNote>
     </div>
   );
 }
 
 function EventReportCard({ eventId }: { eventId: string }) {
+  const { t, fmt } = useI18n();
   const [report, setReport] = useState<EventReport | null>(null);
   const [error, setError] = useState("");
 
@@ -1740,38 +1723,38 @@ function EventReportCard({ eventId }: { eventId: string }) {
     setError("");
     try {
       const response = await fetch(`/api/events/${eventId}/report`, { cache: "no-store" });
-      if (!response.ok) throw new Error("Report unavailable.");
+      if (!response.ok) throw new Error(t("report.unavailable"));
       setReport(await response.json() as EventReport);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Report unavailable.");
+      setError(caught instanceof Error ? caught.message : t("report.unavailable"));
     }
-  }, [eventId]);
+  }, [eventId, t]);
 
   useEffect(() => { void load(); }, [load]);
 
   if (error) {
-    return <p className="event-report-error" role="alert">{error} <button type="button" className="text-button" onClick={() => void load()}>Retry</button></p>;
+    return <p className="event-report-error" role="alert">{error} <button type="button" className="text-button" onClick={() => void load()}>{t("common.retry")}</button></p>;
   }
-  if (!report) return <div className="event-report-loading" role="status">Loading event report…</div>;
+  if (!report) return <div className="event-report-loading" role="status">{t("report.loading")}</div>;
 
   return (
-    <div className="event-report" aria-label={`${report.eventTitle} progress report`}>
+    <div className="event-report" aria-label={t("report.ariaLabel", { title: report.eventTitle })}>
       <div className="event-report-heading">
-        <span className="eyebrow">EVENT REPORT</span>
+        <span className="eyebrow">{t("report.kicker")}</span>
         <span className={`badge ${report.fundraiser.onTrack ? "green" : "amber"}`}>
-          {report.fundraiser.onTrack ? "On track" : "Needs attention"}
+          {report.fundraiser.onTrack ? t("report.onTrack") : t("report.needsAttention")}
         </span>
       </div>
       <div className="report-progress-label">
-        <span>Fundraiser · {currency(report.fundraiser.raisedPaise)} of {currency(report.fundraiser.goalPaise)}</span>
+        <span>{t("report.progress", { raised: fmt.currency(report.fundraiser.raisedPaise), goal: fmt.currency(report.fundraiser.goalPaise) })}</span>
         <strong>{report.fundraiser.percent}%</strong>
       </div>
       <div className="capacity-bar report-bar"><span style={{ width: `${Math.min(100, Math.max(0, report.fundraiser.percent))}%` }} /></div>
       <div className="report-task-summary">
-        <span>{report.tasks.total} tasks</span>
-        <span>{report.tasks.done} done</span>
-        <span>{report.tasks.inProgress} in progress</span>
-        <span className={report.tasks.overdue > 0 ? "overdue-text" : ""}>{report.tasks.overdue} overdue</span>
+        <span>{t("report.tasks", { count: report.tasks.total })}</span>
+        <span>{t("report.done", { count: report.tasks.done })}</span>
+        <span>{t("report.inProgress", { count: report.tasks.inProgress })}</span>
+        <span className={report.tasks.overdue > 0 ? "overdue-text" : ""}>{t("report.overdue", { count: report.tasks.overdue })}</span>
       </div>
     </div>
   );
@@ -1780,7 +1763,8 @@ function EventReportCard({ eventId }: { eventId: string }) {
 // ── Main App ───────────────────────────────────────────────────────────────────
 
 function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void }) {
-  const [section, setSection] = useState<Section>("Overview");
+  const { t, fmt, apiError } = useI18n();
+  const [section, setSection] = useState<Section>("overview");
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1801,30 +1785,23 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
       if (!response.ok) throw new Error("Dashboard refresh failed.");
       setData((await response.json()) as Dashboard);
     } catch {
-      setRefreshError("Your change was saved, but the overview could not refresh.");
+      setRefreshError(t("workspace.refreshFailed"));
     }
-  }, []);
+  }, [t]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const response = await fetch("/api/dashboard", { cache: "no-store" });
-      if (!response.ok)
-        throw new Error(
-          "We couldn't load the workspace. Check that the server is running and try again.",
-        );
+      if (!response.ok) throw new Error(t("workspace.loadFailed"));
       setData((await response.json()) as Dashboard);
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "We couldn't load the workspace. Please try again.",
-      );
+      setError(caught instanceof Error ? caught.message : t("workspace.loadFailedShort"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (showForm) nameInput.current?.focus(); }, [showForm]);
@@ -1840,14 +1817,8 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
   useEffect(() => {
     function syncHash() {
       const hash = window.location.hash.replace("#", "").toLowerCase();
-      if (hash === "members") setSection("Members");
-      else if (hash === "events") setSection("Events");
-      else if (hash === "tasks") setSection("Tasks");
-      else if (hash === "treasury") setSection("Treasury");
-      else if (hash === "announcements") setSection("Announcements");
-      else if (hash === "merchandise") setSection("Merchandise");
-      else if (hash === "expenses" || hash === "my-expenses") setSection("My Expenses");
-      else if (hash === "overview") setSection("Overview");
+      const next = sectionFromHash[hash];
+      if (next) setSection(next);
     }
     syncHash();
     window.addEventListener("hashchange", syncHash);
@@ -1855,7 +1826,7 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
   }, []);
 
   function openMembers() {
-    setSection("Members");
+    setSection("members");
     setShowForm(true);
     setFormError("");
     setSuccess("");
@@ -1877,25 +1848,19 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
           email: String(values.get("email") ?? "").trim(),
         }),
       });
-      const result = (await response.json()) as { member?: Member; error?: string };
-      if (!response.ok) throw new Error(result.error || "The member could not be added. Please try again.");
-      setSuccess(`${result.member?.name ?? "Member"} was added. Their membership dues are unpaid.`);
+      const result = (await response.json()) as { member?: Member; error?: string; code?: string };
+      if (!response.ok) throw new Error(apiError(result, "members.addFailed"));
+      setSuccess(t("members.added", { name: result.member?.name ?? t("members.fallbackName") }));
       form.reset();
       setShowForm(false);
       await load();
     } catch (caught) {
-      setFormError(
-        caught instanceof Error ? caught.message : "The member could not be added. Please try again.",
-      );
+      setFormError(caught instanceof Error ? caught.message : t("members.addFailed"));
     } finally {
       setSaving(false);
     }
   }
 
-  const income =
-    data?.transactions.filter((item) => item.kind === "income").reduce((sum, item) => sum + item.amountPaise, 0) ?? 0;
-  const expenses =
-    data?.transactions.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amountPaise, 0) ?? 0;
   const openTasks = data?.tasks.filter((task) => task.status !== "done") ?? [];
   const clubName = data?.club.name ?? "Skyline Student Association";
   const clubInitials = initials(clubName);
@@ -1903,15 +1868,17 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
     const query = announcementQuery.trim().toLowerCase();
     return !query || `${item.title} ${item.body}`.toLowerCase().includes(query);
   });
+  const roleLabel = t(`roles.${user.role}`);
+  const themeLabel = isDark ? t("topbar.lightTheme") : t("topbar.darkTheme");
 
   return (
     <div className="workspace">
       <a className="skip-link" href="#main-content">
-        Skip to content
+        {t("app.skipToContent")}
       </a>
-      {isNavOpen && <button className="nav-scrim" type="button" aria-label="Close navigation" onClick={() => setIsNavOpen(false)} />}
-      <aside className={`sidebar ${isNavOpen ? "mobile-open" : ""}`} aria-label="Workspace navigation">
-        <a className="brand" href="/" aria-label="MODE home">
+      {isNavOpen && <button className="nav-scrim" type="button" aria-label={t("nav.close")} onClick={() => setIsNavOpen(false)} />}
+      <aside className={`sidebar ${isNavOpen ? "mobile-open" : ""}`} aria-label={t("nav.workspaceNavigation")}>
+        <a className="brand" href="/" aria-label={t("app.brandHome")}>
           <span className="brand-mark">
             <span />
             <span />
@@ -1924,27 +1891,27 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
           <span className="club-monogram">{clubInitials}</span>
           <span>
             <strong>{clubName}</strong>
-            <small>Student organization</small>
+            <small>{t("nav.studentOrganization")}</small>
           </span>
         </div>
-        <p className="nav-caption">{user.name} · {user.role}</p>
-        <button className="button secondary" type="button" onClick={onLogout}>Sign out</button>
-        <p className="nav-caption">YOUR WORKSPACE</p>
-        <nav aria-label="Main navigation">
-          {navigation.filter(item => (item.label !== "Treasury" || user.permissions.includes("ledger:read")) && (item.label !== "Members" || user.permissions.includes("members:read"))).map((item) => (
+        <p className="nav-caption">{t("nav.userLine", { name: user.name, role: roleLabel })}</p>
+        <button className="button secondary" type="button" onClick={onLogout}>{t("nav.signOut")}</button>
+        <p className="nav-caption">{t("nav.caption")}</p>
+        <nav aria-label={t("nav.mainNavigation")}>
+          {navigation.filter(item => (item.id !== "treasury" || user.permissions.includes("ledger:read")) && (item.id !== "members" || user.permissions.includes("members:read"))).map((item) => (
             <button
-              key={item.label}
+              key={item.id}
               type="button"
-              className={`nav-item ${section === item.label ? "active" : ""}`}
-              aria-current={section === item.label ? "page" : undefined}
-              onClick={() => { setSection(item.label); setSuccess(""); setIsNavOpen(false); }}
+              className={`nav-item ${section === item.id ? "active" : ""}`}
+              aria-current={section === item.id ? "page" : undefined}
+              onClick={() => { setSection(item.id); setSuccess(""); setIsNavOpen(false); }}
             >
               <Icon name={item.icon} />
-              <span>{item.label}</span>
-              {item.label === "Members" && data && (
+              <span>{t(`nav.${item.id}`)}</span>
+              {item.id === "members" && data && (
                 <span className="nav-count">{data.metrics.members}</span>
               )}
-              {item.label === "Tasks" && data && openTasks.length > 0 && (
+              {item.id === "tasks" && data && openTasks.length > 0 && (
                 <span className="nav-count">{openTasks.length}</span>
               )}
             </button>
@@ -1954,11 +1921,11 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
           <div className="sidebar-note">
             <span className="small-star">✳</span>
             <h3>
-              Made for the
+              {t("nav.noteTitleLine1")}
               <br />
-              people who make it happen.
+              {t("nav.noteTitleLine2")}
             </h3>
-            <p>One home for your campus community.</p>
+            <p>{t("nav.noteBody")}</p>
           </div>
           <a
             className="repo-link"
@@ -1966,8 +1933,8 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
             target="_blank"
             rel="noreferrer"
           >
-            Team project board <Icon name="arrow" size={16} />
-            <span className="sr-only"> (opens in a new tab)</span>
+            {t("nav.projectBoard")} <Icon name="arrow" size={16} />
+            <span className="sr-only"> {t("nav.opensNewTab")}</span>
           </a>
           <a
             className="repo-link source-link"
@@ -1975,14 +1942,14 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
             target="_blank"
             rel="noreferrer"
           >
-            Source on GitHub <Icon name="arrow" size={16} />
-            <span className="sr-only"> (opens in a new tab)</span>
+            {t("nav.source")} <Icon name="arrow" size={16} />
+            <span className="sr-only"> {t("nav.opensNewTab")}</span>
           </a>
           <div className="sidebar-profile">
             <span className="profile-avatar">{clubInitials}</span>
             <span>
-              <strong>Demo workspace</strong>
-              <small>Signed in · {user.role}</small>
+              <strong>{t("nav.demoWorkspace")}</strong>
+              <small>{t("nav.signedInAs", { role: roleLabel })}</small>
             </span>
           </div>
         </div>
@@ -1990,30 +1957,31 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
 
       <div className="workspace-body">
         <header className="topbar">
-          <button className="mobile-menu" type="button" aria-label="Open navigation" onClick={() => setIsNavOpen(true)}>
+          <button className="mobile-menu" type="button" aria-label={t("nav.open")} onClick={() => setIsNavOpen(true)}>
             <span />
             <span />
             <span />
           </button>
           <div className="breadcrumb">
-            Workspace <Icon name="chevron" size={13} />
-            <span>{section}</span>
+            {t("app.workspace")} <Icon name="chevron" size={13} />
+            <span>{t(`nav.${section}`)}</span>
           </div>
           <div className="topbar-right">
+            <LanguageSwitcher />
             <button
               className="theme-toggle"
               type="button"
               onClick={() => setIsDark((value) => !value)}
-              aria-label={isDark ? "Use light theme" : "Use dark theme"}
-              title={isDark ? "Use light theme" : "Use dark theme"}
+              aria-label={themeLabel}
+              title={themeLabel}
             >
               <Icon name={isDark ? "sun" : "moon"} size={16} />
             </button>
             <span className="demo-indicator">
               <span />
-              Fictional sample data
+              {t("topbar.sampleData")}
             </span>
-            <span className="top-avatar" aria-label="Demo workspace">
+            <span className="top-avatar" aria-label={t("nav.demoWorkspace")}>
               {clubInitials}
             </span>
           </div>
@@ -2022,20 +1990,20 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
           <div className="page-heading">
             <div>
               <div className="eyebrow">
-                {clubName.toUpperCase()} <span>/</span> WORKSPACE
+                {clubName.toUpperCase()} <span>/</span> {t("hero.workspaceKicker")}
               </div>
               <h1>
-                {section === "Overview" ? (
+                {section === "overview" ? (
                   <>
-                    Your club, <span>in sync.</span>
+                    {t("hero.titleLine1")} <span>{t("hero.titleLine2")}</span>
                   </>
                 ) : (
-                  section
+                  t(`nav.${section}`)
                 )}
               </h1>
-              <p>{descriptions[section]}</p>
+              <p>{t(`desc.${section}`)}</p>
             </div>
-            {user.permissions.includes("members:create") && (section === "Overview" || section === "Members") && (
+            {user.permissions.includes("members:create") && (section === "overview" || section === "members") && (
               <button
                 className="button primary"
                 type="button"
@@ -2043,7 +2011,7 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                 disabled={loading || !!error}
               >
                 <Icon name="plus" size={18} />
-                Add member
+                {t("members.addMember")}
               </button>
             )}
           </div>
@@ -2057,16 +2025,16 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
           {refreshError && (
             <div className="error-inline" role="alert">
               <span>{refreshError}</span>
-              <button className="text-button" type="button" onClick={() => void refreshDashboard()}>Retry refresh</button>
+              <button className="text-button" type="button" onClick={() => void refreshDashboard()}>{t("workspace.retryRefresh")}</button>
             </div>
           )}
           {loading && <WorkspaceMainSkeleton />}
           {!loading && error && (
             <div className="error-state" role="alert">
-              <h2>Let's try that again.</h2>
+              <h2>{t("workspace.errorTitle")}</h2>
               <p>{error}</p>
               <button className="button primary" type="button" onClick={() => void load()}>
-                Retry loading
+                {t("workspace.retryLoading")}
               </button>
             </div>
           )}
@@ -2074,34 +2042,34 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
           {!loading && !error && data && (
             <>
               {/* ── Overview ─────────────────────────────────────────────── */}
-              {section === "Overview" && (
+              {section === "overview" && (
                 <>
-                  <section className="metrics-grid" aria-label="Club at a glance">
+                  <section className="metrics-grid" aria-label={t("overview.glance")}>
                     <Metric
-                      label="Total members"
+                      label={t("overview.totalMembers")}
                       value={String(data.metrics.members)}
-                      detail={`${data.metrics.activeMembers} active memberships`}
+                      detail={t("overview.activeMemberships", { count: data.metrics.activeMembers })}
                       icon="people"
                       color="lavender"
                     />
                     <Metric
-                      label="Upcoming events"
+                      label={t("overview.upcomingEvents")}
                       value={String(data.metrics.upcomingEvents).padStart(2, "0")}
-                      detail="Moments to bring everyone together"
+                      detail={t("overview.upcomingDetail")}
                       icon="calendar"
                       color="peach"
                     />
                     <Metric
-                      label="Open tasks"
+                      label={t("overview.openTasks")}
                       value={String(openTasks.length).padStart(2, "0")}
-                      detail={`${data.tasks.filter((task) => task.status === "done").length} tasks completed`}
+                      detail={t("overview.tasksCompleted", { count: data.tasks.filter((task) => task.status === "done").length })}
                       icon="check"
                       color="mint"
                     />
                     <Metric
-                      label="Club balance"
-                      value={currency(data.metrics.balancePaise)}
-                      detail="Recorded income minus expenses"
+                      label={t("overview.clubBalance")}
+                      value={fmt.currency(data.metrics.balancePaise)}
+                      detail={t("overview.balanceDetail")}
                       icon="wallet"
                       color="dark"
                     />
@@ -2110,18 +2078,18 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                   <div className="overview-grid">
                     <section className="panel events-panel">
                       <PanelHeading
-                        kicker="MAKE SOME MEMORIES"
-                        title="On the calendar"
-                        action="All events"
-                        onClick={() => setSection("Events")}
+                        kicker={t("overview.eventsKicker")}
+                        title={t("overview.eventsTitle")}
+                        action={t("overview.allEvents")}
+                        onClick={() => setSection("events")}
                       />
                       {data.events.length ? (
                         <div className="event-list">
                           {data.events.slice(0, 2).map((event, index) => (
                             <article className="event-row" key={event.id}>
                               <div className={`date-tile ${index % 2 ? "purple" : "coral"}`}>
-                                <span>{month(event.startsAt)}</span>
-                                <strong>{day(event.startsAt)}</strong>
+                                <span>{fmt.month(event.startsAt)}</span>
+                                <strong>{fmt.day(event.startsAt)}</strong>
                               </div>
                               <div className="event-info">
                                 <h3>{event.title}</h3>
@@ -2135,7 +2103,7 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                                     />
                                   </span>
                                   <span>
-                                    {event.registered}/{event.capacity} registered
+                                    {t("overview.registered", { registered: event.registered, capacity: event.capacity })}
                                   </span>
                                 </div>
                               </div>
@@ -2143,21 +2111,19 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                           ))}
                         </div>
                       ) : (
-                        <Empty title="Room for the next big thing">
-                          Events will appear here once they are recorded.
-                        </Empty>
+                        <Empty title={t("overview.eventsEmptyTitle")}>{t("overview.eventsEmptyBody")}</Empty>
                       )}
                       <div className="panel-footnote">
                         <span className="tiny-dot" />
-                        Event planning and ticketing are planned next.
+                        {t("overview.eventsFootnote")}
                       </div>
                     </section>
                     <section className="panel tasks-panel">
                       <PanelHeading
-                        kicker="LITTLE STEPS, BIG THINGS"
-                        title="Team to-dos"
-                        action="View all"
-                        onClick={() => setSection("Tasks")}
+                        kicker={t("tasks.overviewKicker")}
+                        title={t("tasks.overviewTitle")}
+                        action={t("tasks.viewAll")}
+                        onClick={() => setSection("tasks")}
                       />
                       {openTasks.length ? (
                         <div className="task-list">
@@ -2171,16 +2137,16 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                               </span>
                               <div>
                                 <h3>{task.title}</h3>
-                                <p>{task.assignee || "Unassigned"}</p>
+                                <p>{task.assignee || t("common.unassigned")}</p>
                               </div>
                               <span className={`badge ${task.status === "in_progress" ? "purple" : "neutral"}`}>
-                                {taskLabel[task.status]}
+                                {t(`tasks.status.${task.status}`)}
                               </span>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <Empty title="Nothing on the to-do list">Your team is all caught up.</Empty>
+                        <Empty title={t("tasks.overviewEmptyTitle")}>{t("tasks.overviewEmptyBody")}</Empty>
                       )}
                     </section>
                   </div>
@@ -2188,10 +2154,10 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                   <div className="overview-bottom">
                     <section className="panel members-panel">
                       <PanelHeading
-                        kicker="THE HEART OF YOUR CLUB"
-                        title="Member directory"
-                        action="All members"
-                        onClick={() => setSection("Members")}
+                        kicker={t("members.overviewKicker")}
+                        title={t("members.overviewTitle")}
+                        action={t("members.allMembers")}
+                        onClick={() => setSection("members")}
                       />
                       <MemberTable members={data.members.slice(0, 4)} />
                     </section>
@@ -2199,25 +2165,25 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                       <span className="notice-icon">
                         <Icon name="megaphone" size={23} />
                       </span>
-                      <div className="eyebrow">FROM THE NOTICEBOARD</div>
+                      <div className="eyebrow">{t("overview.noticeKicker")}</div>
                       {data.announcements[0] ? (
                         <>
                           <h2>{data.announcements[0].title}</h2>
                           <p>{data.announcements[0].body}</p>
-                          <span className="notice-date">{date(data.announcements[0].publishedAt)}</span>
+                          <span className="notice-date">{fmt.date(data.announcements[0].publishedAt)}</span>
                         </>
                       ) : (
                         <>
-                          <h2>A home for your updates.</h2>
-                          <p>No announcements have been recorded yet.</p>
+                          <h2>{t("overview.noticeEmptyTitle")}</h2>
+                          <p>{t("overview.noticeEmptyBody")}</p>
                         </>
                       )}
                       <button
                         type="button"
                         className="text-button"
-                        onClick={() => setSection("Announcements")}
+                        onClick={() => setSection("announcements")}
                       >
-                        Read announcements <Icon name="arrow" size={17} />
+                        {t("overview.readAnnouncements")} <Icon name="arrow" size={17} />
                       </button>
                     </section>
                   </div>
@@ -2225,7 +2191,7 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
               )}
 
               {/* ── Members ──────────────────────────────────────────────── */}
-              {section === "Members" && (
+              {section === "members" && (
                 <>
                   {showForm && (
                     <section
@@ -2234,15 +2200,13 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                     >
                       <div className="form-heading">
                         <div>
-                          <h2 id="member-form-heading">Welcome someone new.</h2>
-                          <p>
-                            Add a member to the local club directory. Dues start as unpaid.
-                          </p>
+                          <h2 id="member-form-heading">{t("members.formTitle")}</h2>
+                          <p>{t("members.formBody")}</p>
                         </div>
                         <button
                           type="button"
                           className="icon-button"
-                          aria-label="Close member form"
+                          aria-label={t("members.closeForm")}
                           onClick={() => setShowForm(false)}
                           disabled={saving}
                         >
@@ -2252,11 +2216,11 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                       <form onSubmit={addMember}>
                         <div className="form-fields">
                           <label>
-                            Full name
+                            {t("members.fullName")}
                             <input
                               ref={nameInput}
                               name="name"
-                              placeholder="e.g. Alex Kumar"
+                              placeholder={t("members.namePlaceholder")}
                               autoComplete="name"
                               minLength={2}
                               maxLength={120}
@@ -2265,11 +2229,11 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                             />
                           </label>
                           <label>
-                            Email address
+                            {t("members.email")}
                             <input
                               name="email"
                               type="email"
-                              placeholder="alex@example.com"
+                              placeholder={t("members.emailPlaceholder")}
                               autoComplete="email"
                               maxLength={254}
                               required
@@ -2277,7 +2241,7 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                             />
                           </label>
                           <button type="submit" className="button primary" disabled={saving}>
-                            {saving ? "Adding member…" : "Add to directory"}
+                            {saving ? t("members.adding") : t("members.addToDirectory")}
                             <Icon name="arrow" size={18} />
                           </button>
                         </div>
@@ -2291,34 +2255,31 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                   )}
                   <section className="panel">
                     <PanelHeading
-                      title="Club directory"
-                      kicker={`${data.metrics.members} MEMBERS · ${data.metrics.activeMembers} ACTIVE`}
+                      title={t("members.directoryTitle")}
+                      kicker={t("members.directoryKicker", { members: data.metrics.members, active: data.metrics.activeMembers })}
                     />
                     <MemberTable members={data.members} />
                   </section>
-                  <PreviewNote>
-                    Member creation is connected to the local database. Dues collection, benefits, membership
-                    editing, and renewal reminders are planned.
-                  </PreviewNote>
+                  <PreviewNote>{t("members.preview")}</PreviewNote>
                 </>
               )}
 
               {/* ── Events ───────────────────────────────────────────────── */}
-              {section === "Events" && (
+              {section === "events" && (
                 <>
                   <div className="event-cards">
                     {data.events.map((event) => (
                       <article key={event.id} className="panel event-card">
                         <div className="event-card-top">
                           <div className="date-tile coral">
-                            <span>{month(event.startsAt)}</span>
-                            <strong>{day(event.startsAt)}</strong>
+                            <span>{fmt.month(event.startsAt)}</span>
+                            <strong>{fmt.day(event.startsAt)}</strong>
                           </div>
-                          <span className="badge neutral">Recorded event</span>
+                          <span className="badge neutral">{t("events.recorded")}</span>
                         </div>
                         <h2>{event.title}</h2>
                         <p>
-                          {event.venue} · {date(event.startsAt)}
+                          {event.venue} · {fmt.date(event.startsAt)}
                         </p>
                         <div className="capacity-bar">
                           <span
@@ -2328,17 +2289,17 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                           />
                         </div>
                         <div className="event-numbers">
-                          <span>{event.registered} registered</span>
-                          <span>{event.capacity} capacity</span>
+                          <span>{t("events.registeredCount", { count: event.registered })}</span>
+                          <span>{t("events.capacityCount", { count: event.capacity })}</span>
                         </div>
                         <div className="ticket-prices">
                           <div>
-                            <span>Member ticket</span>
-                            <strong>{currency(event.memberPricePaise)}</strong>
+                            <span>{t("events.memberTicket")}</span>
+                            <strong>{fmt.currency(event.memberPricePaise)}</strong>
                           </div>
                           <div>
-                            <span>Guest ticket</span>
-                            <strong>{currency(event.guestPricePaise)}</strong>
+                            <span>{t("events.guestTicket")}</span>
+                            <strong>{fmt.currency(event.guestPricePaise)}</strong>
                           </div>
                         </div>
                         {user.permissions.includes("events:report") && <EventReportCard eventId={event.id} />}
@@ -2347,32 +2308,29 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                   </div>
                   {!data.events.length && (
                     <section className="panel">
-                      <Empty title="An open calendar">No events are recorded yet.</Empty>
+                      <Empty title={t("events.emptyTitle")}>{t("events.emptyBody")}</Empty>
                     </section>
                   )}
-                  <PreviewNote>
-                    Event creation, ticket sales, member discounts, capacity enforcement, and check-in are
-                    planned. Prices and attendance shown here are sample records.
-                  </PreviewNote>
+                  <PreviewNote>{t("events.preview")}</PreviewNote>
                 </>
               )}
 
               {/* ── Announcements ─────────────────────────────────────────── */}
-              {section === "Announcements" && (
+              {section === "announcements" && (
                 <>
                   <div className="communication-toolbar">
                     <div>
-                      <div className="eyebrow">PUBLISHED ARCHIVE</div>
+                      <div className="eyebrow">{t("announcements.archiveKicker")}</div>
                       <p className="communication-count">
-                        {visibleAnnouncements.length} of {data.announcements.length} announcements
+                        {t("announcements.count", { visible: visibleAnnouncements.length, total: data.announcements.length })}
                       </p>
                     </div>
                     <label className="search-field">
-                      <span className="sr-only">Search announcements</span>
+                      <span className="sr-only">{t("announcements.search")}</span>
                       <input
                         type="search"
                         value={announcementQuery}
-                        placeholder="Search updates"
+                        placeholder={t("announcements.searchPlaceholder")}
                         onChange={(event) => setAnnouncementQuery(event.target.value)}
                       />
                     </label>
@@ -2384,10 +2342,10 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                           <Icon name="megaphone" size={22} />
                         </span>
                         <div>
-                          <span className="eyebrow">{date(item.publishedAt)}</span>
+                          <span className="eyebrow">{fmt.date(item.publishedAt)}</span>
                           <h2>{item.title}</h2>
                           <details className="announcement-details">
-                            <summary>Read announcement</summary>
+                            <summary>{t("announcements.read")}</summary>
                             <p>{item.body}</p>
                           </details>
                         </div>
@@ -2396,48 +2354,40 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                   </div>
                   {!visibleAnnouncements.length && (
                     <section className="panel">
-                      <Empty title={data.announcements.length ? "No matching announcements" : "A quiet noticeboard"}>
-                        {data.announcements.length
-                          ? "Try a different search term."
-                          : "No published announcements are available yet."}
+                      <Empty title={data.announcements.length ? t("announcements.noMatch") : t("announcements.quiet")}>
+                        {data.announcements.length ? t("announcements.differentSearch") : t("announcements.none")}
                       </Empty>
                     </section>
                   )}
-                  <PreviewNote>
-                    Publishing, editing, mailing-list delivery, and announcement history management are
-                    planned. No emails are sent by this starter.
-                  </PreviewNote>
+                  <PreviewNote>{t("announcements.preview")}</PreviewNote>
                 </>
               )}
 
               {/* ── Merchandise ───────────────────────────────────────────── */}
-              {section === "Merchandise" && (
+              {section === "merchandise" && (
                 <>
                   <div className="catalogue-notice" role="status">
                     <Icon name="bag" size={16} />
-                    <span>
-                      Showing the server-backed product catalogue. Ordering is unavailable until the merchandise
-                      variant and checkout APIs are connected.
-                    </span>
+                    <span>{t("merch.notice")}</span>
                   </div>
                   <div className="product-grid">
                     {data.products.map((product, index) => (
                       <article key={product.id} className="panel product-card">
                         <div className={`product-art art-${index % 3}`}>
                           <Icon name="bag" size={64} />
-                          <span>THE CLUB COLLECTION</span>
+                          <span>{t("merch.collectionKicker")}</span>
                         </div>
                         <div className="product-details">
                           <div>
                             <h2>{product.name}</h2>
                             <span className={product.stock > 0 ? "stock-available" : "stock-empty"}>
-                              {product.stock > 0 ? `${product.stock} in stock` : "Out of stock"}
+                              {product.stock > 0 ? t("merch.inStock", { count: product.stock }) : t("merch.outOfStock")}
                             </span>
                           </div>
                           <div className="product-price">
-                            <strong>{currency(product.pricePaise)}</strong>
+                            <strong>{fmt.currency(product.pricePaise)}</strong>
                             <button className="button-small" type="button" disabled aria-disabled="true">
-                              Variants unavailable
+                              {t("merch.variantsUnavailable")}
                             </button>
                           </div>
                         </div>
@@ -2446,82 +2396,81 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                   </div>
                   {!data.products.length && (
                     <section className="panel">
-                      <Empty title="Your next club essential">No merchandise is recorded yet.</Empty>
+                      <Empty title={t("merch.emptyTitle")}>{t("merch.emptyBody")}</Empty>
                     </section>
                   )}
-                  <PreviewNote>
-                    Product management, size variants, order collection, checkout, and stock updates are
-                    planned. No purchase can be made here yet.
-                  </PreviewNote>
+                  <PreviewNote>{t("merch.preview")}</PreviewNote>
                 </>
               )}
 
               {/* ── Tasks ────────────────────────────────────────────────── */}
-              {section === "Tasks" && <TaskBoard members={data.members} events={data.events} user={user} onChanged={refreshDashboard} />}
+              {section === "tasks" && <TaskBoard members={data.members} events={data.events} user={user} onChanged={refreshDashboard} />}
 
               {/* ── My Expenses ───────────────────────────────────────────── */}
-              {section === "My Expenses" && <MyExpenses user={user} events={data.events} />}
+              {section === "expenses" && <MyExpenses user={user} events={data.events} />}
 
               {/* ── Treasury ─────────────────────────────────────────────── */}
-              {section === "Treasury" && user.permissions.includes("ledger:read") && <Treasury onChanged={refreshDashboard} />}
+              {section === "treasury" && user.permissions.includes("ledger:read") && <Treasury onChanged={refreshDashboard} />}
             </>
           )}
 
           <footer className="workspace-footer">
             <span>
               <span className="footer-dot" />
-              MODE starter workspace
+              {t("workspace.footerBrand")}
             </span>
-            <p>Fictional seed records · Local database · Reimbursements record payments made outside MODE.</p>
+            <p>{t("workspace.footerNote")}</p>
           </footer>
         </main>
       </div>
     </div>
   );
 }
+
 export default function Home() {
+  const { t, apiError } = useI18n();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
-    fetch("/api/auth/me", {cache:"no-store"}).then(async response => {
-      if (response.ok) { const result = await response.json(); if(active) setUser(result.user); }
-      else if (response.status !== 401) throw new Error("Unable to check your session. Please sign in again.");
-    }).catch(error => {if(active)setError(error.message);}).finally(()=>{if(active)setLoading(false);});
-    return () => {active=false;};
-  }, []);
+    fetch("/api/auth/me", { cache: "no-store" }).then(async response => {
+      if (response.ok) { const result = await response.json(); if (active) setUser(result.user); }
+      else if (response.status !== 401) throw new Error(t("auth.sessionFailed"));
+    }).catch(error => { if (active) setError(error.message); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [t]);
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = new FormData(event.currentTarget);
     setBusy(true); setError("");
     try {
-      const response = await fetch("/api/auth/login", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:String(values.get("email")),password:String(values.get("password"))})});
+      const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: String(values.get("email")), password: String(values.get("password")) }) });
       const result = await response.json();
-      if(!response.ok)throw new Error(result.error || "Sign in failed.");
+      if (!response.ok) throw new Error(apiError(result, "auth.signInFailed"));
       setUser(result.user);
-    } catch(error) {setError(error instanceof Error ? error.message : "Sign in failed.");}
-    finally {setBusy(false);}
+    } catch (error) { setError(error instanceof Error ? error.message : t("auth.signInFailed")); }
+    finally { setBusy(false); }
   }
   async function signOut() {
     setError("");
     try {
-      const response = await fetch("/api/auth/logout", {method:"POST"});
-      if(!response.ok)throw new Error("Sign out failed. Please try again.");
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) throw new Error(t("auth.signOutFailed"));
       setUser(null);
-    } catch(error) {setError(error instanceof Error ? error.message : "Sign out failed.");}
+    } catch (error) { setError(error instanceof Error ? error.message : t("auth.signOutFailed")); }
   }
-  if(loading)return <main className="loading-state" role="status">Loading your workspace…</main>;
-  if(user)return <>{error && <p role="alert">{error}</p>}<Workspace key={user.id} user={user} onLogout={()=>void signOut()} /></>;
+  if (loading) return <main className="loading-state" role="status">{t("auth.loading")}</main>;
+  if (user) return <>{error && <p role="alert">{error}</p>}<Workspace key={user.id} user={user} onLogout={() => void signOut()} /></>;
   return <main className="auth-screen"><section className="auth-card">
-    <h1>Sign in to MODE</h1><p>Use your club account to manage tasks and expenses.</p>
+    <div className="auth-card-tools"><LanguageSwitcher /></div>
+    <h1>{t("auth.title")}</h1><p>{t("auth.body")}</p>
     <form onSubmit={signIn}>
-      <label htmlFor="email">Email</label><input id="email" name="email" type="email" autoComplete="username" required />
-      <label htmlFor="password">Password</label><input id="password" name="password" type="password" autoComplete="current-password" required />
+      <label htmlFor="email">{t("auth.email")}</label><input id="email" name="email" type="email" autoComplete="username" required />
+      <label htmlFor="password">{t("auth.password")}</label><input id="password" name="password" type="password" autoComplete="current-password" required />
       {error && <p role="alert">{error}</p>}
-      <button className="button primary" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+      <button className="button primary" disabled={busy}>{busy ? t("auth.signingIn") : t("auth.signIn")}</button>
     </form>
   </section></main>;
 }
-

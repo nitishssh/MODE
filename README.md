@@ -32,6 +32,7 @@ Native API clients can log in without browser Origin headers and use the returne
 ## What works today
 
 - Responsive dashboard and navigation for all six club areas.
+- Interface in English and eleven of the most spoken Indian languages (Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Malayalam, Punjabi, Assamese), chosen from the browser's language or the in-app switcher.
 - Browser sign-in/sign-out, task editing, receipt-backed expenses, treasury review and ledger CSV export.
 - Backend APIs for dues/renewals, simulated reminders, ticket holds, payment confirmation, check-in and merchandise orders with stock holds.
 - SQLite-backed dashboard, health check and member directory.
@@ -53,8 +54,9 @@ Next.js App Router · React · TypeScript · Zod · native SQLite · plain CSS.
 
 ```text
 src/app/page.tsx          Sign-in, student workspace and member form
-src/app/globals.css       Responsive design
+src/app/globals.css       Responsive design, script fallbacks and right-to-left layout
 src/app/api/              Auth, memberships, tickets, tasks, expenses and ledger
+src/i18n/                 Locale registry, dictionaries (12 languages), formatters and provider
 src/lib/contracts.ts     Shared API types
 src/lib/database.ts      SQLite connection and module composition
 src/lib/db/              Versioned schema migrations and transaction helpers
@@ -88,3 +90,12 @@ The web manifest provides the MODE icon and standalone display metadata. On a su
 ### Authenticated tasks and reimbursements
 
 The web workspace now has sign-in, a task board, personal expense submissions and treasury review. Task assignment and status changes respect the signed-in member’s permissions. New claims require a JPG, PNG or PDF receipt up to 5 MB, private to their uploader and club finance reviewers. Reimbursements post exactly once to the shared ledger, alongside dues and ticket income. The register links to exact source records and shows the paying officer; its CSV export matches the register totals. Schema v10 preserves existing data and legacy receipt files. See [API](docs/API.md), [demo walkthrough](docs/DEMO.md) and [local reimbursement verification](docs/REIMBURSEMENT-VERIFICATION.md).
+
+## Languages
+
+The web workspace is available in English and eleven of the most spoken scheduled languages of India: Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Malayalam, Punjabi and Assamese. The language is chosen once per request by one rule: a valid `mode_lang` cookie wins, otherwise the browser's `Accept-Language` header, otherwise English. The switcher in the top bar (and on the sign-in screen) writes that cookie and re-renders the server tree, so `<html lang>` and `dir` are always correct and Urdu renders right-to-left.
+
+Dictionaries live in `src/i18n/dictionaries/<code>.ts`; English is the master and the `Dictionary` type plus `tests/i18n.test.ts` force every language to carry the same keys and placeholders. Only the requested language is loaded, on the server, so none of them ship in the browser bundle. Amounts and dates use `Intl` with the matching `*-IN` locale and Latin digits in every language, so figures on screen always match the ledger and the CSV export. API error messages are mapped by their `code` to the active language; the API itself stays English.
+
+To add a language: append it to `LOCALES` in `src/i18n/locales.ts`, add `src/i18n/dictionaries/<code>.ts` typed as `Dictionary`, and register it in `src/i18n/dictionaries/index.ts`. The test suite fails until every key is translated.
+

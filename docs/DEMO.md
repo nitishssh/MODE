@@ -75,6 +75,13 @@ Target coding completion: 11 October 2026 at 10:00 AM IST. Confirm the organizer
 
 The default development password for these synthetic accounts is mode-demo-2026; use MODE_DEMO_PASSWORD for a private production-mode demo. The local regression suite verifies migration, authorization, persistence and payment retry behavior. A live hosted deployment and physical-device installation still require separate verification.
 
+## Languages
+
+1. Open the sign-in screen and pick a language from the switcher (for example हिन्दी or தமிழ்). The page re-renders in that language without reloading data; the choice survives sign-in, navigation and a browser restart because it is stored in the `mode_lang` cookie.
+2. Pick اردو: the whole workspace mirrors to right-to-left, including the sidebar and drawer, while amounts stay left-to-right with Latin digits.
+3. Clear the cookie and set the browser's preferred language to Bengali: the workspace opens in বাংলা from the `Accept-Language` header. An unsupported browser language falls back to English.
+4. Trigger an API error in a non-English language (for example add a member with an email that already exists): the message shown is translated from the error `code`, while `GET /api/...` responses remain English.
+
 ## Treasury export and event reports
 
 1. Sign in as treasurer@example.com after recording an external reimbursement. Open Treasury and compare the paid expense, payment reference and remaining balance.
