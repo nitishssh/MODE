@@ -8,6 +8,7 @@ import { createDashboardModule } from "./modules/dashboard";
 import { createDuesModule } from "./modules/dues";
 import { createEventsModule } from "./modules/events";
 import { createIdentityModule } from "./modules/identity";
+import { createMerchandiseModule } from "./modules/merchandise";
 import { ledgerBalance, listLedger, postLedgerEntry, reconcileLedger, type LedgerEntryInput } from "./modules/ledger";
 
 export { DuplicateMemberError } from "./errors";
@@ -34,6 +35,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date; 
   const dashboard = createDashboardModule(ctx, identity);
   const dues = createDuesModule(ctx, identity);
   const events = createEventsModule(ctx, identity);
+  const merchandise = createMerchandiseModule(ctx, identity);
   let closed = false;
 
   return {
@@ -42,6 +44,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date; 
     ...createWorkspaceModule(ctx, identity, options.receiptsDir ?? resolve(dirname(path === ":memory:" ? ".data/mode.sqlite" : path), "receipts")),
     dues,
     events,
+    merchandise,
     ledger: {
       post: (input: LedgerEntryInput) => postLedgerEntry(ctx, input),
       list: () => listLedger(db),

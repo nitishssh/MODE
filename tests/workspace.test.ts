@@ -113,7 +113,7 @@ test("receipt upload is owned by session and private across accounts",async()=>{
   });
 });
 
-test("schema v6 upgrades preserve members, passes, sessions and opening balances",()=>{
+test("schema v8 upgrades preserve members, passes, sessions and opening balances",()=>{
   const directory=mkdtempSync(join(tmpdir(),"mode-migration-"));
   const path=join(directory,"test.sqlite");
   try{
@@ -121,14 +121,14 @@ test("schema v6 upgrades preserve members, passes, sessions and opening balances
     const session=db.login({email:DEMO.admin,password:"mode-demo-2026"});
     const pass=db.getPass(session.member.id),balance=db.ledger.balance(),count=db.getMembers().length;
     db.close();
-    // Reconstruct the released v6 shape by removing only v7's additive schema.
+    // Reconstruct the released v8 shape by removing only v9's additive schema.
     const raw=new DatabaseSync(path);
     raw.exec("DROP TABLE expenses; DROP TABLE receipts; DROP INDEX tasks_club_idx;");
     for(const column of ["club_id","description","assignee_id","event_id","due_at","created_at"])raw.exec("ALTER TABLE tasks DROP COLUMN "+column);
     for(const column of ["club_id","event_id"])raw.exec("ALTER TABLE transactions DROP COLUMN "+column);
-    raw.exec("ALTER TABLE events DROP COLUMN fundraiser_goal_paise; PRAGMA user_version=6;");raw.close();
+    raw.exec("ALTER TABLE events DROP COLUMN fundraiser_goal_paise; PRAGMA user_version=8;");raw.close();
     db=openClubDatabase(path,{now:()=>FIXED_NOW});
-    assert.equal(db.health().schemaVersion,7);assert.equal(db.getMembers().length,count);
+    assert.equal(db.health().schemaVersion,9);assert.equal(db.getMembers().length,count);
     assert.equal(db.ledger.balance(),balance);assert.deepEqual(db.getPass(session.member.id),pass);
     assert.equal(db.getActor(session.token)?.memberId,session.member.id);
     assert.equal(db.getTasks(db.getActor(session.token)!).length,3);
@@ -195,10 +195,14 @@ test("dues, ticket income and expenses share scoped treasury and combined event 
     const ticket=db.events.bookTicket(member,event.id);
     db.events.confirmTicket(admin,ticket.id,{reference:"TICKET-REF"});
     db.dues.recordDues(admin,{memberId:member.memberId,reference:"DUES-REF"});
+    const product=db.merchandise.createProduct(admin,{name:"Integration shirt",pricePaise:1000,variants:[{size:"M",stock:2}]});
+    const order=db.merchandise.createOrder(member,{variantId:product.variants[0].id});
+    db.merchandise.confirmOrder(admin,order.id,{reference:"MERCH-REF"});
     db.createTask(admin,{title:"Prepare hall",eventId:event.id,dueAt:"2026-10-09T12:00:00Z"});
     const entries=db.getLedgerEntries(admin);
     assert.ok(entries.some(e=>e.reference==="TICKET-REF" && e.eventId===event.id && e.category==="events"));
     assert.ok(entries.some(e=>e.reference==="DUES-REF" && e.category==="membership"));
+    assert.ok(entries.some(e=>e.reference==="MERCH-REF" && e.amountPaise===1000));
     const {GET:report}=await import("../src/app/api/events/[id]/report/route");
     const response=await report(apiRequest("/api/events/report",{cookie:await loginCookie(DEMO.admin)}),routeParams({id:event.id}));
     assert.equal(response.status,200);
