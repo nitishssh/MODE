@@ -1,6 +1,7 @@
 import type { Announcement, Dashboard, Event, Product, Task, Transaction } from "../contracts";
 import { DEFAULT_CLUB_ID } from "../db/migrations";
-import { int, text, type DbContext, type Row } from "../db/core";
+import { clubDate, int, text, type DbContext, type Row } from "../db/core";
+import { MEMBERSHIP_ACTIVE_SQL } from "./membership-state";
 import { hasPermission } from "../auth/permissions";
 import type { Actor, IdentityModule } from "./identity";
 
@@ -14,7 +15,6 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
   function getDashboard(actor: Actor | null = null): Dashboard {
     const clubId = actor?.clubId ?? DEFAULT_CLUB_ID;
     const timestamp = ctx.now().toISOString();
-    const today = timestamp.slice(0, 10);
     const canSeeMembers = actor !== null && hasPermission(actor.role, "members:read");
     const canSeeFinance = actor !== null && hasPermission(actor.role, "ledger:read");
     const members = identity.getMembers(clubId);
@@ -72,9 +72,9 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
       },
       metrics: {
         members: members.length,
-        activeMembers: members.filter(
-          (member) => member.duesStatus === "paid" && member.expiresOn !== null && member.expiresOn >= today,
-        ).length,
+        activeMembers: int(
+          (db.prepare(`SELECT COUNT(*) AS n FROM members WHERE club_id = ? AND ${MEMBERSHIP_ACTIVE_SQL}`).get(clubId, clubDate(ctx.now())) as Row).n,
+        ),
         upcomingEvents: events.filter((event) => event.startsAt >= timestamp).length,
         balancePaise: canSeeFinance ? int(balance?.balance ?? 0) : 0,
       },

@@ -1,10 +1,11 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { DbContext } from "./db/core";
+import { transaction, type DbContext } from "./db/core";
 import { SCHEMA_VERSION, migrate } from "./db/migrations";
 import { createDashboardModule } from "./modules/dashboard";
 import { createIdentityModule } from "./modules/identity";
+import { ledgerBalance, listLedger, postLedgerEntry, reconcileLedger, type LedgerEntryInput } from "./modules/ledger";
 
 export { DuplicateMemberError } from "./errors";
 export { SCHEMA_VERSION };
@@ -33,6 +34,14 @@ export function openClubDatabase(filename: string, options: { now?: () => Date }
   return {
     ...identity,
     ...dashboard,
+    ledger: {
+      post: (input: LedgerEntryInput) => postLedgerEntry(ctx, input),
+      list: () => listLedger(db),
+      balance: () => ledgerBalance(db),
+      reconcile: () => reconcileLedger(db),
+    },
+    /** Run `fn` atomically; financial modules post their ledger row inside it. */
+    transaction: <T>(fn: () => T): T => transaction(ctx, fn),
     health: () => {
       db.prepare("SELECT 1").get();
       return { status: "ok" as const, database: "sqlite" as const, schemaVersion: SCHEMA_VERSION };

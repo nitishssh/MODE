@@ -9,6 +9,10 @@ export interface Member {
   expiresOn: string | null;
   duesStatus: "paid" | "unpaid";
   role: Role;
+  /** Derived from `expiresOn` against the club calendar day; see membershipState(). */
+  membership: "active" | "expired" | "none";
+  /** 10-character Crockford base32 door code; the QR token is only returned to the member themselves. */
+  shortCode: string;
 }
 
 export interface Event {
@@ -49,6 +53,21 @@ export interface Transaction {
   kind: "income" | "expense";
   amountPaise: number;
   occurredAt: string;
+}
+
+/** Ledger row with its source identity (P0). Each (sourceType, sourceId) posts exactly once. */
+export interface LedgerEntry extends Transaction {
+  sourceType: string | null;
+  sourceId: string | null;
+  recordedBy: string | null;
+}
+
+/** What a member shows at the door: QR payload and typed fallback. */
+export interface MemberPass {
+  qrToken: string;
+  shortCode: string;
+  membership: "active" | "expired" | "none";
+  expiresOn: string | null;
 }
 
 export interface Dashboard {

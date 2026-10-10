@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const GET = route("session lookup", (request) => {
-  const actor = requireActor(request, getDatabase());
-  return json({ user: toSessionUser(actor) });
+  const db = getDatabase();
+  const actor = requireActor(request, db);
+  return json({ user: toSessionUser(actor), pass: db.getPass(actor.memberId) });
 });
