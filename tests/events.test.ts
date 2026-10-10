@@ -134,6 +134,8 @@ test("payment confirmation issues one ticket, posts one ledger row and tolerates
 
     const report = db.events.eventReport(organizer, event.id);
     assert.equal(report.incomePaise, 10000);
+    assert.equal(report.netPaise, 10000);
+    assert.equal(report.fundraiser, null, "ordinary event has no goal");
     assert.deepEqual(report.bookings, { reserved: 1, confirmed: 1, cancelled: 0, expired: 0 });
     assert.equal(report.attendees.length, 1);
   } finally {

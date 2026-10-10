@@ -107,8 +107,9 @@ export function createTreasuryModule(ctx: DbContext, identity: IdentityModule, l
     return (db.prepare(`SELECT * FROM transactions WHERE ${clauses.join(" AND ")} ORDER BY occurred_at DESC, id`).all(...params) as Row[]).map(mapEntry);
   }
 
+  /** Totals for the whole team (`ledger:summary`); line items and receipts stay behind `ledger:read`. */
   function summary(actor: Actor): LedgerSummary {
-    assertPermission(actor, "ledger:read");
+    assertPermission(actor, "ledger:summary");
     const totals = db
       .prepare(
         `SELECT COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_paise ELSE 0 END), 0) AS inflow,

@@ -21,6 +21,7 @@ export const eventInputSchema = z
     memberPricePaise: z.number().int().min(0),
     guestPricePaise: z.number().int().min(0),
     status: z.enum(["draft", "published", "cancelled"]).default("published"),
+    goalPaise: z.number().int().min(0).nullable().default(null),
   })
   .strict();
 
@@ -35,6 +36,7 @@ export const eventUpdateSchema = z
     memberPricePaise: z.number().int().min(0),
     guestPricePaise: z.number().int().min(0),
     status: z.enum(["draft", "published", "cancelled"]),
+    goalPaise: z.number().int().min(0).nullable(),
   })
   .partial()
   .strict();
@@ -58,6 +60,7 @@ function mapEvent(row: Row): EventDetails {
     description: text(row.description),
     status: row.status as EventDetails["status"],
     available: Math.max(0, capacity - registered),
+    goalPaise: row.goal_paise === null ? null : int(row.goal_paise),
   };
 }
 
@@ -107,15 +110,15 @@ export function createEventsModule(
     return mapEvent(row);
   }
 
-  function createEvent(actor: Actor, input: z.infer<typeof eventInputSchema>): EventDetails {
+  function createEvent(actor: Actor, input: z.input<typeof eventInputSchema>): EventDetails {
     assertPermission(actor, "events:write");
     const data = parseInput(eventInputSchema, input);
     const id = randomUUID();
     const now = ctx.now().toISOString();
     db.prepare(
-      `INSERT INTO events (id, title, starts_at, venue, capacity, registered, member_price_paise, guest_price_paise, club_id, description, status, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, data.title, new Date(data.startsAt).toISOString(), data.venue, data.capacity, data.memberPricePaise, data.guestPricePaise, actor.clubId, data.description, data.status, actor.memberId, now);
+      `INSERT INTO events (id, title, starts_at, venue, capacity, registered, member_price_paise, guest_price_paise, club_id, description, status, created_by, created_at, goal_paise)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, data.title, new Date(data.startsAt).toISOString(), data.venue, data.capacity, data.memberPricePaise, data.guestPricePaise, actor.clubId, data.description, data.status, actor.memberId, now, data.goalPaise);
     identity.recordAudit(actor, "event.created", "event", id, { title: data.title });
     return requireEvent(actor.clubId, id);
   }
@@ -130,8 +133,8 @@ export function createEventsModule(
       }
       const next = { ...current, ...data, startsAt: data.startsAt ? new Date(data.startsAt).toISOString() : current.startsAt };
       db.prepare(
-        "UPDATE events SET title = ?, description = ?, starts_at = ?, venue = ?, capacity = ?, member_price_paise = ?, guest_price_paise = ?, status = ? WHERE id = ? AND club_id = ?",
-      ).run(next.title, next.description, next.startsAt, next.venue, next.capacity, next.memberPricePaise, next.guestPricePaise, next.status, eventId, actor.clubId);
+        "UPDATE events SET title = ?, description = ?, starts_at = ?, venue = ?, capacity = ?, member_price_paise = ?, guest_price_paise = ?, status = ?, goal_paise = ? WHERE id = ? AND club_id = ?",
+      ).run(next.title, next.description, next.startsAt, next.venue, next.capacity, next.memberPricePaise, next.guestPricePaise, next.status, next.goalPaise, eventId, actor.clubId);
       identity.recordAudit(actor, "event.updated", "event", eventId, data);
       return requireEvent(actor.clubId, eventId);
     });
@@ -314,9 +317,43 @@ export function createEventsModule(
       const byStatus = { reserved: 0, confirmed: 0, cancelled: 0, expired: 0 };
       for (const row of counts) byStatus[text(row.status) as keyof typeof byStatus] = int(row.n);
       const checkedIn = int((db.prepare("SELECT COUNT(*) AS n FROM check_ins WHERE event_id = ?").get(eventId) as Row).n);
-      const income = db
-        .prepare("SELECT COALESCE(SUM(amount_paise), 0) AS total FROM transactions WHERE event_id = ? AND kind = 'income'")
+      const money = db
+        .prepare(
+          `SELECT COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_paise ELSE 0 END), 0) AS income,
+                  COALESCE(SUM(CASE WHEN kind = 'expense' THEN amount_paise ELSE 0 END), 0) AS expense
+           FROM transactions WHERE event_id = ?`,
+        )
         .get(eventId) as Row;
+      const incomePaise = int(money.income);
+      const expensePaise = int(money.expense);
+      const netPaise = incomePaise - expensePaise;
+      const nowIso = ctx.now().toISOString();
+      const taskRows = db
+        .prepare(
+          `SELECT status, COUNT(*) AS n, SUM(CASE WHEN due_at IS NOT NULL AND status != 'done' AND due_at < ? THEN 1 ELSE 0 END) AS overdue
+           FROM tasks WHERE event_id = ? GROUP BY status`,
+        )
+        .all(nowIso, eventId) as Row[];
+      const tasks = { total: 0, todo: 0, inProgress: 0, done: 0, overdue: 0 };
+      for (const row of taskRows) {
+        const n = int(row.n);
+        tasks.total += n;
+        tasks.overdue += int(row.overdue ?? 0);
+        if (text(row.status) === "todo") tasks.todo += n;
+        else if (text(row.status) === "in_progress") tasks.inProgress += n;
+        else tasks.done += n;
+      }
+      const fundraiser =
+        event.goalPaise === null
+          ? null
+          : {
+              goalPaise: event.goalPaise,
+              raisedPaise: netPaise,
+              remainingPaise: Math.max(0, event.goalPaise - netPaise),
+              percent: event.goalPaise === 0 ? 100 : Math.min(100, Math.round((netPaise / event.goalPaise) * 100)),
+              // On track = goal met, or no overdue tasks while the event is still ahead.
+              onTrack: netPaise >= event.goalPaise || (tasks.overdue === 0 && event.startsAt > nowIso),
+            };
       const attendees = (
         db
           .prepare(
@@ -330,7 +367,11 @@ export function createEventsModule(
         event,
         bookings: byStatus,
         checkedIn,
-        incomePaise: int(income.total),
+        incomePaise,
+        expensePaise,
+        netPaise,
+        fundraiser,
+        tasks,
         attendees,
       };
     });

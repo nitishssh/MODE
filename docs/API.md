@@ -41,6 +41,7 @@ Roles: `member`, `volunteer`, `organizer`, `treasurer`, `admin` (club lead). Sel
 | `roles:manage` | | | | | ✓ |
 | `members:create` | | | ✓ | | ✓ |
 | `members:read` (directory with emails) | | | ✓ | ✓ | ✓ |
+| `members:lookup` (door check, masked emails) | | ✓ | ✓ | ✓ | ✓ |
 | `membership:record_payment` | | | ✓ | ✓ | ✓ |
 | `membership:reminders` | | | ✓ | | ✓ |
 | `events:write` | | | ✓ | | ✓ |
@@ -51,7 +52,8 @@ Roles: `member`, `volunteer`, `organizer`, `treasurer`, `admin` (club lead). Sel
 | `products:write` | | | ✓ | | ✓ |
 | `orders:create` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `orders:fulfil` | | | ✓ | | ✓ |
-| `ledger:read` | | | | ✓ | ✓ |
+| `ledger:read` (line items, receipts, export) | | | | ✓ | ✓ |
+| `ledger:summary` (totals at a glance) | | ✓ | ✓ | ✓ | ✓ |
 | `expenses:submit` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `expenses:review` | | | | ✓ | ✓ |
 | `announcements:write` | | | ✓ | | ✓ |
@@ -75,6 +77,8 @@ Membership is a dated period on a plan, not a flag. The shared rule used by tick
 | GET | `/api/members/{id}/membership` | `members:read` | 200 `{membership:MembershipStatus}` | 401; 403; 404 |
 | POST | `/api/membership/payments` | `membership:record_payment` | 201 created · 200 replayed `{membership,payment,created,status}` | 400 missing reference / wrong amount; 401; 403; 404 member or plan; 409 reference reused or duplicate free enrolment |
 | POST | `/api/membership/reminders/run` | `membership:reminders` | 200 `{asOf,horizon,candidates,created,skipped}` | 401; 403 |
+| GET | `/api/members/lookup?q=` | `members:lookup` | 200 `{matches:MemberLookupResult[]}` | 400 under 2 chars; 401; 403 |
+| GET | `/api/membership/roster?state=` | `members:read` | 200 `{counts:{active,expired,never},roster:RosterEntry[]}` | 400; 401; 403 |
 
 Record-dues request:
 
@@ -89,6 +93,11 @@ Record-dues request:
 - Free plans need no payment; enrolling again while that free period is active is `409 duplicate_membership`.
 - Every paid dues record posts exactly one ledger income row referencing the payment. `Member.duesStatus`/`expiresOn` mirror the latest period for the dashboard; `MembershipStatus` is authoritative.
 
+### Door check and dues roster
+
+- **Lookup** answers the brief's "is this person a member?" at a table or a door. `q` is an exact email or a partial name; results are capped at 10 and carry `membership:{active,memberPricing,planName,expiresOn}` with the email masked (`a***@example.com`), so volunteers can confirm membership without seeing the directory.
+- **Roster** answers "who still owes what": every member with `state` `active` | `expired` | `never`, `expiresOn` and `daysLeft`, ordered expired → never → active (soonest expiry first). It includes emails and therefore needs `members:read`.
+
 ### Renewal reminders and the outbox
 
 `POST /api/membership/reminders/run` with optional `{"daysAhead":14}` queues one `membership_renewal` message per membership ending within the window that has not been renewed. The dedupe key `renewal:<membershipId>` makes repeated runs idempotent. Use `MODE_DEMO_NOW` to move the clock during a demo.
@@ -97,9 +106,14 @@ Record-dues request:
 |---|---|---|---|
 | GET | `/api/outbox?kind=&status=` | `outbox:manage` | 200 `{transport,pending,messages:OutboxMessage[]}` |
 | GET | `/api/outbox/{id}` | `outbox:manage` | 200 `{message}` incl. `body` and `transport` |
-| POST | `/api/outbox/dispatch` | `outbox:manage` | 200 `{transport,previewed,remaining}` |
+| POST | `/api/outbox/dispatch` | `outbox:manage` | 200 `{transport,previewed,sent,failed,remaining}` |
 
-Outbox statuses are `pending`, `previewed`, `sent`, `failed`. The local transport is `preview` (`MODE_MAIL_TRANSPORT` unset): dispatch marks messages `previewed`, never `sent`. A real transport must be configured before anything is reported as sent; until then dispatch with `MODE_MAIL_TRANSPORT=smtp` answers `501 mail_transport_unavailable`. Recipient addresses are masked in listings and retries can never duplicate a message because each logical send has one row.
+Outbox statuses are `pending`, `previewed`, `sent`, `failed`. Two transports exist:
+
+- `preview` (default): dispatch marks messages `previewed`, never `sent`. This is the local demo mode.
+- `webhook` (`MODE_MAIL_TRANSPORT=webhook` plus `MODE_MAIL_WEBHOOK_URL`, optional `MODE_MAIL_WEBHOOK_TOKEN` sent as a Bearer header): dispatch POSTs each message as JSON `{id,kind,to,subject,body}` to the relay and marks it `sent` only on a 2xx response, otherwise `failed` with the reason in `lastError`. The relay can be any mail bridge the institution approves. A webhook setting without a URL silently stays in preview so nothing is ever reported as sent without a real path.
+
+Dispatch returns `{transport,previewed,sent,failed,remaining}`. Retries pick up only `pending`/`failed` rows and stop after 5 attempts, so a message is never delivered twice and permanent failures stay visible for manual follow-up. Recipient addresses are masked in listings.
 
 ## Event booking, member pricing and check-in (#5)
 
@@ -116,14 +130,15 @@ Outbox statuses are `pending`, `previewed`, `sent`, `failed`. The local transpor
 | POST | `/api/tickets/{code}/check-in` | `tickets:check_in` | 200 `{booking,attendee,checkedInAt}` | 401; 403; 404 unknown code; 409 `ticket_not_valid` · `already_checked_in` |
 | GET | `/api/events/{id}/report` | `events:report` | 200 `{report:EventReport}` | 401; 403; 404 |
 
-Event body: `{title, description?, startsAt (ISO), venue, capacity, memberPricePaise, guestPricePaise, status?}`. Confirm body: `{paymentReference, amountPaise}`.
+Event body: `{title, description?, startsAt (ISO), venue, capacity, memberPricePaise, guestPricePaise, status?, goalPaise?|null}`. Confirm body: `{paymentReference, amountPaise}`.
 
 - **Pricing** is decided by the server at booking time from the shared membership rule: active paid members pay `memberPricePaise`, everyone else (including expired members) pays `guestPricePaise`. The client never sends a price.
 - **Capacity** is reserved transactionally: `UPDATE events SET registered = registered + 1 WHERE registered < capacity` inside an immediate transaction, backed by the `registered <= capacity` CHECK constraint. Concurrent requests for the last seat get exactly one `201` and the rest `409 sold_out`.
 - **Reservation hold**: priced seats are `reserved` for 30 minutes (`reservedUntil`). Lapsed holds become `expired` and free their seat on the next booking, confirmation or report. Free seats are `confirmed` immediately.
 - **Tickets** (`ticketCode`, format `MODE-XXXX-XXXX`) exist only on `confirmed` bookings. A payment screenshot is not verification; an officer with `payments:confirm` records the reference. The reference is unique per club; replaying it returns the same ticket, reusing it on another booking is rejected, and the ledger receives exactly one `ticket` income row per payment, tagged with the event.
 - **Check-in** records one row per booking (primary key), so a second scan is `409 already_checked_in` with the original time. Cancelled, reserved and expired tickets are `409 ticket_not_valid`; unknown codes are `404`. Used tickets cannot be cancelled.
-- **Reports** return held/confirmed/cancelled/expired counts, check-ins, event income from the ledger and the confirmed attendee list with check-in time.
+- **Reports** return held/confirmed/cancelled/expired counts, check-ins, event `incomePaise`, `expensePaise` and `netPaise` from the ledger, task health (`total,todo,inProgress,done,overdue`) and the confirmed attendee list with check-in time.
+- **Fundraisers** are events with a `goalPaise`. The report then includes `fundraiser:{goalPaise,raisedPaise,remainingPaise,percent,onTrack}` where `raisedPaise` is the event's net from the ledger and `onTrack` is true when the goal is met, or when no event task is overdue and the event is still ahead. This answers "whether the fundraiser is on track" from real money and real tasks, not a manual flag.
 - Paid cancellations release the seat and are audited as paid; refunds are a treasury decision outside this ticket.
 
 ## Merchandise variants, orders and stock-safe checkout (#6)
@@ -154,7 +169,7 @@ The ledger is the single `transactions` table. Every realized cash movement is o
 
 | Method | Path | Permission | Success | Failure |
 |---|---|---|---|---|
-| GET | `/api/ledger/summary` | `ledger:read` | 200 `{summary:LedgerSummary}` | 401; 403 |
+| GET | `/api/ledger/summary` | `ledger:summary` (volunteer and up) | 200 `{summary:LedgerSummary}` | 401; 403 |
 | GET | `/api/ledger/entries?category=&eventId=` | `ledger:read` | 200 `{entries:LedgerEntry[]}` | 400; 401; 403 |
 | GET | `/api/ledger/export` | `ledger:read` | 200 `text/csv` attachment | 401; 403 |
 | POST | `/api/receipts` (multipart, field `file`) | `expenses:submit` | 201 `{receipt:Receipt}` | 400 no file; 401; 413 over 2 MB; 415 not JPEG/PNG/WebP/PDF |
@@ -167,6 +182,7 @@ The ledger is the single `transactions` table. Every realized cash movement is o
 Expense body: `{amountPaise, purpose, receiptId? | receiptReference?, eventId?}`. Decision body: `{note?}`. Payout body: `{paymentReference}`.
 
 - **States are distinct**: `submitted` → `approved` | `rejected`, and `approved` → `paid`. Submission and approval never touch the ledger; only `pay` writes the `reimbursement` expense row. `LedgerSummary.approvedUnpaidPaise` shows committed-but-unrealized cash separately from `balancePaise`.
+- **At a glance for the team**: totals (`summary`) are readable by every volunteer and officer; line items, receipts and the CSV export stay with the treasurer and admin.
 - **Separation of duties**: reviewers cannot approve, reject or pay their own requests. Every decision is audited (`expense.submitted/approved/rejected/paid`) with the actor, time and note.
 - **Receipts** are stored outside the web root under the database directory (`.data/receipts/<club>/<uuid>.<ext>`, gitignored), with size ≤ 2 MB, an allow-listed MIME type, a SHA-256 fingerprint and a sanitised display name. They are streamed only to the uploader or a reviewer with `nosniff` and no caching. One receipt can back only one expense request.
 - **Reconciliation**: `summary` returns inflow, outflow, balance, per-category totals and a per-event breakdown (`inflow`, `outflow`, `net`) joining ticket income and event-tagged expenses. The dashboard balance and the ledger summary are computed from the same rows. `export` is a plain CSV of all entries.
@@ -222,7 +238,7 @@ Create body: `{title, description?, assigneeId?|null, eventId?|null, dueAt? (ISO
 
 Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 characters. Email is trimmed, validated, lowercased, at most 254 characters, and unique case-insensitively. A new member has `duesStatus:"unpaid"`, `expiresOn:null` and `role:"member"`; the officer who created it is recorded in the audit trail. Creating a member does not record a payment, activate benefits or grant a login.
 
-`Dashboard` contains `club`, `metrics`, `members`, `events`, `announcements`, `products`, `tasks`, `transactions` and `access:{members:boolean,finance:boolean}`. Anonymous callers and plain members receive `members:[]`, `transactions:[]` and `balancePaise:0`; the `access` flags tell the UI which sections were withheld rather than empty. The starter active-member metric treats a paid membership as valid through its expiry date; the membership ticket (#4) finalizes the club-timezone rule.
+`Dashboard` contains `club`, `metrics`, `members`, `events`, `announcements`, `products`, `tasks`, `transactions` and `access:{members,finance,summary}`. Anonymous callers and plain members receive `members:[]`, `transactions:[]` and `balancePaise:0`; volunteers and officers (`ledger:summary`) see the balance total; treasurer and admin (`ledger:read`) also see `transactions`. The `access` flags tell the UI which sections were withheld rather than empty. The starter active-member metric treats a paid membership as valid through its expiry date; the membership ticket (#4) finalizes the club-timezone rule.
 
 ## Data and invariants
 

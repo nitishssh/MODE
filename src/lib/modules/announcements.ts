@@ -68,7 +68,7 @@ export function createAnnouncementsModule(
     return mapDetails(row);
   }
 
-  function createDraft(actor: Actor, input: z.infer<typeof announcementInputSchema>): AnnouncementDetails {
+  function createDraft(actor: Actor, input: z.input<typeof announcementInputSchema>): AnnouncementDetails {
     assertPermission(actor, "announcements:write");
     const data = parseInput(announcementInputSchema, input);
     const id = randomUUID();

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { Membership, MembershipPlan, MembershipStatus, Payment } from "../contracts";
+import type { MemberLookupResult, Membership, MembershipPlan, MembershipStatus, Payment, RosterEntry } from "../contracts";
+import type { Role } from "../auth/permissions";
+import { maskEmail } from "./outbox";
 import { addDays, clubDate, int, nullableText, text, transaction, type DbContext, type Row } from "../db/core";
 import { ConflictError, NotFoundError, ValidationError } from "../errors";
 import { assertPermission, type Actor, type IdentityModule } from "./identity";
@@ -18,6 +20,8 @@ export const recordDuesSchema = z
   .strict();
 
 export const reminderRunSchema = z.object({ daysAhead: z.number().int().min(0).max(365).default(14) }).strict();
+export const lookupSchema = z.object({ q: z.string().trim().min(2).max(254) }).strict();
+export const rosterFilterSchema = z.object({ state: z.enum(["active", "expired", "never"]).optional() }).strict();
 
 function mapPlan(row: Row): MembershipPlan {
   return {
@@ -264,7 +268,69 @@ export function createMembershipModule(
     return { asOf: today, horizon, candidates: rows.length, created, skipped };
   }
 
-  return { listPlans, requirePlan, statusFor, history, recordDues, recordPayment, findPayment, runRenewalReminders };
+
+  /**
+   * Door check: find members by exact email or partial name and answer "are they a
+   * member right now?" without exposing the directory. Capped at 10 matches.
+   */
+  function lookup(actor: Actor, query: string): MemberLookupResult[] {
+    assertPermission(actor, "members:lookup");
+    const { q } = parseInput(lookupSchema, { q: query });
+    const rows = db
+      .prepare(
+        `SELECT id, name, email, role FROM members WHERE club_id = ? AND (email = ? COLLATE NOCASE OR name LIKE ? COLLATE NOCASE)
+         ORDER BY CASE WHEN email = ? COLLATE NOCASE THEN 0 ELSE 1 END, name COLLATE NOCASE LIMIT 10`,
+      )
+      .all(actor.clubId, q, `%${q}%`, q) as Row[];
+    return rows.map((row) => {
+      const status = statusFor(actor.clubId, text(row.id));
+      return {
+        id: text(row.id),
+        name: text(row.name),
+        email: maskEmail(text(row.email)),
+        role: row.role as Role,
+        membership: {
+          active: status.active,
+          memberPricing: status.memberPricing,
+          planName: status.current?.planName ?? null,
+          expiresOn: status.expiresOn,
+        },
+      };
+    });
+  }
+
+  /** Officer roster: every member with their membership state, so nobody has to guess who still owes dues. */
+  function roster(actor: Actor, filter: { state?: RosterEntry["state"] } = {}): RosterEntry[] {
+    assertPermission(actor, "members:read");
+    const { state } = parseInput(rosterFilterSchema, filter);
+    const todayMs = Date.parse(`${clubDate(ctx.now())}T00:00:00.000Z`);
+    const entries = identity.getMembers(actor.clubId).map((member): RosterEntry => {
+      const status = statusFor(actor.clubId, member.id);
+      const latest = status.history[0] ?? null;
+      const memberState: RosterEntry["state"] = status.active ? "active" : latest ? "expired" : "never";
+      return {
+        id: member.id,
+        name: member.name,
+        email: member.email,
+        role: member.role,
+        joinedAt: member.joinedAt,
+        state: memberState,
+        planName: (status.current ?? latest)?.planName ?? null,
+        expiresOn: latest?.expiresOn ?? null,
+        daysLeft: latest ? Math.round((Date.parse(`${latest.expiresOn}T00:00:00.000Z`) - todayMs) / 86_400_000) : null,
+      };
+    });
+    const filtered = state ? entries.filter((entry) => entry.state === state) : entries;
+    const order = { expired: 0, never: 1, active: 2 };
+    return filtered.sort(
+      (a, b) =>
+        order[a.state] - order[b.state] ||
+        (a.daysLeft ?? Number.MAX_SAFE_INTEGER) - (b.daysLeft ?? Number.MAX_SAFE_INTEGER) ||
+        a.name.localeCompare(b.name),
+    );
+  }
+
+  return { listPlans, requirePlan, statusFor, history, recordDues, recordPayment, findPayment, runRenewalReminders, lookup, roster };
 }
 
 export type MembershipModule = ReturnType<typeof createMembershipModule>;

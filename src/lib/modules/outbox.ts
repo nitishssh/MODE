@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { OutboxMessage } from "../contracts";
 import { SQLITE_CONSTRAINT_UNIQUE, int, isConstraintError, nullableText, text, type DbContext, type Row } from "../db/core";
-import { DomainError } from "../errors";
 import { assertPermission, type Actor } from "./identity";
 
 export interface EnqueueInput {
@@ -17,9 +16,33 @@ export interface EnqueueInput {
   referenceId?: string | null;
 }
 
-/** Local demos only have the preview transport. Real email is configured, never faked. */
-export function mailTransport(): "preview" | "smtp" {
-  return process.env.MODE_MAIL_TRANSPORT === "smtp" ? "smtp" : "preview";
+/**
+ * Delivery transports. `preview` (default) only marks messages as previewed.
+ * `webhook` POSTs each message as JSON to MODE_MAIL_WEBHOOK_URL (a mail relay such as
+ * a Zapier/Make/Resend bridge or the club's own script) and records `sent` only on a
+ * 2xx response. Nothing is ever reported as sent without a real transport.
+ */
+export type MailTransport = "preview" | "webhook";
+
+export function mailTransport(): MailTransport {
+  return process.env.MODE_MAIL_TRANSPORT === "webhook" && process.env.MODE_MAIL_WEBHOOK_URL ? "webhook" : "preview";
+}
+
+export interface WebhookDelivery {
+  (payload: { id: string; kind: string; to: string; subject: string; body: string }): Promise<{ ok: boolean; error?: string }>;
+}
+
+async function postToWebhook(payload: { id: string; kind: string; to: string; subject: string; body: string }): Promise<{ ok: boolean; error?: string }> {
+  const url = process.env.MODE_MAIL_WEBHOOK_URL!;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (process.env.MODE_MAIL_WEBHOOK_TOKEN) headers.Authorization = `Bearer ${process.env.MODE_MAIL_WEBHOOK_TOKEN}`;
+  try {
+    const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(10_000) });
+    if (response.ok) return { ok: true };
+    return { ok: false, error: `Relay responded ${response.status}` };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Relay unreachable" };
+  }
 }
 
 export function maskEmail(email: string): string {
@@ -95,31 +118,47 @@ export function createOutboxModule(ctx: DbContext) {
   }
 
   /**
-   * Attempt delivery for queued messages. With the preview transport each message
-   * becomes `previewed`, never `sent`; a real transport must be configured to mark `sent`.
+   * Attempt delivery for queued messages. Preview transport: each message becomes
+   * `previewed`, never `sent`. Webhook transport: each message is handed to the relay
+   * and becomes `sent` on success or `failed` (with the reason) for a later retry.
+   * Retries pick up only `pending`/`failed` rows, so a message is never delivered twice.
    */
-  function dispatch(actor: Actor, options: { limit?: number; maxAttempts?: number } = {}) {
+  async function dispatch(
+    actor: Actor,
+    options: { limit?: number; maxAttempts?: number; deliver?: WebhookDelivery } = {},
+  ): Promise<{ transport: MailTransport; previewed: number; sent: number; failed: number; remaining: number }> {
     assertPermission(actor, "outbox:manage");
     const limit = options.limit ?? 100;
     const maxAttempts = options.maxAttempts ?? 5;
     const transport = mailTransport();
-    if (transport !== "preview") {
-      throw new DomainError("No real mail transport is configured for this deployment.", 501, "mail_transport_unavailable");
-    }
     const due = db
       .prepare(
-        "SELECT id FROM outbox_messages WHERE club_id = ? AND status IN ('pending', 'failed') AND attempts < ? ORDER BY created_at, id LIMIT ?",
+        "SELECT * FROM outbox_messages WHERE club_id = ? AND status IN ('pending', 'failed') AND attempts < ? ORDER BY created_at, id LIMIT ?",
       )
       .all(actor.clubId, maxAttempts, limit) as Row[];
-    const update = db.prepare(
-      "UPDATE outbox_messages SET status = 'previewed', attempts = attempts + 1, last_error = NULL, delivered_at = ? WHERE id = ? AND status IN ('pending', 'failed')",
-    );
-    let previewed = 0;
-    for (const row of due) {
-      const result = update.run(ctx.now().toISOString(), text(row.id));
-      previewed += Number(result.changes);
+    const result = { transport, previewed: 0, sent: 0, failed: 0, remaining: 0 };
+    if (transport === "preview") {
+      const update = db.prepare(
+        "UPDATE outbox_messages SET status = 'previewed', attempts = attempts + 1, last_error = NULL, delivered_at = ? WHERE id = ? AND status IN ('pending', 'failed')",
+      );
+      for (const row of due) result.previewed += Number(update.run(ctx.now().toISOString(), text(row.id)).changes);
+    } else {
+      const deliver = options.deliver ?? postToWebhook;
+      const markSent = db.prepare("UPDATE outbox_messages SET status = 'sent', attempts = attempts + 1, last_error = NULL, delivered_at = ? WHERE id = ?");
+      const markFailed = db.prepare("UPDATE outbox_messages SET status = 'failed', attempts = attempts + 1, last_error = ? WHERE id = ?");
+      for (const row of due) {
+        const outcome = await deliver({ id: text(row.id), kind: text(row.kind), to: text(row.recipient_email), subject: text(row.subject), body: text(row.body) });
+        if (outcome.ok) {
+          markSent.run(ctx.now().toISOString(), text(row.id));
+          result.sent += 1;
+        } else {
+          markFailed.run((outcome.error ?? "Delivery failed").slice(0, 500), text(row.id));
+          result.failed += 1;
+        }
+      }
     }
-    return { transport, previewed, remaining: countPending(actor.clubId) };
+    result.remaining = countPending(actor.clubId);
+    return result;
   }
 
   /** Delivery counts for one referenced record, without exposing recipients. */

@@ -9,8 +9,8 @@ export const dynamic = "force-dynamic";
  * Attempt delivery of queued messages. With the local preview transport the
  * result is `previewed`; the response says so explicitly and never claims `sent`.
  */
-export const POST = route("outbox dispatch", (request) => {
+export const POST = route("outbox dispatch", async (request) => {
   const db = getDatabase();
   const actor = requireActor(request, db, { permission: "outbox:manage", mutation: true });
-  return json(db.outbox.dispatch(actor));
+  return json(await db.outbox.dispatch(actor));
 });

@@ -8,6 +8,6 @@ export const dynamic = "force-dynamic";
 /** Inflow, outflow, balance, committed-but-unpaid reimbursements and per-event breakdown. */
 export const GET = route("ledger summary", (request) => {
   const db = getDatabase();
-  const actor = requireActor(request, db, { permission: "ledger:read" });
+  const actor = requireActor(request, db, { permission: "ledger:summary" });
   return json({ summary: db.treasury.summary(actor) });
 });

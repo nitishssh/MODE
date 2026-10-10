@@ -17,6 +17,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
     const today = timestamp.slice(0, 10);
     const canSeeMembers = actor !== null && hasPermission(actor.role, "members:read");
     const canSeeFinance = actor !== null && hasPermission(actor.role, "ledger:read");
+    const canSeeSummary = canSeeFinance || (actor !== null && hasPermission(actor.role, "ledger:summary"));
     const members = identity.getMembers(clubId);
     const club = db.prepare("SELECT name, description FROM clubs WHERE id = ?").get(clubId) as Row | undefined;
 
@@ -76,7 +77,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
           (member) => member.duesStatus === "paid" && member.expiresOn !== null && member.expiresOn >= today,
         ).length,
         upcomingEvents: events.filter((event) => event.startsAt >= timestamp).length,
-        balancePaise: canSeeFinance ? int(balance?.balance ?? 0) : 0,
+        balancePaise: canSeeSummary ? int(balance?.balance ?? 0) : 0,
       },
       members: canSeeMembers ? members : [],
       events,
@@ -84,7 +85,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
       products,
       tasks,
       transactions: canSeeFinance ? transactions : [],
-      access: { members: canSeeMembers, finance: canSeeFinance },
+      access: { members: canSeeMembers, finance: canSeeFinance, summary: canSeeSummary },
     };
   }
 

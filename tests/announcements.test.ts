@@ -8,7 +8,7 @@ import { PLAN_ANNUAL_ID } from "../src/lib/db/migrations";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../src/lib/errors";
 import { DEMO, actorFor, apiRequest, loginCookie, memoryDatabase, routeParams, withRouteDatabase } from "./helpers";
 
-test("drafts are private, publication is dated, and delivery is queued once per eligible member", () => {
+test("drafts are private, publication is dated, and delivery is queued once per eligible member", async () => {
   const { db, clock } = memoryDatabase();
   try {
     const organizer = actorFor(db, DEMO.organizer);
@@ -51,12 +51,12 @@ test("drafts are private, publication is dated, and delivery is queued once per 
     assert.equal(again.announcement.publishedAt, "2026-10-11T04:30:00.000Z", "original publication date kept");
     assert.equal(db.outbox.list(organizer, { kind: "announcement" }).length, expectedRecipients);
 
-    const dispatched = db.outbox.dispatch(organizer);
+    const dispatched = await db.outbox.dispatch(organizer);
     assert.equal(dispatched.transport, "preview");
     const after = db.announcements.deliverySummary(organizer, draft.id);
     assert.equal(after.byStatus.previewed, expectedRecipients);
     assert.equal(after.byStatus.sent, 0, "preview delivery is never reported as sent");
-    assert.equal(db.outbox.dispatch(organizer).previewed, 0, "retry does not resend previewed messages");
+    assert.equal((await db.outbox.dispatch(organizer)).previewed, 0, "retry does not resend previewed messages");
 
     // A member who joins after publication is not retro-notified unless republished.
     db.createMember({ name: "Late Joiner", email: "late@example.com" });

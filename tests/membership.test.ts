@@ -96,7 +96,7 @@ test("free plan enrolments are idempotent per active period and grant no member 
   }
 });
 
-test("renewal reminders target expiring memberships once and skip renewed members", () => {
+test("renewal reminders target expiring memberships once and skip renewed members", async () => {
   const { db, clock } = memoryDatabase();
   try {
     const organizer = actorFor(db, DEMO.organizer);
@@ -119,7 +119,7 @@ test("renewal reminders target expiring memberships once and skip renewed member
     assert.equal(queued[0].status, "pending");
     assert.equal(queued[0].recipient, "s***@example.com", "recipient is masked");
 
-    const dispatched = db.outbox.dispatch(organizer);
+    const dispatched = await db.outbox.dispatch(organizer);
     assert.equal(dispatched.transport, "preview");
     assert.equal(dispatched.previewed, 1);
     assert.equal(db.outbox.list(organizer)[0].status, "previewed");

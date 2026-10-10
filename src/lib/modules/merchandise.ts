@@ -94,7 +94,7 @@ export function createMerchandiseModule(
     db.prepare("UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0) FROM product_variants WHERE product_id = ?) WHERE id = ?").run(productId, productId);
   }
 
-  function createProduct(actor: Actor, input: z.infer<typeof productInputSchema>): ProductDetails {
+  function createProduct(actor: Actor, input: z.input<typeof productInputSchema>): ProductDetails {
     assertPermission(actor, "products:write");
     const data = parseInput(productInputSchema, input);
     const sizes = new Set(data.variants.map((variant) => variant.size.toUpperCase()));

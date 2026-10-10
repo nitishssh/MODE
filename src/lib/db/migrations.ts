@@ -21,6 +21,7 @@ const MIGRATIONS: Migration[] = [
   { version: 6, up: addTreasuryWorkflow },
   { version: 7, up: addAnnouncementPublishing },
   { version: 8, up: addVolunteerTasks },
+  { version: 9, up: addFundraiserGoals },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -452,4 +453,14 @@ function addVolunteerTasks(db: DatabaseSync, now: Date) {
     CREATE INDEX tasks_event_idx ON tasks (club_id, event_id);
     CREATE INDEX tasks_due_idx ON tasks (club_id, status, due_at);
   `);
+}
+
+// ---------------------------------------------------------------------------
+// v9 — fundraiser goals on events (brief: "whether the fundraiser is on track")
+// ---------------------------------------------------------------------------
+function addFundraiserGoals(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE events ADD COLUMN goal_paise INTEGER CHECK (goal_paise IS NULL OR goal_paise >= 0);
+  `);
+  db.exec("UPDATE events SET goal_paise = 250000 WHERE id = 'demo-event-2'");
 }

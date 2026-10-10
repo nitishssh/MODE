@@ -5,6 +5,7 @@ export const PERMISSIONS = [
   "roles:manage",
   "members:create",
   "members:read",
+  "members:lookup",
   "membership:record_payment",
   "membership:reminders",
   "events:write",
@@ -16,6 +17,7 @@ export const PERMISSIONS = [
   "orders:create",
   "orders:fulfil",
   "ledger:read",
+  "ledger:summary",
   "expenses:submit",
   "expenses:review",
   "announcements:write",
@@ -29,11 +31,13 @@ const EVERYONE: Permission[] = ["bookings:create", "orders:create", "expenses:su
 /** Role matrix. `admin` (club lead) holds every permission. Mirrored in docs/API.md. */
 export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   member: new Set(EVERYONE),
-  volunteer: new Set([...EVERYONE, "tickets:check_in"]),
+  volunteer: new Set([...EVERYONE, "tickets:check_in", "members:lookup", "ledger:summary"]),
   organizer: new Set([
     ...EVERYONE,
     "members:create",
     "members:read",
+    "members:lookup",
+    "ledger:summary",
     "membership:record_payment",
     "membership:reminders",
     "events:write",
@@ -49,6 +53,8 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   treasurer: new Set([
     ...EVERYONE,
     "members:read",
+    "members:lookup",
+    "ledger:summary",
     "membership:record_payment",
     "events:report",
     "payments:confirm",

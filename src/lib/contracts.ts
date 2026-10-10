@@ -65,8 +65,8 @@ export interface Dashboard {
   products: Product[];
   tasks: Task[];
   transactions: Transaction[];
-  /** Which protected sections the caller was allowed to see. */
-  access: { members: boolean; finance: boolean };
+  /** Which protected sections the caller was allowed to see. `summary` covers totals, `finance` the line items. */
+  access: { members: boolean; finance: boolean; summary: boolean };
 }
 
 export interface CreateMemberInput {
@@ -158,6 +158,8 @@ export interface EventDetails extends Event {
   status: "draft" | "published" | "cancelled";
   /** Seats still bookable: capacity minus held (reserved + confirmed) seats. */
   available: number;
+  /** Fundraising target in paise; null for ordinary events. */
+  goalPaise: number | null;
 }
 
 export interface Booking {
@@ -180,6 +182,13 @@ export interface EventReport {
   bookings: { reserved: number; confirmed: number; cancelled: number; expired: number };
   checkedIn: number;
   incomePaise: number;
+  /** Event-tagged expenses already paid out of the ledger. */
+  expensePaise: number;
+  netPaise: number;
+  /** Present when the event has a goal: how far the net result is from the target. */
+  fundraiser: { goalPaise: number; raisedPaise: number; remainingPaise: number; percent: number; onTrack: boolean } | null;
+  /** Task health for the event's volunteer plan. */
+  tasks: { total: number; todo: number; inProgress: number; done: number; overdue: number };
   attendees: Array<{ memberId: string; name: string; pricing: "member" | "guest"; checkedInAt: string | null }>;
 }
 
@@ -277,7 +286,7 @@ export interface AnnouncementDetails extends Omit<Announcement, "publishedAt"> {
 
 export interface DeliverySummary {
   announcementId: string;
-  transport: "preview" | "smtp";
+  transport: "preview" | "webhook";
   /** Counts only; recipient addresses are never returned. */
   recipients: number;
   byStatus: { pending: number; previewed: number; sent: number; failed: number };
@@ -296,4 +305,27 @@ export interface TaskDetails extends Task {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+}
+
+/** Door check and dues roster (brief: "easy to check that they are a member", "who still owes what") */
+export interface MemberLookupResult {
+  id: string;
+  name: string;
+  /** Masked, e.g. a***@example.com; the door volunteer confirms identity, not the address. */
+  email: string;
+  role: Role;
+  membership: { active: boolean; memberPricing: boolean; planName: string | null; expiresOn: string | null };
+}
+
+export interface RosterEntry {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  joinedAt: string;
+  state: "active" | "expired" | "never";
+  planName: string | null;
+  expiresOn: string | null;
+  /** Days until expiry (negative when already expired, null when never a member). */
+  daysLeft: number | null;
 }

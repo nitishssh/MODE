@@ -109,7 +109,7 @@ export function createTasksModule(ctx: DbContext, identity: IdentityModule) {
     }
   }
 
-  function create(actor: Actor, input: z.infer<typeof taskInputSchema>): TaskDetails {
+  function create(actor: Actor, input: z.input<typeof taskInputSchema>): TaskDetails {
     assertPermission(actor, "tasks:write");
     const data = parseInput(taskInputSchema, input);
     return transaction(ctx, () => {

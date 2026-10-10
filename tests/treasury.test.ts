@@ -131,7 +131,9 @@ test("ledger reconciliation: balance equals the sum of entries across every inco
     assert.equal(summary.byCategory.find((row) => row.category === "membership")?.inflowPaise, 100000 + 50000);
     assert.equal(db.getDashboard(treasurer).metrics.balancePaise, summary.balancePaise, "dashboard and ledger agree");
     assert.equal(db.treasury.listEntries(treasurer, { eventId: event.id }).length, 2);
-    assert.throws(() => db.treasury.summary(organizer), ForbiddenError);
+    assert.equal(db.treasury.summary(organizer).balancePaise, summary.balancePaise, "organizers may read totals");
+    assert.throws(() => db.treasury.summary(buyer), ForbiddenError, "plain members may not");
+    assert.throws(() => db.treasury.listEntries(organizer), ForbiddenError, "line items stay treasurer-only");
 
     const csv = db.treasury.exportCsv(treasurer);
     assert.match(csv.split("\n")[0], /^id,occurredAt,kind,category,amountPaise/);
@@ -196,7 +198,7 @@ test("treasury routes enforce permissions, accept multipart receipts and return 
     assert.equal((await payRoute(apiRequest(`/api/expenses/${expenseId}/pay`, { body: { paymentReference: "RT-1" }, cookie: treasurer }), routeParams({ id: expenseId }))).status, 201);
     assert.equal((await payRoute(apiRequest(`/api/expenses/${expenseId}/pay`, { body: { paymentReference: "RT-1" }, cookie: treasurer }), routeParams({ id: expenseId }))).status, 200);
 
-    assert.equal((await summaryRoute(apiRequest("/api/ledger/summary", { cookie: volunteer }))).status, 403);
+    assert.equal((await summaryRoute(apiRequest("/api/ledger/summary", { cookie: volunteer }))).status, 200, "volunteers see totals");
     const summary = await summaryRoute(apiRequest("/api/ledger/summary", { cookie: treasurer }));
     assert.equal(summary.status, 200);
     assert.equal((await summary.json()).summary.balancePaise, 185000 - 2500);

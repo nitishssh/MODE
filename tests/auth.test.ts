@@ -123,7 +123,7 @@ test("role route and dashboard enforce 401/403 and hide personal and finance dat
     const publicView = await anonymous.json();
     assert.deepEqual(publicView.members, []);
     assert.deepEqual(publicView.transactions, []);
-    assert.deepEqual(publicView.access, { members: false, finance: false });
+    assert.deepEqual(publicView.access, { members: false, finance: false, summary: false });
     assert.ok(publicView.events.length > 0, "public programme stays visible");
 
     const treasurer = await loginCookie(DEMO.treasurer);
@@ -134,7 +134,9 @@ test("role route and dashboard enforce 401/403 and hide personal and finance dat
 
     const organizer = await loginCookie(DEMO.organizer);
     const ops = await (await dashboard(apiRequest("/api/dashboard", { cookie: organizer }))).json();
-    assert.deepEqual(ops.access, { members: true, finance: false });
+    assert.deepEqual(ops.access, { members: true, finance: false, summary: true });
+    assert.equal(ops.metrics.balancePaise, 185000, "organizers see the balance total");
+    assert.deepEqual(ops.transactions, [], "but not the line items");
     assert.ok(ops.members.length >= 7);
 
     const target = ops.members.find((member: { email: string }) => member.email === DEMO.member);
