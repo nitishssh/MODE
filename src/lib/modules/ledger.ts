@@ -86,6 +86,10 @@ export interface ReconciliationReport {
   duplicates: Array<{ sourceType: string; sourceId: string; count: number }>;
   /** Rows with no source at all; none are allowed after P0. */
   unsourced: number;
+  /** Money-moving source records with no ledger row. Zero-value/free sources are excluded. */
+  missing: Array<{ sourceType: string; sourceId: string }>;
+  /** Existing rows whose value, direction, club or officer disagrees with the source. */
+  mismatched: Array<{ sourceType: string; sourceId: string; fields: string[] }>;
 }
 
 /** The reconciliation harness (P0, #2). Every financial module extends SOURCE_RESOLVERS and asserts a clean report. */
@@ -110,5 +114,37 @@ export function reconcileLedger(db: DatabaseSync): ReconciliationReport {
       .prepare("SELECT source_type, source_id, COUNT(*) AS n FROM transactions WHERE source_type IS NOT NULL GROUP BY source_type, source_id HAVING COUNT(*) > 1")
       .all() as Row[]
   ).map((row) => ({ sourceType: text(row.source_type), sourceId: text(row.source_id), count: int(row.n) }));
-  return { balancePaise: ledgerBalance(db), entries: rows.length, openingBalances, orphans, duplicates, unsourced };
+  // Walk the money sources as well as the ledger. A deleted/misvalued ledger row
+  // cannot be detected by an existence resolver starting from that row.
+  // Add new money-moving modules here alongside their SOURCE_RESOLVERS entry.
+  const sources = db.prepare(`
+    SELECT 'dues_payment' AS source_type, id AS source_id, amount_paise, 'income' AS kind, club_id, recorded_by
+      FROM dues_payments
+    UNION ALL
+    SELECT 'ticket', id, price_paise, 'income', club_id, confirmed_by
+      FROM tickets WHERE status = 'paid' AND price_paise > 0
+    UNION ALL
+    SELECT 'merch_order', id, total_paise, 'income', club_id, confirmed_by
+      FROM merch_orders WHERE status IN ('paid', 'fulfilled') AND total_paise > 0
+    UNION ALL
+    SELECT 'expense', id, amount_paise, 'expense', club_id, NULL
+      FROM expenses WHERE status = 'paid'
+  `).all();
+  const entriesBySource = new Map(rows.map(row => [JSON.stringify([row.source_type, row.source_id]), row]));
+  const missing: ReconciliationReport['missing'] = [];
+  const mismatched: ReconciliationReport['mismatched'] = [];
+  for (const source of sources) {
+    const identity = { sourceType: text(source.source_type), sourceId: text(source.source_id) };
+    const entry = entriesBySource.get(JSON.stringify([source.source_type, source.source_id]));
+    if (!entry) { missing.push(identity); continue; }
+    const fields: string[] = [];
+    if (entry.amount_paise !== source.amount_paise) fields.push('amountPaise');
+    if (entry.kind !== source.kind) fields.push('kind');
+    if (entry.club_id !== source.club_id) fields.push('clubId');
+    // Expenses may be reviewed and paid by different officers. The source stores
+    // its reviewer, not its payer; require ledger attribution without conflating them.
+    if (entry.recorded_by === null || (source.source_type !== 'expense' && entry.recorded_by !== source.recorded_by)) fields.push('recordedBy');
+    if (fields.length) mismatched.push({ ...identity, fields });
+  }
+  return { balancePaise: ledgerBalance(db), entries: rows.length, openingBalances, orphans, duplicates, unsourced, missing, mismatched };
 }

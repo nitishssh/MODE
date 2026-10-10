@@ -2,7 +2,7 @@
 
 Project: https://github.com/users/nitishssh/projects/14
 
-The GitHub issues and board were updated and verified against the approved phased plan on 10 October 2026. All 16 active board cards have a Phase, MVP priority P0 and the final target date of 11 October; #2 is In progress and deferred #17 is archived. Linked cards show the revised titles and assignees. Check each linked issue for acceptance criteria and current status.
+The GitHub issues and board follow the approved phased plan. All 16 MVP cards have a Phase, priority P0 and the final target date of 11 October; deferred #17 is archived. Check each linked issue for current status. The backend acceptance evidence for #1, #2, #4, #5 and #6 is recorded in [ACCEPTANCE.md](ACCEPTANCE.md).
 
 | Ticket | Owner | Area | Dependencies |
 |---|---|---|---|

@@ -71,7 +71,7 @@ Roles: `member`, `volunteer`, `organizer`, `treasurer`, `admin` (club lead). Sel
 | `outbox:manage` | | | ✓ | | ✓ |
 | `tasks:write` | | | ✓ | | ✓ |
 
-Permissions for unfinished merchandise and announcement workflows remain reserved. Implemented membership, ticket, task and reimbursement routes are documented below.
+Announcement permissions remain reserved for the unfinished publishing workflow. Implemented membership, ticket, merchandise, task and reimbursement routes are documented below.
 
 ### Demo accounts
 
@@ -82,7 +82,7 @@ Schema v2 seeds four synthetic officer accounts in the sample club: `lead@exampl
 - **Membership state** is one function, `membershipState(member, clubDate(now))` in `src/lib/modules/membership-state.ts`: `active` when `expiresOn >= ` the Asia/Kolkata date, `expired` when it has passed, `none` when null. Its SQL twin `MEMBERSHIP_ACTIVE_SQL` / `MEMBERSHIP_STATE_SQL` is used for counts and filters; tests prove JS and SQL agree on today, yesterday and null. `Member.membership` carries the derived value; `duesStatus` is a historical flag, not an eligibility rule.
 - **Member pass**: every member has a unique 128-bit base64url `qrToken` and a unique 10-character Crockford base32 `shortCode` (bounded collision retry, max 5). `GET /api/auth/me` returns `pass:{qrToken,shortCode,membership,expiresOn}` to the member themselves; `Member` exposes `shortCode` only. Door scanning resolves a pass by token or code, never by sequential id (`findMemberByPass`).
 - **Ledger**: `transactions` gains `sourceType`, `sourceId`, `recordedBy` with a UNIQUE index on the source pair. The three starter rows are backfilled as `opening_balance` entries with "Opening balance (pre-system): …" descriptions. Financial modules call `postLedgerEntry()` inside the same transaction as the source transition; it rejects non-positive or non-integer paise and a second post for the same source.
-- **Reconciliation**: `reconcileLedger(db)` reports balance, opening balances, duplicates, unsourced rows and orphans (rows whose source no longer resolves). Modules register a resolver per `sourceType` in `SOURCE_RESOLVERS` and extend `tests/ledger-reconciliation.test.ts`.
+- **Reconciliation**: `reconcileLedger(db)` reports balance, opening balances, duplicates, unsourced rows and orphans (rows whose source no longer resolves). It also walks dues, paid tickets, paid/fulfilled merchandise and paid expenses: `missing` identifies money sources without a ledger row; `mismatched` identifies inconsistent amount, direction, club or officer attribution. Free tickets/orders and unpaid sources require no entry. Expenses retain their paying officer in the ledger; the claim's reviewer may be different. A clean report requires every anomaly array to be empty and `unsourced` to be zero. New financial modules must extend both `SOURCE_RESOLVERS` and the source enumeration in `reconcileLedger`, with missing/mismatched-source coverage.
 - **Demo accounts**: `active@example.com` (membership active, expires in 300 days) and `expired@example.com` (expired 10 days ago), password `MODE_DEMO_PASSWORD`, join the four officer accounts. The current schema version is 9.
 
 ## Membership dues, renewals and reminders (#4, P1)
@@ -190,7 +190,7 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 
 ## Planned conventions
 
-These are the ticket design constraints. The membership, ticket, task and reimbursement endpoints above and below implement the corresponding parts; merchandise and announcement workflows remain future work:
+These are the ticket design constraints. The membership, ticket, merchandise, task and reimbursement endpoints above and below implement the corresponding parts; announcement publishing remains future work:
 
 - Membership: define plans, free/paid status, benefit eligibility, renewal and idempotent dues recording in #4.
 - Ticketing: reserve capacity atomically; issue tickets against confirmed states; reject duplicate check-in in #5.
