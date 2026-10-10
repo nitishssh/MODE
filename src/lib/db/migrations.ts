@@ -17,6 +17,7 @@ const MIGRATIONS: Migration[] = [
   { version: 2, up: addIdentityAndRoles },
   { version: 3, up: addMembershipLifecycle },
   { version: 4, up: addEventTicketing },
+  { version: 5, up: addMerchandiseOrders },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -299,4 +300,47 @@ function addEventTicketing(db: DatabaseSync) {
       checked_in_at TEXT NOT NULL
     );
   `);
+}
+
+// ---------------------------------------------------------------------------
+// v5 — product size variants and orders (#6)
+// ---------------------------------------------------------------------------
+function addMerchandiseOrders(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE products ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
+    ALTER TABLE products ADD COLUMN description TEXT NOT NULL DEFAULT '';
+    ALTER TABLE products ADD COLUMN member_price_paise INTEGER CHECK (member_price_paise IS NULL OR member_price_paise >= 0);
+    ALTER TABLE products ADD COLUMN active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1));
+    CREATE TABLE product_variants (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      product_id TEXT NOT NULL REFERENCES products(id),
+      size TEXT NOT NULL,
+      stock INTEGER NOT NULL CHECK (stock >= 0),
+      UNIQUE (product_id, size)
+    );
+    CREATE TABLE orders (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      member_id TEXT NOT NULL REFERENCES members(id),
+      product_id TEXT NOT NULL REFERENCES products(id),
+      variant_id TEXT NOT NULL REFERENCES product_variants(id),
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      unit_price_paise INTEGER NOT NULL CHECK (unit_price_paise >= 0),
+      total_paise INTEGER NOT NULL CHECK (total_paise >= 0),
+      pricing TEXT NOT NULL CHECK (pricing IN ('member', 'guest')),
+      status TEXT NOT NULL CHECK (status IN ('pending_payment', 'paid', 'cancelled')),
+      fulfilment TEXT NOT NULL CHECK (fulfilment IN ('unfulfilled', 'fulfilled')),
+      payment_id TEXT REFERENCES payments(id),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX orders_member_idx ON orders (club_id, member_id);
+    CREATE INDEX orders_status_idx ON orders (club_id, status, fulfilment);
+  `);
+  // Split the aggregate starter stock into size variants; totals stay 18 and 35.
+  const insert = db.prepare("INSERT INTO product_variants VALUES (?, ?, ?, ?, ?)");
+  for (const [size, stock] of [["S", 4], ["M", 6], ["L", 5], ["XL", 3]] as const) insert.run(`demo-product-1-${size}`, DEFAULT_CLUB_ID, "demo-product-1", size, stock);
+  for (const [size, stock] of [["S", 8], ["M", 12], ["L", 10], ["XL", 5]] as const) insert.run(`demo-product-2-${size}`, DEFAULT_CLUB_ID, "demo-product-2", size, stock);
+  db.exec("UPDATE products SET member_price_paise = CASE id WHEN 'demo-product-1' THEN 69900 WHEN 'demo-product-2' THEN 29900 ELSE member_price_paise END");
 }

@@ -182,3 +182,36 @@ export interface EventReport {
   incomePaise: number;
   attendees: Array<{ memberId: string; name: string; pricing: "member" | "guest"; checkedInAt: string | null }>;
 }
+
+/** Merchandise variants and orders (#6) */
+export interface ProductVariant {
+  id: string;
+  size: string;
+  stock: number;
+}
+
+export interface ProductDetails extends Product {
+  description: string;
+  /** Price for active paid members; null means members pay the regular price. */
+  memberPricePaise: number | null;
+  active: boolean;
+  variants: ProductVariant[];
+}
+
+export interface Order {
+  id: string;
+  memberId: string;
+  productId: string;
+  productName: string;
+  variantId: string;
+  size: string;
+  quantity: number;
+  unitPricePaise: number;
+  totalPaise: number;
+  pricing: "member" | "guest";
+  status: "pending_payment" | "paid" | "cancelled";
+  fulfilment: "unfulfilled" | "fulfilled";
+  paymentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
