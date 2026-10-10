@@ -11,6 +11,7 @@
     "start:lan": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "test:foundation": "node scripts/check-foundation.mjs",
     "check:contracts": "tsx scripts/check-contract-docs.ts",
     "check": "npm run typecheck && npm run check:contracts && npm test && npm run build"
   },
