@@ -282,3 +282,18 @@ export interface DeliverySummary {
   recipients: number;
   byStatus: { pending: number; previewed: number; sent: number; failed: number };
 }
+
+/** Volunteer tasks (#9). Extends the starter Task with ownership, deadline and event linkage. */
+export interface TaskDetails extends Task {
+  description: string;
+  assigneeId: string | null;
+  eventId: string | null;
+  eventTitle: string | null;
+  dueAt: string | null;
+  /** True when past `dueAt` and not done, evaluated on the server clock. */
+  overdue: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}

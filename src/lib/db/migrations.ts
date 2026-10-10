@@ -20,6 +20,7 @@ const MIGRATIONS: Migration[] = [
   { version: 5, up: addMerchandiseOrders },
   { version: 6, up: addTreasuryWorkflow },
   { version: 7, up: addAnnouncementPublishing },
+  { version: 8, up: addVolunteerTasks },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -415,4 +416,40 @@ function addAnnouncementPublishing(db: DatabaseSync, now: Date) {
     CREATE INDEX outbox_reference_idx ON outbox_messages (kind, reference_id);
   `);
   void now;
+}
+
+// ---------------------------------------------------------------------------
+// v8 — volunteer task assignments, deadlines and progress (#9)
+// ---------------------------------------------------------------------------
+function addVolunteerTasks(db: DatabaseSync, now: Date) {
+  db.exec(`
+    CREATE TABLE tasks_v8 (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      assignee TEXT NOT NULL DEFAULT '',
+      assignee_id TEXT REFERENCES members(id),
+      event_id TEXT REFERENCES events(id),
+      due_at TEXT,
+      status TEXT NOT NULL CHECK (status IN ('todo', 'in_progress', 'done')),
+      created_by TEXT REFERENCES members(id),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+    INSERT INTO tasks_v8 (id, club_id, title, description, assignee, assignee_id, event_id, due_at, status, created_by, created_at, updated_at, completed_at)
+      SELECT t.id, '${DEFAULT_CLUB_ID}', t.title, '',
+             CASE WHEN t.assignee = 'Unassigned' THEN '' ELSE t.assignee END,
+             (SELECT m.id FROM members m WHERE m.name = t.assignee AND m.club_id = '${DEFAULT_CLUB_ID}' LIMIT 1),
+             NULL, NULL, t.status, NULL, ?, ?, CASE WHEN t.status = 'done' THEN ? ELSE NULL END
+      FROM tasks t;
+  `.replace(/\?/g, `'${now.toISOString()}'`));
+  db.exec(`
+    DROP TABLE tasks;
+    ALTER TABLE tasks_v8 RENAME TO tasks;
+    CREATE INDEX tasks_assignee_idx ON tasks (club_id, assignee_id, status);
+    CREATE INDEX tasks_event_idx ON tasks (club_id, event_id);
+    CREATE INDEX tasks_due_idx ON tasks (club_id, status, due_at);
+  `);
 }
