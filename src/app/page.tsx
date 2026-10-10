@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import { WorkspaceMainSkeleton } from "./skeleton";
 import type {
   Dashboard,
   Event,
@@ -1727,6 +1728,23 @@ export default function Home() {
     window.localStorage.setItem("mode-theme", isDark ? "dark" : "light");
   }, [isDark]);
 
+  useEffect(() => {
+    function syncHash() {
+      const hash = window.location.hash.replace("#", "").toLowerCase();
+      if (hash === "members") setSection("Members");
+      else if (hash === "events") setSection("Events");
+      else if (hash === "tasks") setSection("Tasks");
+      else if (hash === "treasury") setSection("Treasury");
+      else if (hash === "announcements") setSection("Announcements");
+      else if (hash === "merchandise") setSection("Merchandise");
+      else if (hash === "expenses" || hash === "my-expenses") setSection("My Expenses");
+      else if (hash === "overview") setSection("Overview");
+    }
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, []);
+
   function openMembers() {
     setSection("Members");
     setShowForm(true);
@@ -1925,12 +1943,7 @@ export default function Home() {
               {success}
             </div>
           )}
-          {loading && (
-            <div className="loading-state" role="status" aria-live="polite">
-              <span className="loader" />
-              <span>Getting your workspace ready…</span>
-            </div>
-          )}
+          {loading && <WorkspaceMainSkeleton />}
           {!loading && error && (
             <div className="error-state" role="alert">
               <h2>Let's try that again.</h2>

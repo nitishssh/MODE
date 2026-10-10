@@ -26,6 +26,14 @@ npm start
 
 The production build defaults to read-only demo behavior: member creation returns 403. `MODE_ENABLE_DEMO_WRITES=true` is an explicit opt-in for a trusted private/local demonstration, not authentication. Both provided server commands bind to loopback by default.
 
+## LAN and PWA delivery
+
+For a trusted, synthetic-data LAN demonstration, use `npm run dev:lan` during development or `npm run build` followed by `npm run start:lan` for the production server. These commands bind to `0.0.0.0`; ordinary `dev` and `start` remain loopback-only. Find the computer's Wi-Fi IPv4 address with `ipconfig` on Windows, then open `http://<wifi-ip>:3000` from another device on the same network. Allow Node.js through the private-network firewall if the connection is blocked. Do not use the LAN mode on untrusted networks.
+
+The root web application is installable as a PWA when served over HTTPS (or localhost). Its manifest is exposed at `/manifest.webmanifest`; use Edge's **Apps → Install this site as an app** after opening the hosted/same-origin URL. The app deliberately does not install a service worker or cache API responses, so private financial/member data is never retained offline by this delivery layer.
+
+MODE is not an Expo project and does not currently offer sign-in, ticket check-in, or a native client. See [docs/DEMO.md](docs/DEMO.md) for the exact supported demo and outstanding platform checks.
+
 ## What works today
 
 - Responsive dashboard and navigation for all six club areas.

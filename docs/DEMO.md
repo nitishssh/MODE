@@ -1,5 +1,34 @@
 # Demo and release checks
 
+## Platform delivery procedure
+
+This repository currently ships a Next.js web application, not an Expo Router application. The following procedure supports a browser or a phone browser on the same Wi-Fi network using synthetic data only.
+
+1. Install Node 24 and run `npm ci`.
+2. Copy `.env.example` to `.env.local` only if configuration is needed. Keep `MODE_CORS_ORIGINS` empty unless a separate browser origin must call the API. Do not put passwords, tokens, or real IP addresses in committed files.
+3. Start the local-only server with `npm run dev`, or start the LAN demo with `npm run dev:lan`. For a production-mode LAN demo, run `npm run build` then `npm run start:lan`.
+4. On Windows, use `ipconfig` and identify the active Wi-Fi adapter's IPv4 address. From a phone on the same Wi-Fi, open `http://<wifi-ip>:3000`. `<wifi-ip>` is a placeholder, not a configured project address.
+5. Check `http://<wifi-ip>:3000/api/health`. A 200 SQLite response proves backend reachability only; it does not prove authentication.
+6. Exercise the supported synthetic member, task, expense, receipt, and treasury flows. Production writes require the explicit trusted-demo setting described in `.env.example`.
+7. For PWA installation, serve the site over HTTPS (or use localhost), open `/manifest.webmanifest` to confirm it loads, then use Microsoft Edge's **Apps → Install this site as an app**. No service worker is installed, by design, so sensitive API data is not cached.
+8. Run `npm run check` before a release demonstration.
+
+### Expo Go, sign-in, and ticket check-in: blocked
+
+There is no Expo SDK, Expo Router app, authentication contract, ticket API, or ticket check-in screen in MODE. Therefore Android/iOS Expo Go opening, sign-in, typed ticket-code check-in, and native token verification are **NOT TESTED / BLOCKED by missing implementation**, rather than simulated. A future Expo client must set `EXPO_PUBLIC_API_URL` to an absolute LAN-reachable origin such as `http://<wifi-ip>:3000`, never `localhost`, and use the future backend's explicit native authentication contract.
+
+### LAN troubleshooting
+
+- Confirm both devices are on the same non-isolated Wi-Fi network; guest networks often block peer traffic.
+- Permit Node.js through Windows Defender Firewall on private networks and verify that port `3000` is not already occupied.
+- A physical phone cannot use `127.0.0.1` or `localhost` to reach the development computer.
+- HTTP LAN URLs will not satisfy browser PWA installability. Use a trusted HTTPS deployment for installation testing.
+- CORS only applies to browser requests from a different origin. Add the exact origin to `MODE_CORS_ORIGINS`; never use `*` with credentials.
+
+### Hosting and persistence status
+
+No hosted URL, cloud credentials, or persistent deployment volume are configured in this repository. Hosted verification, restart-persistence verification, backup/restore, and rollback execution are **NOT TESTED**. If a hosted URL becomes mandatory, use one writable Node.js instance with a durable volume mounted for `.data`, set `SQLITE_PATH` and receipt storage on that volume, run the health check after deployment, create only synthetic records and receipts, restart once, then verify both remain available. Static-only and ephemeral/serverless filesystems are not compatible with MODE's SQLite and receipt storage.
+
 ## Runnable starter acceptance
 
 1. Use Node 24, run `npm ci`, then `npm run dev`.

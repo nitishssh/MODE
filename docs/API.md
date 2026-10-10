@@ -63,3 +63,23 @@ These are design constraints for future tickets, not implemented endpoints:
 - Volunteers: task owner, deadline and status are separate from service-hour reporting in #9.
 
 Payment and notification adapters must expose pending, succeeded and failed states honestly. Production authorization must replace the starter guard before real/shared data use.
+
+## Platform delivery and LAN access
+
+MODE's web UI and API are served by the same Next.js origin. The root path already serves the web application, and `/api/*` remains handled by the Node.js route handlers. This is the supported browser deployment model; there is no separate Expo web export in this repository.
+
+`GET /api/health` is the LAN-safe liveness check. Its successful response is `{status:"ok",database:"sqlite",schemaVersion:number}`. It does not authenticate a user and must not be treated as proof of identity or authorization.
+
+### Authentication status
+
+Authentication status: MODE does **not** yet implement accounts, sessions, sign-in, browser cookies, role checks, or ticket check-in. Consequently there are no HttpOnly authentication cookies to configure and no supported test account or ticket code. Do not expose real member or financial data until the identity/RBAC and ticketing work is implemented. The existing mutation guard is only a local-demo protection, not authentication.
+
+When browser authentication is implemented, same-origin session cookies must be `HttpOnly`, use `SameSite=Lax` or a more restrictive documented policy, use `Secure` in HTTPS deployments, and protect state-changing requests against CSRF. Native clients must use their explicitly designed credential flow rather than relying on ambient browser cookies.
+
+### CORS policy
+
+Same-origin requests require no CORS configuration. Development cross-origin browser clients are denied unless their exact origin is listed in `MODE_CORS_ORIGINS`, a comma-separated list such as `http://192.168.1.50:8081,http://localhost:8081`. Wildcards, paths, queries, and malformed origins are ignored. Allowed origins receive explicit `Access-Control-Allow-Origin`, `Access-Control-Allow-Credentials: true`, `Content-Type`, `Authorization`, `X-Requested-With`, and methods including `PATCH`. `OPTIONS` preflights receive `204`; an unlisted Origin receives `403`. An absent Origin is not a CORS grant and follows the normal same-origin/native request path.
+
+### Future Expo configuration
+
+There is no Expo client in this repository today. A future Expo client must set `EXPO_PUBLIC_API_URL` to an absolute API origin reachable from the device, for example `http://192.168.1.50:3000` as a placeholder only. It must never contain secrets, paths, query strings, or hashes. The shared resolver in `src/lib/api-url.ts` rejects malformed values and defaults only to `http://127.0.0.1:3000` for simulator/local use; that loopback address does not reach a physical phone.
