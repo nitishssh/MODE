@@ -129,6 +129,16 @@ export function createIdentityModule(ctx: DbContext) {
     return insertMember({ ...input, clubId: options.clubId });
   }
 
+  /** Officer creates a member in their own club; the record and its audit entry commit together. */
+  function createMemberAs(actor: Actor, input: CreateMemberInput): Member {
+    assertPermission(actor, "members:create");
+    return transaction(ctx, () => {
+      const member = insertMember({ ...input, clubId: actor.clubId });
+      recordAudit(actor, "member.created", "member", member.id);
+      return member;
+    });
+  }
+
   function issueSession(member: Member, clubId: string): IssuedSession {
     const token = generateSessionToken();
     const createdAt = ctx.now();
@@ -271,6 +281,7 @@ export function createIdentityModule(ctx: DbContext) {
     findMember,
     requireMember,
     createMember,
+    createMemberAs,
     createMemberWithCredentials,
     register,
     login,
