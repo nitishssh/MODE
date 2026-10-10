@@ -4,8 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import type { Notification } from "@/lib/contracts";
 import { api, useLoad } from "../../_lib/api";
-import { relative, titleCase } from "../../_lib/format";
-import { Badge, Button, EmptyState, ErrorState, PageHead, Segmented, Skeleton } from "../../_components/ui";
+import { date, relative, titleCase } from "../../_lib/format";
+import { Button, EmptyState, ErrorState, PageHead, PreviewNote, Skeleton, Tabs } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
 
 type Filter = "all" | "announcement" | "dues";
@@ -26,45 +26,41 @@ export default function NotificationsPage() {
   return (
     <>
       <PageHead
-        eyebrow="You"
+        eyebrow={<>YOU <span>/</span> NOTIFICATIONS</>}
         title="Notifications"
         description={unread ? `${unread} unread. Announcements and dues reminders sent to you.` : "Announcements and dues reminders sent to you."}
-        actions={<Button onClick={() => void notifications.reload()} loading={notifications.loading && Boolean(notifications.data)}><Icon.refresh />Refresh</Button>}
+        actions={<Button onClick={() => void notifications.reload()} loading={notifications.loading && Boolean(notifications.data)}><Icon name="clock" size={16} />Refresh</Button>}
       />
 
-      <div className="mx-toolbar">
-        <Segmented value={filter} onChange={setFilter} items={[
-          { value: "all", label: `All · ${all.length}` },
-          { value: "announcement", label: `Announcements · ${all.filter((n) => n.kind === "announcement").length}` },
-          { value: "dues", label: `Dues · ${all.filter((n) => n.kind !== "announcement").length}` },
-        ]} />
-      </div>
+      <Tabs value={filter} onChange={setFilter} items={[
+        { value: "all", label: "All", count: all.length },
+        { value: "announcement", label: "Announcements", count: all.filter((n) => n.kind === "announcement").length },
+        { value: "dues", label: "Dues", count: all.filter((n) => n.kind !== "announcement").length },
+      ]} />
 
       {notifications.loading && !notifications.data ? <Skeleton rows={5} /> : notifications.error ? <ErrorState error={notifications.error} onRetry={notifications.reload} /> : !visible.length ? (
-        <EmptyState title={all.length ? "Nothing in this filter" : "No notifications yet"}>{all.length ? "Try another filter." : "Published announcements and renewal reminders will appear here."}</EmptyState>
+        <section className="panel"><EmptyState title={all.length ? "Nothing in this filter" : "No notifications yet"} icon="megaphone">{all.length ? "Try another filter." : "Published announcements and renewal reminders will appear here."}</EmptyState></section>
       ) : (
-        <div className="mx-stack-sm">
-          {visible.map((n) => {
-            const body = (
-              <>
-                <div className="mx-between">
-                  <div className="mx-row">
-                    <Badge tone={n.kind === "announcement" ? "accent" : "amber"}>{titleCase(n.kind)}</Badge>
-                    {!n.readAt ? <Badge tone="blue" dot>New</Badge> : null}
-                  </div>
-                  <span className="mx-muted mx-small">{relative(n.createdAt)}</span>
+        <div className="announcement-list">
+          {visible.map((n) => (
+            <article key={n.id} className="panel announcement-card">
+              <span className="announcement-symbol"><Icon name={n.kind === "announcement" ? "megaphone" : "coin"} size={22} /></span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="mx-row">
+                  <span className="eyebrow">{date(n.createdAt)} · {relative(n.createdAt)}</span>
+                  <span className={`badge ${n.kind === "announcement" ? "purple" : "amber"}`}>{titleCase(n.kind)}</span>
+                  {!n.readAt ? <span className="badge green">New</span> : null}
                 </div>
-                <h2 className="mx-h3" style={{ marginTop: 8 }}>{n.title}</h2>
-                <p className="mx-prose mx-small" style={{ marginTop: 4 }}>{n.body}</p>
-                {n.announcementId ? <span className="mx-link mx-small" style={{ display: "inline-block", marginTop: 8 }}>Read the announcement →</span> : null}
-              </>
-            );
-            return n.announcementId
-              ? <Link key={n.id} href={`/app/announcements/${n.announcementId}`} className="mx-card mx-card-tight" style={{ display: "block" }}>{body}</Link>
-              : <article key={n.id} className="mx-card mx-card-tight">{body}</article>;
-          })}
+                <h2>{n.title}</h2>
+                <p>{n.body}</p>
+                {n.announcementId ? <Link href={`/app/announcements/${n.announcementId}`} className="text-button" style={{ marginTop: 10 }}>Read the announcement<Icon name="arrow" size={16} /></Link> : null}
+              </div>
+            </article>
+          ))}
         </div>
       )}
+
+      <PreviewNote>Notifications are in-app only. The matching outbox rows are simulated; no email or WhatsApp is sent.</PreviewNote>
     </>
   );
 }

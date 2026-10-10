@@ -1,34 +1,29 @@
 "use client";
 
-import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { MAX_RECEIPT_SIZE_BYTES, type EventDetails, type Expense, type Receipt } from "@/lib/contracts";
-import { api, newId, useAction, useLoad } from "../../_lib/api";
+import { api, describeError, newId, useAction, useLoad } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
-import { dateTime, money, rupeesToPaise } from "../../_lib/format";
-import { Alert, Button, Card, EmptyState, ErrorState, Modal, PageHead, SelectField, Skeleton, Stat, StatusBadge, Table, Tabs, TextField, TextareaField } from "../../_components/ui";
+import { amount, date, money } from "../../_lib/format";
+import { Alert, Button, Card, EmptyState, ErrorState, FormPanel, Loading, Modal, PageHead, PreviewNote, Stat, Tabs } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
+
+/* Azman's MyExpenses (inline submit panel + claims table) plus the treasury
+ * expense approvals (approve / reject / mark paid) for reviewers. */
 
 type ReviewTab = "submitted" | "approved" | "paid" | "rejected" | "all";
 type View = "mine" | "review";
 
 const ACCEPTED = ["image/jpeg", "image/png", "application/pdf"];
+const STATUS_CLASS: Record<string, string> = { submitted: "amber", approved: "purple", rejected: "red", paid: "green" };
+const STATUS_LABEL: Record<string, string> = { submitted: "Submitted", approved: "Approved", rejected: "Rejected", paid: "Paid" };
 
-function fileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-function Timeline({ expense }: { expense: Expense }) {
-  return (
-    <small className="mx-cell-sub">
-      Submitted {dateTime(expense.submittedAt)}
-      {expense.reviewedAt ? ` · ${expense.status === "rejected" ? "Rejected" : "Approved"} ${dateTime(expense.reviewedAt)}` : ""}
-      {expense.paidAt ? ` · Paid ${dateTime(expense.paidAt)}` : ""}
-      {expense.rejectionNote ? ` · Note: ${expense.rejectionNote}` : ""}
-      {expense.paymentReference ? ` · Ref ${expense.paymentReference}` : ""}
-    </small>
-  );
+function Notes({ expense }: { expense: Expense }) {
+  if (expense.status === "rejected" && expense.rejectionNote) return <span className="rejection-note">{expense.rejectionNote}</span>;
+  if (expense.status === "paid" && expense.paymentReference) return <span className="payment-ref">Ref {expense.paymentReference}</span>;
+  if (expense.status === "approved") return <span className="subtext">Approved · awaiting payout</span>;
+  if (expense.status === "submitted") return <span className="subtext">Awaiting review</span>;
+  return null;
 }
 
 export default function ExpensesPage() {
@@ -43,16 +38,13 @@ export default function ExpensesPage() {
   const [view, setView] = useState<View>("mine");
   const [reviewTab, setReviewTab] = useState<ReviewTab>("submitted");
 
-  // Submission form
-  const [submitOpen, setSubmitOpen] = useState(false);
-  const [receipt, setReceipt] = useState<Receipt | null>(null);
-  const [fileError, setFileError] = useState("");
-  const [uploading, setUploading] = useState(false);
+  // Submission form (kept until success so retries reuse the same submissionId).
+  const [showForm, setShowForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const [submissionId, setSubmissionId] = useState(() => newId());
-  const [form, setForm] = useState({ amount: "", purpose: "", receiptReference: "", eventId: "" });
-  const [formErrors, setFormErrors] = useState<{ amount?: string; purpose?: string; receipt?: string }>({});
 
-  // Review modals
   const [reject, setReject] = useState<{ expense: Expense; note: string } | null>(null);
   const [pay, setPay] = useState<{ expense: Expense; reference: string } | null>(null);
 
@@ -71,49 +63,44 @@ export default function ExpensesPage() {
     expenses.setData((current) => (current ?? []).map((e) => (e.id === updated.id ? updated : e)));
   }
 
-  async function onFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    setFileError("");
-    setReceipt(null);
-    if (!file) return;
-    if (!ACCEPTED.includes(file.type)) { setFileError("Use a JPG, PNG or PDF receipt."); return; }
-    if (file.size > MAX_RECEIPT_SIZE_BYTES) { setFileError("Receipt is too large. Maximum size is 5 MB."); return; }
-    setUploading(true);
-    const body = new FormData();
-    body.append("file", file);
-    const ok = await action.run("upload", async () => {
-      const uploaded = await api.post<Receipt>("/api/receipts", body);
-      setReceipt(uploaded);
-      setFormErrors((c) => ({ ...c, receipt: undefined }));
-    });
-    if (!ok) setFileError(action.error || "Upload failed.");
-    setUploading(false);
-  }
-
-  async function submitClaim(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const errors: typeof formErrors = {};
-    const amountPaise = rupeesToPaise(form.amount);
-    if (!amountPaise || amountPaise <= 0) errors.amount = "Enter an amount in rupees, e.g. 349.50.";
-    const purpose = form.purpose.trim();
-    if (purpose.length < 3) errors.purpose = "Describe the purpose (at least 3 characters).";
-    if (!receipt) errors.receipt = "Upload the receipt first.";
-    setFormErrors(errors);
-    if (Object.keys(errors).length || !receipt || !amountPaise) return;
-    const body: Record<string, unknown> = { submissionId, amountPaise, purpose, receiptId: receipt.id };
-    if (form.receiptReference.trim()) body.receiptReference = form.receiptReference.trim();
-    if (form.eventId) body.eventId = form.eventId;
-    const ok = await action.run("submit", async () => {
+    const form = event.currentTarget;
+    const fd = new FormData(form);
+    const amountRupees = Number(fd.get("amount"));
+    const amountPaise = Math.round(amountRupees * 100);
+    const purpose = String(fd.get("purpose") ?? "").trim();
+    const receiptReference = String(fd.get("receiptReference") ?? "").trim();
+    const eventId = String(fd.get("eventId") ?? "");
+    const file = fd.get("receiptFile");
+    if (!Number.isFinite(amountPaise) || amountPaise <= 0) { setSubmitError("Enter an amount in rupees, e.g. 349.50."); return; }
+    if (purpose.length < 3) { setSubmitError("Describe the purpose (at least 3 characters)."); return; }
+    if (!(file instanceof File) || !file.size) { setSubmitError("Attach the receipt (JPG, PNG or PDF)."); return; }
+    if (!ACCEPTED.includes(file.type)) { setSubmitError("Use a JPG, PNG or PDF receipt."); return; }
+    if (file.size > MAX_RECEIPT_SIZE_BYTES) { setSubmitError("Receipt is too large. Maximum size is 5 MB."); return; }
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      setUploadProgress("Uploading receipt…");
+      const upload = new FormData();
+      upload.append("file", file);
+      const receipt = await api.post<Receipt>("/api/receipts", upload);
+      setUploadProgress("Submitting claim…");
+      const body: Record<string, unknown> = { submissionId, amountPaise, purpose, receiptId: receipt.id };
+      if (receiptReference) body.receiptReference = receiptReference;
+      if (eventId) body.eventId = eventId;
       const created = await api.post<Expense>("/api/expenses", body);
       expenses.setData((current) => [created, ...(current ?? []).filter((e) => e.id !== created.id)]);
-      return "Claim submitted for review.";
-    });
-    if (ok) {
-      setSubmitOpen(false);
-      setReceipt(null);
-      setForm({ amount: "", purpose: "", receiptReference: "", eventId: "" });
+      form.reset();
+      setShowForm(false);
       setSubmissionId(newId());
       setView("mine");
+      action.setNotice("Expense submitted for review.");
+    } catch (caught) {
+      setSubmitError(describeError(caught, "Could not submit the expense."));
+    } finally {
+      setSubmitting(false);
+      setUploadProgress("");
     }
   }
 
@@ -150,136 +137,163 @@ export default function ExpensesPage() {
 
   const eventOptions = events.data?.events ?? [];
 
-  function renderRows(rows: Expense[], reviewer: boolean) {
-    return rows.map((expense) => {
-      const own = user !== null && expense.submitterId === user.id;
-      const busy = action.busy?.endsWith(`:${expense.id}`) ?? false;
-      return (
-        <tr key={expense.id}>
-          {reviewer ? <td><span className="mx-cell-title">{expense.submitterName}</span>{own ? <span className="mx-cell-sub">Your own claim</span> : null}</td> : null}
-          <td>
-            <span className="mx-cell-title">{expense.purpose}</span>
-            <Timeline expense={expense} />
-          </td>
-          <td className="num"><span className="mx-strong">{money(expense.amountPaise)}</span></td>
-          <td>{expense.eventTitle ?? <span className="mx-muted">—</span>}</td>
-          <td><StatusBadge status={expense.status} /></td>
-          <td className="actions">
-            {expense.receiptId ? <a className="mx-btn sm" href={`/api/receipts/${encodeURIComponent(expense.receiptId)}`} target="_blank" rel="noopener noreferrer"><Icon.receipt />Receipt</a> : <span className="mx-muted mx-small">No receipt</span>}
-            {reviewer && expense.status === "submitted" ? (
-              <>
-                {" "}<Button size="sm" variant="primary" disabled={own} loading={action.busy === `approve:${expense.id}`} onClick={() => void approve(expense)} title={own ? "You cannot review your own claim" : undefined}><Icon.check />Approve</Button>
-                {" "}<Button size="sm" variant="danger" disabled={own || busy} onClick={() => setReject({ expense, note: "" })} title={own ? "You cannot review your own claim" : undefined}>Reject</Button>
-              </>
-            ) : null}
-            {reviewer && expense.status === "approved" ? (
-              <>{" "}<Button size="sm" variant="accent" disabled={own || busy} onClick={() => setPay({ expense, reference: "" })} title={own ? "You cannot pay your own claim" : undefined}><Icon.wallet />Pay</Button></>
-            ) : null}
-          </td>
-        </tr>
-      );
-    });
-  }
+  const myTable = (
+    <Card kicker="MY CLAIMS" title="Reimbursement requests" flush action={{ label: "Refresh", onClick: () => void expenses.reload() }}>
+      {!mine.length ? (
+        <EmptyState title="No claims yet" icon="receipt">Upload a receipt and tell the treasurer what it was for.</EmptyState>
+      ) : (
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th scope="col">Purpose</th><th scope="col" className="amount-cell">Amount</th><th scope="col">Date</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead>
+            <tbody>
+              {mine.map((exp) => (
+                <tr key={exp.id}>
+                  <td>
+                    <strong>{exp.purpose}</strong>
+                    {exp.eventTitle ? <span className="subtext"><Icon name="calendar" size={10} /> {exp.eventTitle}</span> : null}
+                    {exp.receiptId ? <span className="subtext"><a href={`/api/receipts/${encodeURIComponent(exp.receiptId)}`} target="_blank" rel="noreferrer">View receipt</a></span> : null}
+                  </td>
+                  <td className="amount-cell">{amount(exp.amountPaise)}</td>
+                  <td>{date(exp.submittedAt)}</td>
+                  <td><span className={`badge ${STATUS_CLASS[exp.status] ?? "neutral"}`}>{STATUS_LABEL[exp.status] ?? exp.status}</span></td>
+                  <td><Notes expense={exp} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+
+  const reviewTable = (
+    <Card kicker="TREASURY" title="Club claims" flush action={{ label: "Refresh", onClick: () => void expenses.reload() }}>
+      <div style={{ padding: "0 25px" }}>
+        <Tabs value={reviewTab} onChange={setReviewTab} items={[
+          { value: "submitted", label: "Pending", count: counts.submitted },
+          { value: "approved", label: "Ready to pay", count: counts.approved },
+          { value: "paid", label: "Paid", count: counts.paid },
+          { value: "rejected", label: "Rejected", count: counts.rejected },
+          { value: "all", label: "All", count: counts.all },
+        ]} />
+      </div>
+      {!reviewRows.length ? (
+        <EmptyState title="Nothing here" icon="receipt">No claims with this status.</EmptyState>
+      ) : (
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th scope="col">Submitted by</th><th scope="col">Purpose</th><th scope="col" className="amount-cell">Amount</th><th scope="col">Date</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
+            <tbody>
+              {reviewRows.map((exp) => {
+                const own = user !== null && exp.submitterId === user.id;
+                const busy = action.busy?.endsWith(`:${exp.id}`) ?? false;
+                return (
+                  <tr key={exp.id}>
+                    <td><strong>{exp.submitterName}</strong>{own ? <span className="subtext">Your own claim</span> : null}</td>
+                    <td>
+                      {exp.purpose}
+                      {exp.eventTitle ? <div className="subtext"><Icon name="calendar" size={10} /> {exp.eventTitle}</div> : null}
+                      {exp.receiptId ? <div><a href={`/api/receipts/${encodeURIComponent(exp.receiptId)}`} target="_blank" rel="noreferrer">View receipt</a></div> : null}
+                      {exp.receiptReference ? <div className="subtext">Receipt ref: {exp.receiptReference}</div> : null}
+                    </td>
+                    <td className="amount-cell">{amount(exp.amountPaise)}</td>
+                    <td>{date(exp.submittedAt)}</td>
+                    <td><span className={`badge ${STATUS_CLASS[exp.status] ?? "neutral"}`}>{STATUS_LABEL[exp.status] ?? exp.status}</span><Notes expense={exp} /></td>
+                    <td>
+                      <div className="expense-action-row">
+                        {exp.status === "submitted" ? (
+                          <>
+                            <button type="button" className="button-small green-btn" disabled={own || busy} title={own ? "You cannot review your own claim" : undefined} onClick={() => void approve(exp)}>Approve</button>
+                            <button type="button" className="button-small red-btn" disabled={own || busy} title={own ? "You cannot review your own claim" : undefined} onClick={() => setReject({ expense: exp, note: "" })}>Reject</button>
+                          </>
+                        ) : null}
+                        {exp.status === "approved" ? (
+                          <button type="button" className="button-small" disabled={own || busy} title={own ? "You cannot pay your own claim" : undefined} onClick={() => setPay({ expense: exp, reference: "" })}>Mark paid</button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
 
   return (
     <>
       <PageHead
-        eyebrow="Reimbursements"
-        title="Expenses"
+        eyebrow={<>CLUB <span>/</span> EXPENSES</>}
+        title={canReview ? "Expenses" : "My Expenses"}
         description={canReview ? "Review claims, approve what is justified and record payouts against the ledger." : "Submit receipts for reimbursement and follow each claim to payout."}
-        actions={canSubmit ? <Button variant="primary" onClick={() => { setSubmitOpen(true); action.clear(); }}><Icon.plus />Submit a claim</Button> : null}
       />
 
-      {action.error && !submitOpen && !reject && !pay ? <div className="mx-mb"><Alert tone="error" onDismiss={action.clear}>{action.error}</Alert></div> : null}
-      {action.notice ? <div className="mx-mb"><Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert></div> : null}
+      {action.error && !reject && !pay ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
+      {action.notice ? <Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert> : null}
 
       {canReview ? (
-        <div className="mx-grid mx-grid-4 mx-mb">
-          <Stat label="Awaiting review" value={expenses.data ? counts.submitted : "—"} tone="amber" />
-          <Stat label="Approved, unpaid" value={expenses.data ? counts.approved : "—"} tone="blue" />
-          <Stat label="Paid" value={expenses.data ? counts.paid : "—"} tone="green" />
-          <Stat label="Rejected" value={expenses.data ? counts.rejected : "—"} />
-        </div>
+        <section className="metrics-grid" aria-label="Claims summary">
+          <Stat label="Awaiting review" value={expenses.data ? String(counts.submitted).padStart(2, "0") : "—"} hint="Claims waiting for a decision" tone="amber" icon="clock" />
+          <Stat label="Approved, unpaid" value={expenses.data ? String(counts.approved).padStart(2, "0") : "—"} hint="Ready for payout" tone="blue" icon="receipt" />
+          <Stat label="Paid" value={expenses.data ? String(counts.paid).padStart(2, "0") : "—"} hint="Recorded in the ledger" tone="green" icon="check" />
+          <Stat label="Rejected" value={expenses.data ? String(counts.rejected).padStart(2, "0") : "—"} hint="Declined with a note" tone="dark" icon="alert" />
+        </section>
       ) : null}
 
-      {canReview ? (
-        <Tabs value={view} onChange={setView} items={[{ value: "review", label: "Club claims", count: counts.all }, { value: "mine", label: "My claims", count: mine.length }]} />
-      ) : null}
+      <div className="task-toolbar">
+        {canReview ? (
+          <Tabs value={view} onChange={setView} items={[{ value: "review", label: "Club claims", count: counts.all }, { value: "mine", label: "My claims", count: mine.length }]} />
+        ) : <div />}
+        {canSubmit ? (
+          <Button variant="primary" onClick={() => { setShowForm(true); setSubmitError(""); action.clear(); }}><Icon name="plus" size={16} />Submit expense</Button>
+        ) : null}
+      </div>
 
-      {expenses.error ? <ErrorState error={expenses.error} onRetry={expenses.reload} /> : expenses.loading && !expenses.data ? <Skeleton rows={6} /> : canReview && view === "review" ? (
-        <Card title="Club claims" actions={<Button size="sm" variant="ghost" onClick={() => void expenses.reload()}><Icon.refresh />Refresh</Button>}>
-          <Tabs value={reviewTab} onChange={setReviewTab} items={[
-            { value: "submitted", label: "Submitted", count: counts.submitted },
-            { value: "approved", label: "Approved", count: counts.approved },
-            { value: "paid", label: "Paid", count: counts.paid },
-            { value: "rejected", label: "Rejected", count: counts.rejected },
-            { value: "all", label: "All", count: counts.all },
-          ]} />
-          <Table
-            head={<><th>Submitter</th><th>Purpose</th><th className="num">Amount</th><th>Event</th><th>Status</th><th className="actions">Actions</th></>}
-            empty={!reviewRows.length ? <EmptyState title="Nothing here">No claims with this status.</EmptyState> : undefined}
-          >
-            {renderRows(reviewRows, true)}
-          </Table>
-        </Card>
-      ) : (
-        <Card title="My claims" actions={<Button size="sm" variant="ghost" onClick={() => void expenses.reload()}><Icon.refresh />Refresh</Button>}>
-          <Table
-            head={<><th>Purpose</th><th className="num">Amount</th><th>Event</th><th>Status</th><th className="actions">Receipt</th></>}
-            empty={!mine.length ? <EmptyState title="No claims yet" action={canSubmit ? <Button onClick={() => setSubmitOpen(true)}><Icon.plus />Submit your first claim</Button> : undefined}>Upload a receipt and tell the treasurer what it was for.</EmptyState> : undefined}
-          >
-            {renderRows(mine, false)}
-          </Table>
-        </Card>
-      )}
-
-      <Modal open={submitOpen} title="Submit a claim" description="Reimbursement is recorded after a treasurer approves and pays the claim." onClose={() => setSubmitOpen(false)}>
-        <form className="mx-form" onSubmit={submitClaim} noValidate>
-          {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
-          <div className="mx-field">
-            <label htmlFor="receipt-file">1. Receipt (JPG, PNG or PDF, up to 5 MB)</label>
-            <div className="mx-file">
-              {receipt ? <span><Icon.check style={{ verticalAlign: "middle", color: "var(--mx-green)" }} /> {receipt.filename} · {fileSize(receipt.sizeBytes)}</span> : uploading ? <span>Uploading…</span> : <span>Choose the receipt file to upload it.</span>}
-              <input id="receipt-file" type="file" accept="image/jpeg,image/png,application/pdf" onChange={(e) => void onFile(e)} disabled={uploading} />
+      {showForm && canSubmit ? (
+        <FormPanel title="Submit an expense" description={<>Submitting as <strong>{user?.name ?? "you"}</strong>. Reimbursement is recorded after a treasurer approves and pays the claim.</>} onClose={() => setShowForm(false)}>
+          <form onSubmit={handleSubmit}>
+            <div className="task-form-grid">
+              <label>Amount (₹)<input name="amount" type="number" step="0.01" min="0.01" placeholder="349.50" required disabled={submitting} /></label>
+              <label>Purpose<input name="purpose" placeholder="What was bought and why" minLength={3} maxLength={500} required disabled={submitting} /></label>
+              <label>Receipt reference<input name="receiptReference" placeholder="Invoice or bill number (optional)" maxLength={200} disabled={submitting} /></label>
+              <label>Event<select name="eventId" disabled={submitting}><option value="">No event</option>{eventOptions.map((ev) => <option key={ev.id} value={ev.id}>{ev.title}</option>)}</select></label>
+              <label>Receipt file (JPG, PNG or PDF, up to 5 MB)<input name="receiptFile" type="file" accept="image/jpeg,image/png,application/pdf" required disabled={submitting} /></label>
             </div>
-            {fileError || formErrors.receipt ? <span className="mx-error" role="alert">{fileError || formErrors.receipt}</span> : null}
-          </div>
-          <p className="mx-label">2. Claim details</p>
-          <div className="mx-form-row">
-            <TextField label="Amount (₹)" inputMode="decimal" placeholder="349.50" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} error={formErrors.amount} />
-            <SelectField label="Event (optional)" value={form.eventId} onChange={(e) => setForm((f) => ({ ...f, eventId: e.target.value }))}>
-              <option value="">Not tied to an event</option>
-              {eventOptions.map((ev) => <option key={ev.id} value={ev.id}>{ev.title}</option>)}
-            </SelectField>
-          </div>
-          <TextareaField label="Purpose" value={form.purpose} onChange={(e) => setForm((f) => ({ ...f, purpose: e.target.value }))} maxLength={500} error={formErrors.purpose} placeholder="What was bought and why" />
-          <TextField label="Receipt reference (optional)" value={form.receiptReference} onChange={(e) => setForm((f) => ({ ...f, receiptReference: e.target.value }))} maxLength={200} hint="Invoice or bill number, if any." />
-          <div className="mx-form-actions">
-            <Button onClick={() => setSubmitOpen(false)}>Cancel</Button>
-            <Button type="submit" variant="primary" disabled={!receipt || uploading} loading={action.busy === "submit"}>Submit claim</Button>
-          </div>
-        </form>
-      </Modal>
+            {uploadProgress ? <p className="upload-progress" aria-live="polite"><span className="loader" />{uploadProgress}</p> : null}
+            <div className="form-actions">
+              <button type="submit" className="button primary" disabled={submitting}>{submitting ? "Submitting…" : "Submit expense"}</button>
+              <button type="button" className="button secondary" onClick={() => setShowForm(false)} disabled={submitting}>Cancel</button>
+            </div>
+            {submitError ? <p className="form-error" role="alert">{submitError}</p> : null}
+          </form>
+        </FormPanel>
+      ) : null}
+
+      {expenses.error ? <ErrorState error={expenses.error} onRetry={expenses.reload} title="Expenses could not load" /> : expenses.loading && !expenses.data ? <Loading label="Loading expenses…" /> : canReview && view === "review" ? reviewTable : myTable}
+
+      <PreviewNote>Payment records a reimbursement already made outside MODE. Officers cannot review or pay their own claims.</PreviewNote>
 
       <Modal open={reject !== null} title="Reject claim" description={reject ? `${reject.expense.submitterName} · ${money(reject.expense.amountPaise)} · ${reject.expense.purpose}` : undefined} onClose={() => setReject(null)}>
-        <form className="mx-form" onSubmit={confirmReject} noValidate>
+        <form className="task-edit-form" style={{ border: 0, margin: 0, padding: 0 }} onSubmit={confirmReject} noValidate>
           {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
-          <TextareaField label="Note to the submitter (optional)" value={reject?.note ?? ""} onChange={(e) => setReject((r) => (r ? { ...r, note: e.target.value } : r))} maxLength={500} />
-          <div className="mx-form-actions">
-            <Button onClick={() => setReject(null)}>Cancel</Button>
-            <Button type="submit" variant="danger" loading={reject ? action.busy === `reject:${reject.expense.id}` : false}>Reject claim</Button>
+          <label>Note to the submitter (optional)<textarea value={reject?.note ?? ""} onChange={(e) => setReject((r) => (r ? { ...r, note: e.target.value } : r))} maxLength={500} rows={3} /></label>
+          <div className="form-actions">
+            <button type="submit" className="button-small red-btn" disabled={reject ? action.busy === `reject:${reject.expense.id}` : false}>Reject claim</button>
+            <button type="button" className="button-small" onClick={() => setReject(null)}>Cancel</button>
           </div>
         </form>
       </Modal>
 
-      <Modal open={pay !== null} title="Record payout" description={pay ? `${pay.expense.submitterName} · ${money(pay.expense.amountPaise)} · ${pay.expense.purpose}` : undefined} onClose={() => setPay(null)}>
-        <form className="mx-form" onSubmit={confirmPay} noValidate>
+      <Modal open={pay !== null} title="Mark as paid" description={pay ? `${pay.expense.submitterName} · ${money(pay.expense.amountPaise)} · ${pay.expense.purpose}` : undefined} onClose={() => setPay(null)}>
+        <form className="task-edit-form" style={{ border: 0, margin: 0, padding: 0 }} onSubmit={confirmPay} noValidate>
           {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
-          <Alert tone="info">This records a reimbursement already paid outside MODE (UPI, bank, cash). It posts one expense entry to the ledger and does not move money.</Alert>
-          <TextField label="Payment reference" value={pay?.reference ?? ""} onChange={(e) => setPay((p) => (p ? { ...p, reference: e.target.value } : p))} maxLength={200} placeholder="UPI / bank transaction id" autoFocus />
-          <div className="mx-form-actions">
-            <Button onClick={() => setPay(null)}>Cancel</Button>
-            <Button type="submit" variant="accent" loading={pay ? action.busy === `pay:${pay.expense.id}` : false}>Mark as paid</Button>
+          <div className="outstanding-notice"><Icon name="alert" size={16} /><div>This records a reimbursement already paid outside MODE (UPI, bank, cash). It posts one expense entry to the ledger and does not move money.</div></div>
+          <label>Payment reference<input value={pay?.reference ?? ""} onChange={(e) => setPay((p) => (p ? { ...p, reference: e.target.value } : p))} maxLength={200} placeholder="UPI / bank transaction id" autoFocus /></label>
+          <div className="form-actions">
+            <button type="submit" className="button primary" disabled={pay ? action.busy === `pay:${pay.expense.id}` : false}>Mark as paid</button>
+            <button type="button" className="button secondary" onClick={() => setPay(null)}>Cancel</button>
           </div>
         </form>
       </Modal>

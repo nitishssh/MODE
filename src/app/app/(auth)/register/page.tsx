@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import type { AuthMeResponse, AuthResponse } from "@/lib/contracts";
 import { api, ApiError, describeError } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
-import { Alert, Button, TextField } from "../../_components/ui";
+
+/* Same scrapbook treatment as the login page. */
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -43,44 +44,37 @@ export default function RegisterPage() {
       router.replace("/app");
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) setErrors({ email: "An account with this email already exists." });
-      else if (caught instanceof ApiError && caught.details.length) {
-        setErrors(Object.fromEntries(caught.details.map((d) => [d.field, d.message])));
-      } else setError(describeError(caught, "We could not create your account."));
+      else if (caught instanceof ApiError && caught.details.length) setErrors(Object.fromEntries(caught.details.map((d) => [d.field, d.message])));
+      else setError(describeError(caught, "We could not create your account."));
       setBusy(false);
     }
   }
 
   return (
-    <div className="mx-auth">
-      <aside className="mx-auth-art">
-        <Link href="/" className="mx-brand" style={{ padding: 0 }}><i />MODE</Link>
-        <div>
-          <p className="mx-eyebrow" style={{ color: "#f3a98e" }}>Join the club</p>
-          <h1 className="mx-h1" style={{ marginTop: 12 }}>Your member account, <span>ready in a minute.</span></h1>
-          <ul>
-            <li>Book event tickets at member prices once your dues are paid</li>
-            <li>Order merchandise and track your holds</li>
-            <li>Submit expense claims with receipts</li>
-            <li>Show your pass at the door</li>
-          </ul>
-        </div>
-        <p style={{ color: "#7f949c", fontSize: 12 }}>Self-registration creates a member account. Officers assign other roles.</p>
-      </aside>
-      <section className="mx-auth-form">
-        <form className="mx-auth-card mx-form" onSubmit={submit} noValidate>
-          <div>
-            <h2 className="mx-h2">Create your account</h2>
-            <p className="mx-muted">Use the email your club knows you by.</p>
-          </div>
-          {error ? <Alert tone="error">{error}</Alert> : null}
-          <TextField label="Full name" autoComplete="name" value={form.name} onChange={(e) => update("name", e.target.value)} error={errors.name} autoFocus />
-          <TextField label="Email" type="email" autoComplete="email" value={form.email} onChange={(e) => update("email", e.target.value)} error={errors.email} />
-          <TextField label="Password" type="password" autoComplete="new-password" value={form.password} onChange={(e) => update("password", e.target.value)} error={errors.password} hint="At least 8 characters." />
-          <TextField label="Confirm password" type="password" autoComplete="new-password" value={form.confirm} onChange={(e) => update("confirm", e.target.value)} error={errors.confirm} />
-          <Button type="submit" variant="primary" loading={busy} className="block">Create account</Button>
-          <p className="mx-muted mx-small" style={{ textAlign: "center" }}>Already a member? <Link href="/app/login" className="mx-link">Sign in</Link></p>
-        </form>
+    <main className="mode-login">
+      <section className="mode-login-form-column" aria-label="Create account">
+        <section className="mode-login-card" aria-labelledby="register-title">
+          <h1 id="register-title">Join the club!</h1>
+          <p>Create your member account.<br />Officers assign roles after you join.</p>
+          <form onSubmit={submit} noValidate>
+            <label htmlFor="name">Full name</label>
+            <input id="name" autoComplete="name" value={form.name} aria-invalid={Boolean(errors.name)} onChange={(e) => update("name", e.target.value)} />
+            {errors.name && <span className="mode-field-error">{errors.name}</span>}
+            <label htmlFor="email">Email</label>
+            <input id="email" type="email" autoComplete="email" value={form.email} aria-invalid={Boolean(errors.email)} onChange={(e) => update("email", e.target.value)} />
+            {errors.email && <span className="mode-field-error">{errors.email}</span>}
+            <label htmlFor="password">Password</label>
+            <input id="password" type="password" autoComplete="new-password" value={form.password} aria-invalid={Boolean(errors.password)} onChange={(e) => update("password", e.target.value)} />
+            {errors.password && <span className="mode-field-error">{errors.password}</span>}
+            <label htmlFor="confirm">Confirm password</label>
+            <input id="confirm" type="password" autoComplete="new-password" value={form.confirm} aria-invalid={Boolean(errors.confirm)} onChange={(e) => update("confirm", e.target.value)} />
+            {errors.confirm && <span className="mode-field-error">{errors.confirm}</span>}
+            {error && <p className="mode-login-error" role="alert">{error}</p>}
+            <button type="submit" disabled={busy}>{busy ? "Creating…" : "Create account"}</button>
+          </form>
+          <p className="mode-login-help">Already a member? <Link href="/app/login"><strong>Log in</strong></Link></p>
+        </section>
       </section>
-    </div>
+    </main>
   );
 }

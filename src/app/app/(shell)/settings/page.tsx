@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, ApiError, describeError, useAction } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
-import { Alert, Badge, Button, Card, KeyValue, PageHead, Skeleton, StatusBadge, TextField } from "../../_components/ui";
+import { Alert, Button, Card, KeyValue, PageHead, PreviewNote, Skeleton, StatusBadge } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
 
 export default function SettingsPage() {
@@ -24,34 +24,56 @@ export default function SettingsPage() {
 
   return (
     <>
-      <PageHead eyebrow="You" title="Settings" description="Your account, your password, and where to find things." actions={<Button variant="danger" onClick={() => void signOut()} loading={signingOut}><Icon.logout />Sign out</Button>} />
+      <PageHead
+        eyebrow={<>YOU <span>/</span> SETTINGS</>}
+        title="Settings"
+        description="Your account, your password, and where to find things."
+        actions={<Button variant="danger" onClick={() => void signOut()} loading={signingOut}><Icon name="logout" size={16} />Sign out</Button>}
+      />
 
-      <div className="mx-grid mx-grid-side">
+      <div className="treasury-overview-grid">
         <div className="mx-stack">
-          <Card title="Account">
+          <Card kicker="WHO YOU ARE" title="Account">
             <KeyValue items={[
               { label: "Name", value: user.name },
               { label: "Email", value: user.email },
               { label: "Role", value: <StatusBadge status={user.role} /> },
               { label: "Membership", value: pass ? <StatusBadge status={pass.membership} label={pass.membership === "none" ? "Not joined" : undefined} /> : "—" },
             ]} />
-            <p className="mx-eyebrow" style={{ marginTop: 16, marginBottom: 8 }}>Permissions</p>
+            <div className="eyebrow" style={{ marginTop: 18, marginBottom: 8 }}>PERMISSIONS</div>
             <div className="mx-row" style={{ gap: 6 }}>
-              {user.permissions.length ? user.permissions.map((p) => <Badge key={p}><span style={{ textTransform: "none" }}>{p}</span></Badge>) : <span className="mx-muted mx-small">No officer permissions. Members can book tickets, order merchandise and submit expenses.</span>}
+              {user.permissions.length ? user.permissions.map((p) => <span key={p} className="badge neutral">{p}</span>) : <span className="mx-muted mx-small">No officer permissions. Members can book tickets, order merchandise and submit expenses.</span>}
             </div>
           </Card>
 
-          <Card title="Interface" tone="tight">
-            <div className="mx-list">
-              <Link href="/app/pass" className="mx-list-item"><span className="mx-iconbtn" style={{ pointerEvents: "none" }}><Icon.qr /></span><div className="mx-grow"><strong>Member pass</strong><small>Your QR and door code</small></div></Link>
-              <Link href="/app/notifications" className="mx-list-item"><span className="mx-iconbtn" style={{ pointerEvents: "none" }}><Icon.bell /></span><div className="mx-grow"><strong>Notifications</strong><small>Announcements and reminders</small></div></Link>
-              <a href="/" className="mx-list-item"><span className="mx-iconbtn" style={{ pointerEvents: "none" }}><Icon.external /></span><div className="mx-grow"><strong>Legacy workspace</strong><small>The earlier interface, with language options</small></div></a>
+          <section className="panel">
+            <div className="panel-heading">
+              <div><div className="eyebrow">AROUND THE WORKSPACE</div><h2>Interface</h2></div>
             </div>
-          </Card>
+            <div className="event-list">
+              <Link href="/app/pass" className="event-row">
+                <span className="announcement-symbol"><Icon name="coin" size={20} /></span>
+                <div className="event-info"><h3>My pass</h3><p>Your QR and door code</p></div>
+                <Icon name="chevron" size={14} />
+              </Link>
+              <Link href="/app/notifications" className="event-row">
+                <span className="announcement-symbol"><Icon name="megaphone" size={20} /></span>
+                <div className="event-info"><h3>Notifications</h3><p>Announcements and reminders</p></div>
+                <Icon name="chevron" size={14} />
+              </Link>
+              <a href="/" className="event-row">
+                <span className="announcement-symbol"><Icon name="grid" size={20} /></span>
+                <div className="event-info"><h3>Legacy workspace</h3><p>The earlier interface at the site root</p></div>
+                <Icon name="chevron" size={14} />
+              </a>
+            </div>
+          </section>
         </div>
 
         <PasswordCard />
       </div>
+
+      <PreviewNote>Changing your password keeps this session and signs out every other device.</PreviewNote>
     </>
   );
 }
@@ -89,19 +111,36 @@ function PasswordCard() {
     if (ok) { setCurrent(""); setNext(""); setConfirm(""); }
   }
 
+  const firstError = errors.current ?? errors.next ?? errors.confirm;
+
   return (
-    <Card title="Change password">
-      <p className="mx-muted mx-small mx-mb">Changing your password keeps this session and signs out every other device.</p>
-      <form className="mx-form" onSubmit={submit} noValidate>
-        {action.notice ? <Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert> : null}
-        {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
-        <TextField label="Current password" type="password" autoComplete="current-password" value={current} onChange={(e) => { setCurrent(e.target.value); setErrors((c) => ({ ...c, current: undefined })); }} error={errors.current} />
-        <TextField label="New password" type="password" autoComplete="new-password" value={next} onChange={(e) => { setNext(e.target.value); setErrors((c) => ({ ...c, next: undefined })); }} error={errors.next} hint="8 to 200 characters." />
-        <TextField label="Confirm new password" type="password" autoComplete="new-password" value={confirm} onChange={(e) => { setConfirm(e.target.value); setErrors((c) => ({ ...c, confirm: undefined })); }} error={errors.confirm} />
-        <div className="mx-form-actions">
-          <Button type="submit" variant="primary" loading={action.busy === "password"}><Icon.key />Change password</Button>
+    <section className="panel task-create-panel">
+      <div className="form-heading">
+        <div><h2>Change password</h2><p>Keeps this session and signs out every other device.</p></div>
+      </div>
+      {action.notice ? <Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert> : null}
+      {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
+      <form onSubmit={submit} noValidate>
+        <div className="task-form-grid">
+          <label>
+            Current password
+            <input type="password" autoComplete="current-password" value={current} onChange={(e) => { setCurrent(e.target.value); setErrors((c) => ({ ...c, current: undefined })); }} aria-invalid={Boolean(errors.current)} disabled={action.busy === "password"} />
+          </label>
+          <label>
+            New password
+            <input type="password" autoComplete="new-password" value={next} onChange={(e) => { setNext(e.target.value); setErrors((c) => ({ ...c, next: undefined })); }} aria-invalid={Boolean(errors.next)} disabled={action.busy === "password"} />
+          </label>
+          <label>
+            Confirm new password
+            <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => { setConfirm(e.target.value); setErrors((c) => ({ ...c, confirm: undefined })); }} aria-invalid={Boolean(errors.confirm)} disabled={action.busy === "password"} />
+          </label>
         </div>
+        <div className="form-actions">
+          <Button type="submit" variant="primary" loading={action.busy === "password"}>Change password</Button>
+          <span className="upload-progress" style={{ marginTop: 0 }}>8 to 200 characters.</span>
+        </div>
+        {firstError ? <p className="form-error" role="alert">{firstError}</p> : null}
       </form>
-    </Card>
+    </section>
   );
 }

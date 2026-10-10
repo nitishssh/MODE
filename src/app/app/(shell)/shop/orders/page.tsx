@@ -3,10 +3,11 @@
 import { useState } from "react";
 import type { MerchOrder } from "@/lib/contracts";
 import { api, useAction, useLoad } from "../../../_lib/api";
-import { dateTime, money } from "../../../_lib/format";
-import { Alert, Badge, Button, Countdown, EmptyState, ErrorState, LinkButton, PageHead, Segmented, Skeleton, StatusBadge, Table } from "../../../_components/ui";
-import { Icon } from "../../../_components/icons";
+import { money, titleCase } from "../../../_lib/format";
+import { Alert, Countdown, EmptyState, ErrorState, LinkButton, Loading, PageHead, Segmented } from "../../../_components/ui";
 import { ShopNav } from "../_nav";
+
+/* Azman's "Your reservations" register (merch-register / merch-order-card) with a live/history switch. */
 
 const LIVE: MerchOrder["status"][] = ["pending_payment", "paid"];
 
@@ -20,45 +21,61 @@ export default function MyOrdersPage() {
 
   async function cancel(order: MerchOrder) {
     if (!window.confirm(`Cancel your hold on ${order.productName} (${order.size} × ${order.quantity})?`)) return;
-    await action.run(order.id, async () => {
+    const ok = await action.run(order.id, async () => {
       await api.post(`/api/orders/${encodeURIComponent(order.id)}/cancel`);
       await orders.reload();
-      return "Order cancelled. The units are back in stock.";
+      return "Hold cancelled and stock released.";
     });
-    if (action.error) void orders.reload();
+    if (!ok) void orders.reload();
   }
 
   return (
     <>
-      <PageHead eyebrow="Club shop" title="My orders" description="Pending orders hold their size for 30 minutes. Pay at the desk and an officer confirms your reference." actions={<Button size="sm" onClick={() => void orders.reload()} loading={orders.loading && Boolean(orders.data)}><Icon.refresh />Refresh</Button>} />
+      <PageHead eyebrow={<>CLUB <span>/</span> MERCHANDISE</>} title="My orders" description="Pending orders hold their size for 30 minutes. Pay at the desk and an officer confirms your reference." />
       <ShopNav active="orders" />
-      <div className="mx-toolbar">
-        <Segmented value={view} onChange={setView} items={[{ value: "live", label: `Live (${all.filter((o) => LIVE.includes(o.status)).length})` }, { value: "history", label: `History (${all.filter((o) => !LIVE.includes(o.status)).length})` }]} />
-      </div>
-      {action.error ? <div className="mx-mb"><Alert tone="error" onDismiss={action.clear}>{action.error}</Alert></div> : null}
-      {action.notice ? <div className="mx-mb"><Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert></div> : null}
-      {orders.loading && !orders.data ? <Skeleton rows={5} /> : orders.error ? <ErrorState error={orders.error} onRetry={orders.reload} /> : !rows.length ? (
-        <EmptyState title={view === "live" ? "No live orders" : "No past orders"} action={<LinkButton href="/app/shop" size="sm">Browse the shop<Icon.arrow /></LinkButton>}>
-          {view === "live" ? "Orders you place appear here with their hold timer." : "Fulfilled, cancelled and expired orders show here."}
-        </EmptyState>
-      ) : (
-        <Table head={<><th>Item</th><th className="num">Total</th><th>Pricing</th><th>Status</th><th>Timing</th><th className="actions" /></>}>
-          {rows.map((order) => (
-            <tr key={order.id}>
-              <td><span className="mx-cell-title">{order.productName}</span><span className="mx-cell-sub">{order.size} × {order.quantity} · placed {dateTime(order.createdAt)}</span></td>
-              <td className="num">{money(order.totalPaise)}</td>
-              <td><Badge tone={order.pricing === "member" ? "green" : "neutral"}>{order.pricing}</Badge></td>
-              <td><StatusBadge status={order.status} /></td>
-              <td>
-                {order.status === "pending_payment" ? <>Hold <Countdown until={order.holdExpiresAt} onExpire={() => void orders.reload()} /></> : null}
-                {order.status === "paid" ? <span className="mx-muted mx-small">Paid {dateTime(order.paidAt)}{order.paymentReference ? ` · ref ${order.paymentReference}` : ""}</span> : null}
-                {order.status === "fulfilled" ? <span className="mx-muted mx-small">Handed over {dateTime(order.fulfilledAt)}</span> : null}
-                {order.status === "cancelled" || order.status === "expired" ? <span className="mx-muted mx-small">{dateTime(order.updatedAt)}</span> : null}
-              </td>
-              <td className="actions">{order.status === "pending_payment" ? <Button size="sm" variant="danger" loading={action.busy === order.id} onClick={() => void cancel(order)}>Cancel</Button> : null}</td>
-            </tr>
-          ))}
-        </Table>
+      {action.notice ? <Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert> : null}
+      {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
+      {orders.loading && !orders.data ? <Loading label="Arranging your register…" /> : orders.error ? <ErrorState error={orders.error} onRetry={orders.reload} title="Your orders could not load" /> : (
+        <section className="merch-register" aria-labelledby="orders-register-heading">
+          <div className="merch-register-heading">
+            <div><span className="eyebrow">MY ORDER REGISTER</span><h2 id="orders-register-heading">Your reservations</h2></div>
+            <div className="mx-row">
+              <Segmented value={view} onChange={setView} items={[{ value: "live", label: `Live (${all.filter((o) => LIVE.includes(o.status)).length})` }, { value: "history", label: `History (${all.filter((o) => !LIVE.includes(o.status)).length})` }]} />
+              <button className="text-button" type="button" disabled={orders.loading} onClick={() => void orders.reload()}>Refresh stock ↻</button>
+            </div>
+          </div>
+          {!rows.length ? (
+            <div className="panel">
+              <EmptyState title={view === "live" ? "No live orders" : "No past orders"} icon="bag" action={<LinkButton href="/app/shop" variant="primary">Browse the collection</LinkButton>}>
+                {view === "live" ? "Orders you reserve appear here with their hold timer." : "Fulfilled, cancelled and expired orders show here."}
+              </EmptyState>
+            </div>
+          ) : (
+            <div className="merch-orders">
+              {rows.map((order) => {
+                const pending = order.status === "pending_payment";
+                return (
+                  <article key={order.id} className="merch-order-card">
+                    <div>
+                      <span className={`merch-order-status status-${order.status}`}>{titleCase(order.status)}</span>
+                      <h3>{order.productName} · {order.size}</h3>
+                      <p>{order.memberName} · quantity {order.quantity} · {money(order.totalPaise)} · {order.pricing} price</p>
+                      {pending && order.holdExpiresAt ? <small>Hold until {new Date(order.holdExpiresAt).toLocaleString()} · <Countdown until={order.holdExpiresAt} onExpire={() => void orders.reload()} /> left</small> : null}
+                      {order.status === "paid" ? <small>Paid{order.paidAt ? ` ${new Date(order.paidAt).toLocaleString()}` : ""}{order.paymentReference ? ` · ref ${order.paymentReference}` : ""} · collect at the desk</small> : null}
+                      {order.status === "fulfilled" ? <small>Handed over{order.fulfilledAt ? ` ${new Date(order.fulfilledAt).toLocaleString()}` : ""}</small> : null}
+                      {order.status === "cancelled" || order.status === "expired" ? <small>{new Date(order.updatedAt).toLocaleString()}</small> : null}
+                    </div>
+                    {pending ? (
+                      <div className="merch-order-actions">
+                        <button className="button-small red-btn" type="button" disabled={action.busy === order.id} onClick={() => void cancel(order)}>Cancel hold</button>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
       )}
     </>
   );

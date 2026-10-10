@@ -2,111 +2,96 @@
 
 import { useCallback, useMemo, useState, type FormEvent } from "react";
 import type { EventDetails, Member, TaskDetails } from "@/lib/contracts";
-import { api, useAction, useLoad } from "../../_lib/api";
+import { api, describeError, useAction, useLoad } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
-import { fromLocalInput, relative, toLocalInput } from "../../_lib/format";
-import { Alert, Button, EmptyState, ErrorState, Modal, PageHead, Segmented, SelectField, Skeleton, Stat, StatusBadge, TextField, TextareaField } from "../../_components/ui";
+import { date, fromLocalInput, toLocalInput } from "../../_lib/format";
+import { Alert, Button, EmptyState, ErrorState, FormPanel, Loading, PageHead, PreviewNote } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
+
+/* Azman's TaskBoard: filter toolbar, inline create panel, three kanban columns
+ * of TaskCards with status chips and an inline edit form. */
 
 type Status = TaskDetails["status"];
 const ORDER: Status[] = ["todo", "in_progress", "done"];
 const LABELS: Record<Status, string> = { todo: "To do", in_progress: "In progress", done: "Done" };
 
-interface FormState { title: string; description: string; assigneeId: string; eventId: string; dueAt: string }
-const EMPTY: FormState = { title: "", description: "", assigneeId: "", eventId: "", dueAt: "" };
-
-function truncate(text: string | null, max = 120): string {
-  if (!text) return "";
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
+const initials = (name: string) => name.split(" ").slice(0, 2).map((part) => part[0] ?? "").join("");
 
 export default function TasksPage() {
   const { user, can } = useSession();
   const canWrite = can("tasks:write");
   const canReadMembers = can("members:read");
 
-  const [scope, setScope] = useState<"mine" | "all">(canWrite ? "all" : "mine");
+  const [statusFilter, setStatusFilter] = useState<"" | Status>("");
+  const [assigneeFilter, setAssigneeFilter] = useState("");
   const [eventFilter, setEventFilter] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [mine, setMine] = useState(false);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
-    if (scope === "mine") params.set("mine", "true");
+    if (statusFilter) params.set("status", statusFilter);
+    if (assigneeFilter) params.set("assigneeId", assigneeFilter);
     if (eventFilter) params.set("eventId", eventFilter);
     if (overdueOnly) params.set("overdue", "true");
+    if (mine) params.set("mine", "true");
     const qs = params.toString();
     return `/api/tasks${qs ? `?${qs}` : ""}`;
-  }, [scope, eventFilter, overdueOnly]);
+  }, [statusFilter, assigneeFilter, eventFilter, overdueOnly, mine]);
 
   const tasks = useLoad(() => api.get<TaskDetails[]>(query), [query]);
   const events = useLoad(() => api.get<{ events: EventDetails[] }>("/api/events"));
   const members = useLoad(() => (canReadMembers ? api.get<{ members: Member[] }>("/api/members") : Promise.resolve({ members: [] as Member[] })), [canReadMembers]);
 
   const action = useAction();
-  const [modal, setModal] = useState<{ mode: "new" } | { mode: "edit"; task: TaskDetails } | null>(null);
-  const [form, setForm] = useState<FormState>(EMPTY);
-  const [formError, setFormError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [updating, setUpdating] = useState<string | null>(null);
 
   const list = tasks.data ?? [];
-  const open = list.filter((t) => t.status !== "done").length;
-  const overdue = list.filter((t) => t.overdue && t.status !== "done").length;
-  const done = list.filter((t) => t.status === "done").length;
-
   const canMove = useCallback((task: TaskDetails) => canWrite || (user !== null && task.assigneeId === user.id), [canWrite, user]);
 
-  async function move(task: TaskDetails, direction: 1 | -1) {
-    const index = ORDER.indexOf(task.status);
-    const next = ORDER[index + direction];
-    if (!next) return;
-    await action.run(`move:${task.id}`, async () => {
-      const updated = await api.post<TaskDetails>(`/api/tasks/${encodeURIComponent(task.id)}/status`, { status: next });
+  async function changeStatus(id: string, status: Status) {
+    setUpdating(id);
+    await action.run(`move:${id}`, async () => {
+      const updated = await api.post<TaskDetails>(`/api/tasks/${encodeURIComponent(id)}/status`, { status });
       tasks.setData((current) => (current ?? []).map((t) => (t.id === updated.id ? updated : t)));
     });
+    setUpdating(null);
   }
 
-  function openNew() {
-    setForm(EMPTY);
-    setFormError("");
-    setModal({ mode: "new" });
-  }
-
-  function openEdit(task: TaskDetails) {
-    setForm({ title: task.title, description: task.description ?? "", assigneeId: task.assigneeId ?? "", eventId: task.eventId ?? "", dueAt: toLocalInput(task.dueAt) });
-    setFormError("");
-    setModal({ mode: "edit", task });
-  }
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!modal) return;
-    const title = form.title.trim();
-    if (!title) { setFormError("Give the task a title."); return; }
-    const dueAt = form.dueAt ? fromLocalInput(form.dueAt) : null;
-    if (form.dueAt && !dueAt) { setFormError("Enter a valid deadline."); return; }
-    setFormError("");
-    const ok = await action.run("save", async () => {
-      if (modal.mode === "new") {
-        const body: Record<string, unknown> = { title };
-        if (form.description.trim()) body.description = form.description.trim();
-        if (form.assigneeId) body.assigneeId = form.assigneeId;
-        if (form.eventId) body.eventId = form.eventId;
-        if (dueAt) body.dueAt = dueAt;
-        const created = await api.post<TaskDetails>("/api/tasks", body);
-        tasks.setData((current) => [created, ...(current ?? [])]);
-        return "Task created.";
-      }
-      const body = {
-        title,
-        description: form.description.trim() || null,
-        assigneeId: form.assigneeId || null,
-        eventId: form.eventId || null,
-        dueAt,
-      };
-      const updated = await api.patch<TaskDetails>(`/api/tasks/${encodeURIComponent(modal.task.id)}`, body);
-      tasks.setData((current) => (current ?? []).map((t) => (t.id === updated.id ? updated : t)));
-      return "Task updated.";
-    });
-    if (ok) setModal(null);
+    const form = event.currentTarget;
+    const fd = new FormData(form);
+    const title = String(fd.get("title") ?? "").trim();
+    if (!title) { setCreateError("Give the task a title."); return; }
+    const dueRaw = String(fd.get("dueAt") ?? "");
+    const dueAt = dueRaw ? fromLocalInput(dueRaw) : null;
+    if (dueRaw && !dueAt) { setCreateError("Enter a valid deadline."); return; }
+    setCreating(true);
+    setCreateError("");
+    try {
+      const body: Record<string, unknown> = { title };
+      const description = String(fd.get("description") ?? "").trim();
+      if (description) body.description = description;
+      const assigneeId = String(fd.get("assigneeId") ?? "");
+      if (assigneeId) body.assigneeId = assigneeId;
+      const eventId = String(fd.get("eventId") ?? "");
+      if (eventId) body.eventId = eventId;
+      if (dueAt) body.dueAt = dueAt;
+      const created = await api.post<TaskDetails>("/api/tasks", body);
+      tasks.setData((current) => [created, ...(current ?? [])]);
+      form.reset();
+      setShowForm(false);
+      action.setNotice("Task created.");
+    } catch (caught) {
+      setCreateError(describeError(caught, "Could not create the task."));
+    } finally {
+      setCreating(false);
+    }
   }
 
   const memberOptions = members.data?.members ?? [];
@@ -115,96 +100,177 @@ export default function TasksPage() {
   return (
     <>
       <PageHead
-        eyebrow="Volunteers"
+        eyebrow={<>CLUB <span>/</span> TASKS</>}
         title="Tasks"
-        description={canWrite ? "Assign work, set deadlines and watch it move to done." : "Work assigned to you and across the club."}
-        actions={canWrite ? <Button variant="primary" onClick={openNew}><Icon.plus />New task</Button> : null}
+        description="Who is doing the work, what is due, and what still needs to get done."
       />
 
-      {action.error ? <div className="mx-mb"><Alert tone="error" onDismiss={action.clear}>{action.error}</Alert></div> : null}
-      {action.notice ? <div className="mx-mb"><Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert></div> : null}
+      {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
+      {action.notice ? <Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert> : null}
 
-      <div className="mx-grid mx-grid-3 mx-mb">
-        <Stat label="Open" value={tasks.data ? open : "—"} tone="blue" />
-        <Stat label="Overdue" value={tasks.data ? overdue : "—"} tone={overdue ? "accent" : undefined} />
-        <Stat label="Done" value={tasks.data ? done : "—"} tone="green" />
+      <div className="task-toolbar">
+        <div className="task-filters">
+          <select className="filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "" | Status)} aria-label="Filter by status">
+            <option value="">All statuses</option>
+            {ORDER.map((s) => <option key={s} value={s}>{LABELS[s]}</option>)}
+          </select>
+          {canReadMembers ? (
+            <select className="filter-select" value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} aria-label="Filter by assignee">
+              <option value="">All assignees</option>
+              {memberOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          ) : null}
+          <select className="filter-select" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)} aria-label="Filter by event">
+            <option value="">All events</option>
+            {eventOptions.map((ev) => <option key={ev.id} value={ev.id}>{ev.title}</option>)}
+          </select>
+          <label className="filter-toggle"><input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />Overdue only</label>
+          <label className="filter-toggle"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />Assigned to me</label>
+        </div>
+        {canWrite ? (
+          <Button variant="primary" onClick={() => { setShowForm(true); setCreateError(""); action.clear(); }}><Icon name="plus" size={16} />New task</Button>
+        ) : null}
       </div>
 
-      <div className="mx-toolbar">
-        <Segmented value={scope} onChange={setScope} items={[{ value: "mine", label: "Mine" }, { value: "all", label: "All" }]} />
-        <select className="mx-select sm" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)} aria-label="Filter by event">
-          <option value="">All events</option>
-          {eventOptions.map((ev) => <option key={ev.id} value={ev.id}>{ev.title}</option>)}
-        </select>
-        <label className="mx-check"><input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />Overdue only</label>
-        <Button size="sm" variant="ghost" className="mx-right" onClick={() => void tasks.reload()}><Icon.refresh />Refresh</Button>
-      </div>
+      {showForm && canWrite ? (
+        <FormPanel title="New task" description="Give it an owner and a deadline so it does not get lost." onClose={() => setShowForm(false)}>
+          <form onSubmit={create}>
+            <div className="task-form-grid">
+              <label>Title<input name="title" placeholder="What needs doing" maxLength={200} required disabled={creating} autoFocus /></label>
+              <label>Description<textarea name="description" placeholder="Any details the owner needs" maxLength={2000} rows={2} disabled={creating} /></label>
+              {canReadMembers ? (
+                <label>Assignee<select name="assigneeId" disabled={creating}><option value="">Unassigned</option>{memberOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+              ) : null}
+              <label>Event<select name="eventId" disabled={creating}><option value="">No event</option>{eventOptions.map((ev) => <option key={ev.id} value={ev.id}>{ev.title}</option>)}</select></label>
+              <label>Due date<input name="dueAt" type="datetime-local" disabled={creating} /></label>
+            </div>
+            <div className="form-actions">
+              <button type="submit" className="button primary" disabled={creating}>{creating ? "Creating…" : "Create task"}</button>
+              <button type="button" className="button secondary" onClick={() => setShowForm(false)} disabled={creating}>Cancel</button>
+            </div>
+            {createError ? <p className="form-error" role="alert">{createError}</p> : null}
+          </form>
+        </FormPanel>
+      ) : null}
 
-      {tasks.error ? <ErrorState error={tasks.error} onRetry={tasks.reload} /> : tasks.loading && !tasks.data ? <Skeleton rows={6} /> : !list.length ? (
-        <EmptyState title="No tasks here" action={canWrite ? <Button onClick={openNew}><Icon.plus />Create the first task</Button> : undefined}>
-          {scope === "mine" ? "Nothing is assigned to you with these filters." : "Nothing matches these filters."}
-        </EmptyState>
+      {tasks.error ? <ErrorState error={tasks.error} onRetry={tasks.reload} title="Tasks could not load" /> : tasks.loading && !tasks.data ? <Loading label="Loading tasks…" /> : !list.length ? (
+        <section className="panel">
+          <EmptyState title="No tasks here" icon="check">{mine ? "Nothing is assigned to you with these filters." : canWrite ? "Create the first task to get the team moving." : "Nothing matches these filters."}</EmptyState>
+        </section>
       ) : (
-        <div className="mx-board">
+        <div className="kanban-grid">
           {ORDER.map((status) => {
             const column = list.filter((t) => t.status === status);
             return (
-              <section key={status} className="mx-column" aria-label={LABELS[status]}>
-                <div className="mx-column-head"><span>{LABELS[status]}</span><span>{column.length}</span></div>
-                {column.length === 0 ? <p className="mx-muted mx-small" style={{ padding: "8px 6px" }}>Empty</p> : null}
-                {column.map((task) => {
-                  const idx = ORDER.indexOf(task.status);
-                  const movable = canMove(task);
-                  const busy = action.busy === `move:${task.id}`;
-                  return (
-                    <article key={task.id} className={`mx-task ${task.overdue && task.status !== "done" ? "overdue" : ""}`.trim()}>
-                      <div className="mx-between" style={{ alignItems: "flex-start" }}>
-                        <strong>{task.title}</strong>
-                        {task.overdue && task.status !== "done" ? <StatusBadge status="rejected" label="Overdue" /> : null}
-                      </div>
-                      {task.description ? <small>{truncate(task.description)}</small> : null}
-                      <small>{task.assignee ?? "Unassigned"}{task.eventTitle ? ` · ${task.eventTitle}` : ""}</small>
-                      <small style={task.overdue && task.status !== "done" ? { color: "var(--mx-red)", fontWeight: 600 } : undefined}>
-                        {task.dueAt ? `Due ${relative(task.dueAt)}` : "No deadline"}
-                      </small>
-                      <div className="mx-row" style={{ marginTop: 8 }}>
-                        <Button size="sm" disabled={!movable || idx === 0} loading={busy} onClick={() => void move(task, -1)} aria-label={`Move "${task.title}" back`}><Icon.back /></Button>
-                        <Button size="sm" disabled={!movable || idx === ORDER.length - 1} loading={busy} onClick={() => void move(task, 1)} aria-label={`Move "${task.title}" forward`}><Icon.arrow /></Button>
-                        {canWrite ? <Button size="sm" variant="ghost" className="mx-right" onClick={() => openEdit(task)}><Icon.edit />Edit</Button> : null}
-                      </div>
-                    </article>
-                  );
-                })}
+              <section key={status} className="kanban-column" aria-label={LABELS[status]}>
+                <h2><span className={`status-dot ${status}`} aria-hidden="true" />{LABELS[status]}<span className="column-count">{column.length}</span></h2>
+                {column.length ? column.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    canEdit={canWrite}
+                    canChangeStatus={canMove(task)}
+                    members={memberOptions}
+                    events={eventOptions}
+                    updating={updating === task.id}
+                    onStatusChange={changeStatus}
+                    showEdit={editingId === task.id}
+                    onEdit={() => setEditingId((current) => (current === task.id ? null : task.id))}
+                    onEditDone={(updated) => { tasks.setData((current) => (current ?? []).map((t) => (t.id === updated.id ? updated : t))); setEditingId(null); }}
+                  />
+                )) : <p className="column-empty">Nothing here yet.</p>}
               </section>
             );
           })}
         </div>
       )}
 
-      <Modal open={modal !== null} title={modal?.mode === "edit" ? "Edit task" : "New task"} onClose={() => setModal(null)}>
-        <form className="mx-form" onSubmit={submit} noValidate>
-          {formError ? <Alert tone="error">{formError}</Alert> : null}
-          <TextField label="Title" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} maxLength={200} required autoFocus />
-          <TextareaField label="Description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} maxLength={2000} />
-          <div className="mx-form-row">
-            {canReadMembers ? (
-              <SelectField label="Assignee" value={form.assigneeId} onChange={(e) => setForm((f) => ({ ...f, assigneeId: e.target.value }))}>
-                <option value="">Unassigned</option>
-                {memberOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </SelectField>
-            ) : null}
-            <SelectField label="Event" value={form.eventId} onChange={(e) => setForm((f) => ({ ...f, eventId: e.target.value }))}>
-              <option value="">No event</option>
-              {eventOptions.map((ev) => <option key={ev.id} value={ev.id}>{ev.title}</option>)}
-            </SelectField>
-          </div>
-          <TextField label="Deadline" type="datetime-local" value={form.dueAt} onChange={(e) => setForm((f) => ({ ...f, dueAt: e.target.value }))} hint="Leave empty for no deadline." />
-          <div className="mx-form-actions">
-            <Button onClick={() => setModal(null)}>Cancel</Button>
-            <Button type="submit" variant="primary" loading={action.busy === "save"}>{modal?.mode === "edit" ? "Save changes" : "Create task"}</Button>
-          </div>
-        </form>
-      </Modal>
+      <PreviewNote>Only the assigned member or an organizer can move a task. Deadlines are shown in club time.</PreviewNote>
     </>
+  );
+}
+
+function TaskCard({ task, canEdit, canChangeStatus, members, events, updating, onStatusChange, showEdit, onEdit, onEditDone }: {
+  task: TaskDetails;
+  canEdit: boolean;
+  canChangeStatus: boolean;
+  members: Member[];
+  events: EventDetails[];
+  updating: boolean;
+  onStatusChange: (id: string, status: Status) => void;
+  showEdit: boolean;
+  onEdit: () => void;
+  onEditDone: (updated: TaskDetails) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  async function handleEdit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    setSaving(true);
+    setSaveError("");
+    try {
+      const body: Record<string, string | null | undefined> = {};
+      const title = String(fd.get("title") ?? "").trim();
+      if (title) body.title = title;
+      const desc = String(fd.get("description") ?? "").trim();
+      body.description = desc || null;
+      const assigneeId = String(fd.get("assigneeId") ?? "");
+      body.assigneeId = assigneeId || null;
+      const eventId = String(fd.get("eventId") ?? "");
+      body.eventId = eventId || null;
+      const dueRaw = String(fd.get("dueAt") ?? "");
+      body.dueAt = dueRaw ? fromLocalInput(dueRaw) : null;
+      const updated = await api.patch<TaskDetails>(`/api/tasks/${encodeURIComponent(task.id)}`, body);
+      onEditDone(updated);
+    } catch (caught) {
+      setSaveError(describeError(caught, "Could not update the task."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const isOverdue = task.overdue && task.status !== "done";
+  return (
+    <article className={`task-card ${isOverdue ? "task-overdue" : ""}`.trim()}>
+      <div className="task-card-header">
+        <h3>{task.title}</h3>
+        <div className="task-card-actions">
+          {isOverdue ? <span className="badge red task-overdue-badge" title="Overdue"><Icon name="alert" size={10} />Overdue</span> : null}
+          <button type="button" className="icon-button" aria-label={showEdit ? "Close edit" : "Edit task"} disabled={!canEdit} onClick={onEdit}>
+            <Icon name={showEdit ? "close" : "chevron"} size={14} />
+          </button>
+        </div>
+      </div>
+      {task.description ? <p className="task-desc">{task.description}</p> : null}
+      <div className="task-meta">
+        <div className="person">
+          <span className="avatar small">{task.assignee ? initials(task.assignee) : "?"}</span>
+          <span className="task-assignee">{task.assignee || "Unassigned"}</span>
+        </div>
+        {task.dueAt ? <span className={`task-due ${isOverdue ? "overdue-text" : ""}`.trim()}><Icon name="clock" size={12} />{date(task.dueAt)}</span> : null}
+      </div>
+      {task.eventTitle ? <div className="task-event-tag"><Icon name="calendar" size={11} />{task.eventTitle}</div> : null}
+      <div className="task-status-row">
+        <span className="task-status-label">Move to:</span>
+        {ORDER.filter((s) => s !== task.status).map((s) => (
+          <button key={s} type="button" className={`status-chip ${s}`} disabled={updating || !canChangeStatus} onClick={() => onStatusChange(task.id, s)}>{LABELS[s]}</button>
+        ))}
+      </div>
+      {showEdit ? (
+        <form className="task-edit-form" onSubmit={handleEdit}>
+          <label>Title<input name="title" defaultValue={task.title} maxLength={200} disabled={saving} /></label>
+          <label>Description<textarea name="description" defaultValue={task.description ?? ""} maxLength={2000} rows={2} disabled={saving} /></label>
+          {members.length ? (
+            <label>Assignee<select name="assigneeId" defaultValue={task.assigneeId ?? ""} disabled={saving}><option value="">Unassigned</option>{members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+          ) : null}
+          <label>Event<select name="eventId" defaultValue={task.eventId ?? ""} disabled={saving}><option value="">No event</option>{events.map((ev) => <option key={ev.id} value={ev.id}>{ev.title}</option>)}</select></label>
+          <label>Due date<input name="dueAt" type="datetime-local" defaultValue={toLocalInput(task.dueAt)} disabled={saving} /></label>
+          <button type="submit" className="button primary" disabled={saving} style={{ marginTop: 10 }}>{saving ? "Saving…" : "Save changes"}</button>
+          {saveError ? <p className="form-error" role="alert">{saveError}</p> : null}
+        </form>
+      ) : null}
+    </article>
   );
 }

@@ -6,11 +6,12 @@ import { useParams } from "next/navigation";
 import type { DuesPayment, Member, Role } from "@/lib/contracts";
 import { api, ApiError, describeError, useAction, useLoad } from "../../../_lib/api";
 import { useSession } from "../../../_lib/session";
-import { date, dateTime } from "../../../_lib/format";
-import { Alert, Button, Card, EmptyState, ErrorState, KeyValue, Money, PageHead, SelectField, Skeleton, StatusBadge, Table, TextField } from "../../../_components/ui";
+import { amount, date, dateTime } from "../../../_lib/format";
+import { Alert, Button, Card, EmptyState, ErrorState, KeyValue, LinkButton, PageHead, PreviewNote, Skeleton, StatusBadge } from "../../../_components/ui";
 import { Icon } from "../../../_components/icons";
 
 const ROLES: Role[] = ["member", "volunteer", "organizer", "treasurer", "admin"];
+const EYEBROW = <>CLUB <span>/</span> MEMBERS</>;
 
 export default function MemberDetailPage() {
   const params = useParams<{ id: string }>();
@@ -24,21 +25,21 @@ export default function MemberDetailPage() {
   if (!allowed) {
     return (
       <>
-        <PageHead eyebrow="Club" title="Member" />
-        <EmptyState title="Officer-only page">Member records are visible to organizers, treasurers and admins.</EmptyState>
+        <PageHead eyebrow={EYEBROW} title="Member" />
+        <section className="panel"><EmptyState title="Officer-only page" icon="people">Member records are visible to organizers, treasurers and admins.</EmptyState></section>
       </>
     );
   }
 
   const member = members.data?.members.find((m) => m.id === id) ?? null;
 
-  if (members.loading && !members.data) return <><PageHead eyebrow="Club" title="Member" /><Skeleton rows={6} /></>;
-  if (members.error) return <><PageHead eyebrow="Club" title="Member" /><ErrorState error={members.error} onRetry={members.reload} /></>;
+  if (members.loading && !members.data) return <><PageHead eyebrow={EYEBROW} title="Member" /><Skeleton rows={6} /></>;
+  if (members.error) return <><PageHead eyebrow={EYEBROW} title="Member" /><ErrorState error={members.error} onRetry={members.reload} /></>;
   if (!member) {
     return (
       <>
-        <PageHead eyebrow="Club" title="Member not found" />
-        <EmptyState title="No such member in this club" action={<Link href="/app/members" className="mx-btn">Back to members</Link>}>The link may be stale, or the member belongs to another club.</EmptyState>
+        <PageHead eyebrow={EYEBROW} title="Member not found" />
+        <section className="panel"><EmptyState title="No such member in this club" icon="people" action={<LinkButton href="/app/members" variant="primary">Back to members</LinkButton>}>The link may be stale, or the member belongs to another club.</EmptyState></section>
       </>
     );
   }
@@ -51,33 +52,28 @@ export default function MemberDetailPage() {
 
   return (
     <>
-      <Link href="/app/members" className="mx-link mx-small" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 12 }}><Icon.back />All members</Link>
+      <Link href="/app/members" className="text-button" style={{ marginBottom: 12 }}><Icon name="chevron" size={14} style={{ transform: "rotate(180deg)" }} />All members</Link>
       <PageHead
-        eyebrow="Member"
+        eyebrow={EYEBROW}
         title={member.name}
         description={member.email}
         actions={<><StatusBadge status={member.role} /><StatusBadge status={member.membership} label={member.membership === "none" ? "Not joined" : undefined} /></>}
       />
 
-      <div className="mx-grid mx-grid-side">
+      <div className="treasury-overview-grid">
         <div className="mx-stack">
-          <Card title="Profile">
+          <Card kicker="MEMBER RECORD" title="Profile">
             <KeyValue items={[
               { label: "Email", value: member.email },
               { label: "Role", value: <StatusBadge status={member.role} /> },
               { label: "Membership", value: <StatusBadge status={member.membership} label={member.membership === "none" ? "Not joined" : undefined} /> },
-              { label: "Expires on", value: date(member.expiresOn) },
+              { label: "Expires on", value: member.expiresOn ? date(member.expiresOn) : "Not set" },
               { label: "Joined", value: date(member.joinedAt) },
-              { label: "Dues", value: <StatusBadge status={member.duesStatus} /> },
-              { label: "Door code", value: <code className="mx-mono">{member.shortCode}</code> },
+              { label: "Dues", value: <span className={`badge ${member.duesStatus === "paid" ? "green" : "amber"}`}>{member.duesStatus === "paid" ? "Paid" : "Unpaid"}</span> },
+              { label: "Door code", value: <span className="payment-ref">{member.shortCode}</span> },
             ]} />
           </Card>
 
-          {can("roles:manage") ? <RoleCard member={member} isSelf={isSelf} onChanged={patchMember} /> : null}
-          {can("roles:manage") ? <PasswordCard member={member} /> : null}
-        </div>
-
-        <div className="mx-stack">
           {can("membership:record_payment") ? (
             <DuesCard
               member={member}
@@ -88,22 +84,42 @@ export default function MemberDetailPage() {
             />
           ) : null}
 
-          <Card title="Dues history">
-            {dues.loading && !dues.data ? <Skeleton rows={3} /> : dues.error ? <ErrorState error={dues.error} onRetry={dues.reload} /> : !dues.data?.payments.length ? <p className="mx-muted">No dues recorded for this member yet.</p> : (
-              <Table head={<><th>Recorded</th><th>Reference</th><th className="num">Amount</th><th>Expiry</th></>}>
-                {[...dues.data.payments].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).map((p) => (
-                  <tr key={p.id}>
-                    <td>{dateTime(p.recordedAt)}</td>
-                    <td><code className="mx-mono">{p.reference}</code></td>
-                    <td className="num"><Money paise={p.amountPaise} exact /></td>
-                    <td>{p.previousExpiresOn ? `${date(p.previousExpiresOn)} → ` : "New · "}{date(p.newExpiresOn)}</td>
-                  </tr>
-                ))}
-              </Table>
+          <section className="panel">
+            <div className="panel-heading">
+              <div><div className="eyebrow">PAYMENT REGISTER</div><h2>Dues history</h2></div>
+            </div>
+            {dues.loading && !dues.data ? <div className="panel-body"><Skeleton rows={3} /></div> : dues.error ? <div className="panel-body"><ErrorState error={dues.error} onRetry={dues.reload} /></div> : !dues.data?.payments.length ? (
+              <EmptyState title="No dues recorded yet" icon="coin">A first payment activates membership for 365 days.</EmptyState>
+            ) : (
+              <div className="table-scroll">
+                <table>
+                  <thead><tr><th scope="col">Recorded</th><th scope="col">Reference</th><th scope="col" className="amount-cell">Amount</th><th scope="col">Expiry</th></tr></thead>
+                  <tbody>
+                    {[...dues.data.payments].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).map((p) => (
+                      <tr key={p.id}>
+                        <td>{dateTime(p.recordedAt)}</td>
+                        <td><span className="payment-ref">{p.reference}</span></td>
+                        <td className="amount-cell positive">+{amount(p.amountPaise)}</td>
+                        <td><strong>{date(p.newExpiresOn)}</strong>{p.previousExpiresOn ? <span className="subtext">was {date(p.previousExpiresOn)}</span> : <span className="subtext">First payment</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
-          </Card>
+          </section>
+        </div>
+
+        <div className="mx-stack">
+          {can("roles:manage") ? <RoleCard member={member} isSelf={isSelf} onChanged={patchMember} /> : null}
+          {can("roles:manage") ? <PasswordCard member={member} /> : null}
+          {!can("roles:manage") ? <Card kicker="ACCESS" title="Role changes">
+            <p className="mx-muted mx-small">Only the club lead can change roles or set passwords.</p>
+          </Card> : null}
         </div>
       </div>
+
+      <PreviewNote>Role changes and password resets are written to the audit trail. Dues replay the same reference safely and never credit twice.</PreviewNote>
     </>
   );
 }
@@ -129,17 +145,26 @@ function DuesCard({ member, onRecorded }: { member: Member; onRecorded: (result:
   }
 
   return (
-    <Card title="Record dues payment">
-      <p className="mx-muted mx-small mx-mb">The amount is the club's fixed annual dues. A first payment activates membership for 365 days; a renewal adds 365 days to the later of today and the current expiry, so paying early never loses days.</p>
-      {action.notice ? <div className="mx-mb"><Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert></div> : null}
-      {action.error ? <div className="mx-mb"><Alert tone="error" onDismiss={action.clear}>{action.error}</Alert></div> : null}
-      <form className="mx-form" onSubmit={submit} noValidate>
-        <TextField label="Payment reference" placeholder="UPI / bank / cash receipt reference" value={reference} onChange={(e) => { setReference(e.target.value); setFieldError(""); }} error={fieldError} hint="Replaying the same reference is safe: it returns the original payment." />
-        <div className="mx-form-actions">
-          <Button type="submit" variant="primary" loading={action.busy === "dues"}><Icon.check />Record payment</Button>
+    <section className="panel task-create-panel">
+      <div className="form-heading">
+        <div>
+          <h2>Record dues payment</h2>
+          <p>The amount is the club&apos;s fixed annual dues. A first payment activates membership for 365 days; a renewal adds 365 days to the later of today and the current expiry, so paying early never loses days.</p>
         </div>
+      </div>
+      {action.notice ? <Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert> : null}
+      {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
+      <form onSubmit={submit} noValidate>
+        <div className="form-fields">
+          <label>
+            Payment reference
+            <input placeholder="UPI / bank / cash receipt reference" value={reference} onChange={(e) => { setReference(e.target.value); setFieldError(""); }} aria-invalid={Boolean(fieldError)} disabled={action.busy === "dues"} />
+          </label>
+          <Button type="submit" variant="primary" loading={action.busy === "dues"}>Record payment<Icon name="arrow" size={18} /></Button>
+        </div>
+        {fieldError ? <p className="form-error" role="alert">{fieldError}</p> : <p className="upload-progress">Replaying the same reference is safe: it returns the original payment.</p>}
       </form>
-    </Card>
+    </section>
   );
 }
 
@@ -163,20 +188,28 @@ function RoleCard({ member, isSelf, onChanged }: { member: Member; isSelf: boole
   }
 
   return (
-    <Card title="Role">
+    <section className="panel task-create-panel">
+      <div className="form-heading">
+        <div><h2>Role</h2><p>Role changes are written to the audit trail.</p></div>
+      </div>
       {isSelf ? <p className="mx-muted mx-small">You cannot change your own role. Ask another admin.</p> : (
-        <form className="mx-form" onSubmit={submit} noValidate>
+        <form onSubmit={submit} noValidate>
           {action.notice ? <Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert> : null}
           {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
-          <SelectField label="Club role" value={role} onChange={(e) => setRole(e.target.value as Role)} hint="Role changes are written to the audit trail.">
-            {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-          </SelectField>
-          <div className="mx-form-actions">
+          <div className="task-form-grid">
+            <label>
+              Club role
+              <select value={role} onChange={(e) => setRole(e.target.value as Role)} disabled={action.busy === "role"}>
+                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="form-actions">
             <Button type="submit" variant="primary" loading={action.busy === "role"} disabled={role === member.role}>Change role</Button>
           </div>
         </form>
       )}
-    </Card>
+    </section>
   );
 }
 
@@ -201,17 +234,28 @@ function PasswordCard({ member }: { member: Member }) {
   }
 
   return (
-    <Card title="Set password">
-      <p className="mx-muted mx-small mx-mb">Gives this member a login, or resets a forgotten one. This is audited.</p>
-      <form className="mx-form" onSubmit={submit} noValidate>
+    <section className="panel task-create-panel">
+      <div className="form-heading">
+        <div><h2>Set password</h2><p>Gives this member a login, or resets a forgotten one. This is audited.</p></div>
+      </div>
+      <form onSubmit={submit} noValidate>
         {action.notice ? <Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert> : null}
         {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
-        <TextField label="New password" type="password" autoComplete="new-password" value={password} onChange={(e) => { setPassword(e.target.value); setErrors((c) => ({ ...c, password: undefined })); }} error={errors.password} />
-        <TextField label="Confirm password" type="password" autoComplete="new-password" value={confirm} onChange={(e) => { setConfirm(e.target.value); setErrors((c) => ({ ...c, confirm: undefined })); }} error={errors.confirm} />
-        <div className="mx-form-actions">
-          <Button type="submit" variant="primary" loading={action.busy === "password"}><Icon.key />Set password</Button>
+        <div className="task-form-grid">
+          <label>
+            New password
+            <input type="password" autoComplete="new-password" value={password} onChange={(e) => { setPassword(e.target.value); setErrors((c) => ({ ...c, password: undefined })); }} aria-invalid={Boolean(errors.password)} disabled={action.busy === "password"} />
+          </label>
+          <label>
+            Confirm password
+            <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => { setConfirm(e.target.value); setErrors((c) => ({ ...c, confirm: undefined })); }} aria-invalid={Boolean(errors.confirm)} disabled={action.busy === "password"} />
+          </label>
         </div>
+        <div className="form-actions">
+          <Button type="submit" variant="primary" loading={action.busy === "password"}>Set password</Button>
+        </div>
+        {errors.password || errors.confirm ? <p className="form-error" role="alert">{errors.password ?? errors.confirm}</p> : null}
       </form>
-    </Card>
+    </section>
   );
 }

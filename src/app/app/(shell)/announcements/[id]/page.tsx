@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { Announcement, AnnouncementOutboxMessage } from "@/lib/contracts";
 import { api, describeError, useLoad } from "../../../_lib/api";
-import { dateTime, relative } from "../../../_lib/format";
-import { Alert, Badge, Button, Card, EmptyState, ErrorState, LinkButton, PageHead, Skeleton, Table } from "../../../_components/ui";
+import { date, dateTime } from "../../../_lib/format";
+import { Alert, Button, Card, EmptyState, ErrorState, Loading, PageHead, Skeleton, Table } from "../../../_components/ui";
 import { Icon } from "../../../_components/icons";
 import { useSession } from "../../../_lib/session";
+
+/* One announcement as Azman's announcement-card, with the simulated outbox for outbox:manage holders. */
 
 type OutboxResponse = { delivery: "simulated"; messages: AnnouncementOutboxMessage[] };
 
@@ -25,24 +28,24 @@ function OutboxCard({ id }: { id: string }) {
   }
 
   return (
-    <Card title="Simulated outbox" actions={state.status === "ready" ? <Button size="sm" onClick={() => void load()}><Icon.refresh />Reload</Button> : null}>
-      <p className="mx-muted mx-small" style={{ marginBottom: 12 }}>One stored row per active member at publication time. A row proves what was recorded, not that any email or message was delivered: nothing is sent externally.</p>
-      {state.status === "idle" ? <Button onClick={() => void load()}><Icon.mail />Load recipients</Button> : null}
-      {state.status === "loading" ? <Skeleton rows={4} /> : null}
-      {state.status === "error" ? <Alert tone="error" onRetry={() => void load()}>{state.error}</Alert> : null}
+    <Card kicker="SIMULATED DELIVERY" title="Outbox" flush actions={state.status === "ready" ? <button type="button" className="text-button" onClick={() => void load()}>Reload <Icon name="arrow" size={14} /></button> : null}>
+      <div className="panel-footnote"><span className="tiny-dot" />One stored row per active member at publication time. A row proves what was recorded, not that any email or message was delivered: nothing is sent externally.</div>
+      {state.status === "idle" ? <div style={{ padding: 25 }}><Button variant="primary" onClick={() => void load()}><Icon name="mail" size={16} />Load recipients</Button></div> : null}
+      {state.status === "loading" ? <div style={{ padding: 25 }}><Skeleton rows={4} /></div> : null}
+      {state.status === "error" ? <div style={{ padding: 25 }}><Alert tone="error" onRetry={() => void load()}>{state.error}</Alert></div> : null}
       {state.status === "ready" && state.data ? (
         state.data.messages.length ? (
-          <Table head={<><th>Recipient</th><th>Subject</th><th>Recorded</th><th>Status</th></>}>
+          <Table head={<><th scope="col">Recipient</th><th scope="col">Subject</th><th scope="col">Recorded</th><th scope="col">Status</th></>}>
             {state.data.messages.map((message) => (
               <tr key={message.id}>
-                <td className="mx-mono" style={{ fontSize: 12 }}>{message.recipientEmail}</td>
+                <td><strong>{message.recipientEmail}</strong></td>
                 <td>{message.subject}</td>
                 <td>{dateTime(message.createdAt)}</td>
-                <td><Badge tone="blue" dot>{message.status}</Badge></td>
+                <td><span className="badge purple">{message.status}</span></td>
               </tr>
             ))}
           </Table>
-        ) : <EmptyState title="No recipients recorded">No member had an active membership when this was published.</EmptyState>
+        ) : <EmptyState title="No recipients recorded" icon="mail">No member had an active membership when this was published.</EmptyState>
       ) : null}
     </Card>
   );
@@ -57,11 +60,17 @@ export default function AnnouncementPage() {
 
   return (
     <>
-      <div className="mx-mb"><LinkButton href="/app/announcements" size="sm" variant="ghost"><Icon.back />All announcements</LinkButton></div>
-      {announcement.loading && !item ? <Skeleton rows={6} /> : announcement.error ? <ErrorState error={announcement.error} onRetry={announcement.reload} fallback="This announcement could not be found." /> : item ? (
-        <div className="mx-stack">
-          <PageHead eyebrow={`Published ${relative(item.publishedAt)} · ${dateTime(item.publishedAt)}`} title={item.title} />
-          <Card><p className="mx-prose" style={{ fontSize: 15 }}>{item.body}</p></Card>
+      <PageHead eyebrow={<>CLUB <span>/</span> NOTICES</>} title={item ? item.title : "Announcement"} description={item ? `Published ${dateTime(item.publishedAt)}` : undefined} actions={<Link href="/app/announcements" className="text-button"><Icon name="back" size={14} />All announcements</Link>} />
+      {announcement.loading && !item ? <Loading label="Opening the notice…" /> : announcement.error ? <ErrorState error={announcement.error} onRetry={announcement.reload} fallback="This announcement could not be found." title="Announcement unavailable" /> : item ? (
+        <div className="announcement-list">
+          <article className="panel announcement-card">
+            <span className="announcement-symbol"><Icon name="megaphone" size={22} /></span>
+            <div>
+              <span className="eyebrow">{date(item.publishedAt)}</span>
+              <h2>{item.title}</h2>
+              <p>{item.body}</p>
+            </div>
+          </article>
           {can("outbox:manage") ? <OutboxCard id={item.id} /> : null}
         </div>
       ) : null}

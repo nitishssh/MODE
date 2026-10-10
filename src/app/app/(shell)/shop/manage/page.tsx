@@ -4,15 +4,17 @@ import { useState, type FormEvent } from "react";
 import type { ProductDetails } from "@/lib/contracts";
 import { api, ApiError, useAction, useLoad } from "../../../_lib/api";
 import { money, paiseToRupees, rupeesToPaise } from "../../../_lib/format";
-import { Alert, Badge, Button, EmptyState, ErrorState, Input, Modal, PageHead, Skeleton, Table, TextField, TextareaField } from "../../../_components/ui";
+import { Alert, Button, Card, EmptyState, ErrorState, FormPanel, Loading, PageHead, Table } from "../../../_components/ui";
 import { Icon } from "../../../_components/icons";
 import { useSession } from "../../../_lib/session";
 import { ShopNav } from "../_nav";
 
+/* Product management in Azman's workspace idiom: an inline task-create-panel form and a panel table. */
+
 type VariantDraft = { size: string; stock: string };
 type Errors = Partial<Record<"name" | "description" | "pricePaise" | "memberPricePaise" | "variants", string>>;
 
-function NewProductModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (product: ProductDetails) => void }) {
+function NewProductPanel({ onClose, onCreated }: { onClose: () => void; onCreated: (product: ProductDetails) => void }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
@@ -20,10 +22,6 @@ function NewProductModal({ open, onClose, onCreated }: { open: boolean; onClose:
   const [variants, setVariants] = useState<VariantDraft[]>([{ size: "ONE SIZE", stock: "10" }]);
   const [errors, setErrors] = useState<Errors>({});
   const action = useAction();
-
-  function reset() {
-    setName(""); setDescription(""); setPrice(""); setMemberPrice(""); setVariants([{ size: "ONE SIZE", stock: "10" }]); setErrors({}); action.clear();
-  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,45 +41,46 @@ function NewProductModal({ open, onClose, onCreated }: { open: boolean; onClose:
         const result = await api.post<{ product: ProductDetails }>("/api/products", { name: name.trim(), description: description.trim(), pricePaise, memberPricePaise, variants: cleaned });
         onCreated(result.product);
       } catch (caught) {
-        if (caught instanceof ApiError && caught.details.length) {
-          setErrors(Object.fromEntries(caught.details.map((d) => [d.field.split(".")[0], d.message])));
-        }
+        if (caught instanceof ApiError && caught.details.length) setErrors(Object.fromEntries(caught.details.map((d) => [d.field.split(".")[0], d.message])));
         throw caught;
       }
     });
-    if (ok) { reset(); onClose(); }
+    if (ok) onClose();
   }
 
+  const busy = action.busy === "create";
   return (
-    <Modal open={open} title="New product" description="Each size tracks its own stock. Member price is optional." onClose={() => { reset(); onClose(); }}>
-      <form className="mx-form" onSubmit={submit} noValidate>
-        {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
-        <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} error={errors.name} autoFocus maxLength={120} />
-        <TextareaField label="Description" value={description} onChange={(e) => setDescription(e.target.value)} error={errors.description} maxLength={2000} placeholder="Optional" />
-        <div className="mx-form-row">
-          <TextField label="Price (₹)" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} error={errors.pricePaise} placeholder="349.00" />
-          <TextField label="Member price (₹)" inputMode="decimal" value={memberPrice} onChange={(e) => setMemberPrice(e.target.value)} error={errors.memberPricePaise} hint="Leave blank for no member discount." placeholder="Optional" />
+    <FormPanel title="New product" description="Each size tracks its own stock. Member price is optional." onClose={onClose}>
+      <form onSubmit={submit} noValidate>
+        <div className="task-form-grid">
+          <label>Name<input value={name} maxLength={120} autoFocus disabled={busy} onChange={(e) => setName(e.target.value)} /></label>
+          <label>Price (₹)<input inputMode="decimal" placeholder="349.00" value={price} disabled={busy} onChange={(e) => setPrice(e.target.value)} /></label>
+          <label>Member price (₹, optional)<input inputMode="decimal" placeholder="Leave blank for no discount" value={memberPrice} disabled={busy} onChange={(e) => setMemberPrice(e.target.value)} /></label>
+          <label>Description<textarea value={description} maxLength={2000} rows={2} placeholder="Optional" disabled={busy} onChange={(e) => setDescription(e.target.value)} /></label>
         </div>
-        <div className="mx-field">
-          <label>Sizes and stock</label>
-          <div className="mx-stack-sm">
-            {variants.map((variant, index) => (
-              <div key={index} className="mx-row" style={{ flexWrap: "nowrap" }}>
-                <Input className="sm" placeholder="Size (e.g. M)" aria-label={`Size ${index + 1}`} value={variant.size} onChange={(e) => setVariants((c) => c.map((v, i) => (i === index ? { ...v, size: e.target.value } : v)))} maxLength={20} />
-                <Input className="sm" type="number" min={0} max={100000} step={1} placeholder="Stock" aria-label={`Stock for size ${index + 1}`} value={variant.stock} onChange={(e) => setVariants((c) => c.map((v, i) => (i === index ? { ...v, stock: e.target.value } : v)))} style={{ width: 110 }} />
-                <Button size="sm" variant="ghost" aria-label="Remove size" disabled={variants.length <= 1} onClick={() => setVariants((c) => c.filter((_, i) => i !== index))}><Icon.close /></Button>
-              </div>
-            ))}
-          </div>
-          {errors.variants ? <span className="mx-error" role="alert">{errors.variants}</span> : <span className="mx-hint">Up to 20 sizes.</span>}
-          <div><Button size="sm" disabled={variants.length >= 20} onClick={() => setVariants((c) => [...c, { size: "", stock: "0" }])}><Icon.plus />Add size</Button></div>
+        <div className="task-form-grid" style={{ marginTop: 16 }}>
+          {variants.map((variant, index) => (
+            <div key={index} className="expense-action-row" style={{ alignItems: "flex-end" }}>
+              <label style={{ flex: 1 }}>Size {index + 1}<input placeholder="e.g. M" maxLength={20} value={variant.size} disabled={busy} onChange={(e) => setVariants((c) => c.map((v, i) => (i === index ? { ...v, size: e.target.value } : v)))} /></label>
+              <label style={{ width: 110 }}>Stock<input type="number" min={0} max={100000} step={1} value={variant.stock} disabled={busy} onChange={(e) => setVariants((c) => c.map((v, i) => (i === index ? { ...v, stock: e.target.value } : v)))} /></label>
+              <button type="button" className="button-small red-btn" aria-label={`Remove size ${index + 1}`} disabled={busy || variants.length <= 1} onClick={() => setVariants((c) => c.filter((_, i) => i !== index))}>Remove</button>
+            </div>
+          ))}
         </div>
-        <div className="mx-form-actions">
-          <Button onClick={() => { reset(); onClose(); }}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={action.busy === "create"}>Create product</Button>
+        <div className="form-actions">
+          <button type="button" className="button-small green-btn" disabled={busy || variants.length >= 20} onClick={() => setVariants((c) => [...c, { size: "", stock: "0" }])}><Icon name="plus" size={12} />Add size</button>
+          <span className="subtext">Up to 20 sizes.</span>
+        </div>
+        {errors.name || errors.pricePaise || errors.memberPricePaise || errors.variants || errors.description ? (
+          <p className="form-error" role="alert">{[errors.name, errors.pricePaise, errors.memberPricePaise, errors.description, errors.variants].filter(Boolean).join(" ")}</p>
+        ) : null}
+        {action.error ? <p className="form-error" role="alert">{action.error}</p> : null}
+        <div className="form-actions">
+          <button type="submit" className="button primary" disabled={busy}>{busy ? "Creating…" : "Create product"}</button>
+          <button type="button" className="button secondary" disabled={busy} onClick={onClose}>Cancel</button>
         </div>
       </form>
-    </Modal>
+    </FormPanel>
   );
 }
 
@@ -96,9 +95,9 @@ export default function ManageProductsPage() {
   if (!allowed) {
     return (
       <>
-        <PageHead eyebrow="Club shop" title="Manage products" />
+        <PageHead eyebrow={<>CLUB <span>/</span> MERCHANDISE</>} title="Manage products" />
         <ShopNav active="shop" />
-        <EmptyState title="Organizers only">Adding products and editing stock needs the organizer or admin role.</EmptyState>
+        <section className="panel"><EmptyState title="Organizers only" icon="bag">Adding products and editing stock needs the organizer or admin role.</EmptyState></section>
       </>
     );
   }
@@ -108,8 +107,7 @@ export default function ManageProductsPage() {
   }
 
   async function saveStock(product: ProductDetails, variantId: string) {
-    const raw = stockDrafts[variantId];
-    const stock = Number(raw);
+    const stock = Number(stockDrafts[variantId]);
     if (!Number.isInteger(stock) || stock < 0) { action.setError("Stock must be a whole number of 0 or more."); return; }
     await action.run(`stock:${variantId}`, async () => {
       const result = await api.patch<{ product: ProductDetails }>(`/api/products/variants/${encodeURIComponent(variantId)}`, { stock });
@@ -131,42 +129,51 @@ export default function ManageProductsPage() {
 
   return (
     <>
-      <PageHead eyebrow="Club shop" title="Manage products" description="Stock shown is what members can order right now; held units are already subtracted." actions={<Button variant="primary" onClick={() => setCreating(true)}><Icon.plus />New product</Button>} />
+      <PageHead
+        eyebrow={<>CLUB <span>/</span> MERCHANDISE</>}
+        title="Manage products"
+        description="Stock shown is what members can order right now; held units are already subtracted."
+        actions={<Button variant="primary" onClick={() => { setCreating(true); action.clear(); }}><Icon name="plus" size={18} />New product</Button>}
+      />
       <ShopNav active="manage" />
-      {action.error ? <div className="mx-mb"><Alert tone="error" onDismiss={action.clear}>{action.error}</Alert></div> : null}
-      {action.notice ? <div className="mx-mb"><Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert></div> : null}
-      {products.loading && !products.data ? <Skeleton rows={5} /> : products.error ? <ErrorState error={products.error} onRetry={products.reload} /> : !rows.length ? (
-        <EmptyState title="No products yet" action={<Button variant="primary" onClick={() => setCreating(true)}><Icon.plus />Add the first product</Button>}>Add a product with at least one size.</EmptyState>
-      ) : (
-        <Table head={<><th>Product</th><th className="num">Price</th><th className="num">Member price</th><th>Sizes and stock</th><th>Status</th><th className="actions" /></>}>
-          {rows.map((product) => (
-            <tr key={product.id}>
-              <td><span className="mx-cell-title">{product.name}</span>{product.description ? <span className="mx-cell-sub">{product.description}</span> : null}</td>
-              <td className="num">{money(product.pricePaise)}</td>
-              <td className="num">{product.memberPricePaise === null ? <span className="mx-muted">—</span> : money(product.memberPricePaise)}</td>
-              <td>
-                <div className="mx-stack-sm">
-                  {product.variants.map((variant) => {
-                    const draft = stockDrafts[variant.id];
-                    const dirty = draft !== undefined && draft !== String(variant.stock);
-                    return (
-                      <div key={variant.id} className="mx-row" style={{ flexWrap: "nowrap" }}>
-                        <span className="mx-mono" style={{ minWidth: 70 }}>{variant.size}</span>
-                        <Input className="sm" type="number" min={0} max={100000} step={1} style={{ width: 90 }} aria-label={`Stock for ${product.name} ${variant.size}`} value={draft ?? String(variant.stock)} onChange={(e) => setStockDrafts((c) => ({ ...c, [variant.id]: e.target.value }))} />
-                        <Button size="sm" disabled={!dirty} loading={action.busy === `stock:${variant.id}`} onClick={() => void saveStock(product, variant.id)}>Save</Button>
-                        {variant.stock === 0 ? <Badge tone="red">Sold out</Badge> : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </td>
-              <td><Badge tone={product.active ? "green" : "neutral"} dot>{product.active ? "Active" : "Retired"}</Badge></td>
-              <td className="actions"><Button size="sm" variant={product.active ? "danger" : "primary"} loading={action.busy === `active:${product.id}`} onClick={() => void toggleActive(product)}>{product.active ? "Retire" : "Reactivate"}</Button></td>
-            </tr>
-          ))}
-        </Table>
+      {action.notice ? <Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert> : null}
+      {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
+      {creating ? <NewProductPanel onClose={() => setCreating(false)} onCreated={(product) => { products.setData((c) => (c ? { products: [product, ...c.products] } : { products: [product] })); action.setNotice(`${product.name} added with ${product.variants.length} size${product.variants.length === 1 ? "" : "s"} at ${money(product.pricePaise)}${product.memberPricePaise !== null ? ` (₹${paiseToRupees(product.memberPricePaise)} for members)` : ""}.`); }} /> : null}
+      {products.loading && !products.data ? <Loading label="Loading the catalogue…" /> : products.error ? <ErrorState error={products.error} onRetry={products.reload} title="The catalogue could not load" /> : (
+        <Card kicker="CLUB COLLECTION" title="Catalogue" flush>
+          {!rows.length ? (
+            <EmptyState title="No products yet" icon="bag" action={<Button variant="primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} />Add the first product</Button>}>Add a product with at least one size.</EmptyState>
+          ) : (
+            <Table head={<><th scope="col">Product</th><th scope="col" className="amount-cell">Price</th><th scope="col" className="amount-cell">Member price</th><th scope="col">Sizes and stock</th><th scope="col">Status</th><th scope="col">Actions</th></>}>
+              {rows.map((product) => (
+                <tr key={product.id}>
+                  <td><strong>{product.name}</strong>{product.description ? <span className="subtext">{product.description}</span> : null}</td>
+                  <td className="amount-cell">{money(product.pricePaise)}</td>
+                  <td className="amount-cell">{product.memberPricePaise === null ? "—" : money(product.memberPricePaise)}</td>
+                  <td>
+                    {product.variants.map((variant) => {
+                      const draft = stockDrafts[variant.id];
+                      const dirty = draft !== undefined && draft !== String(variant.stock);
+                      return (
+                        <div key={variant.id} className="expense-action-row" style={{ marginBottom: 6 }}>
+                          <strong style={{ minWidth: 70 }}>{variant.size}</strong>
+                          <input className="mx-input sm" type="number" min={0} max={100000} step={1} style={{ width: 84 }} aria-label={`Stock for ${product.name} ${variant.size}`} value={draft ?? String(variant.stock)} onChange={(e) => setStockDrafts((c) => ({ ...c, [variant.id]: e.target.value }))} />
+                          <button type="button" className="button-small green-btn" disabled={!dirty || action.busy === `stock:${variant.id}`} onClick={() => void saveStock(product, variant.id)}>Save</button>
+                          {variant.stock === 0 ? <span className="badge red">Sold out</span> : null}
+                        </div>
+                      );
+                    })}
+                  </td>
+                  <td><span className={`badge ${product.active ? "green" : "neutral"}`}>{product.active ? "Active" : "Retired"}</span></td>
+                  <td>
+                    <button type="button" className={`button-small ${product.active ? "red-btn" : "green-btn"}`} disabled={action.busy === `active:${product.id}`} onClick={() => void toggleActive(product)}>{product.active ? "Retire" : "Reactivate"}</button>
+                  </td>
+                </tr>
+              ))}
+            </Table>
+          )}
+        </Card>
       )}
-      <NewProductModal open={creating} onClose={() => setCreating(false)} onCreated={(product) => { products.setData((c) => (c ? { products: [product, ...c.products] } : { products: [product] })); action.setNotice(`${product.name} added with ${product.variants.length} size${product.variants.length === 1 ? "" : "s"} at ${money(product.pricePaise)}${product.memberPricePaise !== null ? ` (${paiseToRupees(product.memberPricePaise)} for members)` : ""}.`); }} />
     </>
   );
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSession } from "../../_lib/session";
 
+/** The merchandise sub-navigation, drawn as Azman's treasury pill tabs. */
 export function ShopNav({ active }: { active: "shop" | "orders" | "desk" | "manage" }) {
   const { can } = useSession();
   const items = [
@@ -12,8 +13,12 @@ export function ShopNav({ active }: { active: "shop" | "orders" | "desk" | "mana
     ...(can("products:write") ? [{ key: "manage", href: "/app/shop/manage", label: "Manage products" }] : []),
   ];
   return (
-    <div className="mx-tabs" role="navigation" aria-label="Shop sections">
-      {items.map((item) => <Link key={item.key} href={item.href} className={`mx-tab ${item.key === active ? "active" : ""}`.trim()} aria-current={item.key === active ? "page" : undefined}>{item.label}</Link>)}
-    </div>
+    <nav className="treasury-tabs" aria-label="Merchandise sections">
+      {items.map((item) => (
+        <Link key={item.key} href={item.href} className={`treasury-tab ${item.key === active ? "active" : ""}`.trim()} aria-current={item.key === active ? "page" : undefined}>
+          {item.label}
+        </Link>
+      ))}
+    </nav>
   );
 }

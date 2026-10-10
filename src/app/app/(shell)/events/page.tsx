@@ -7,28 +7,44 @@ import type { EventDetails } from "@/lib/contracts";
 import { api, useLoad } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
 import { dateTime, money } from "../../_lib/format";
-import { Alert, EmptyState, ErrorState, LinkButton, PageHead, Progress, Skeleton, StatusBadge, Tabs } from "../../_components/ui";
+import { Button, EmptyState, ErrorState, PageHead, PreviewNote, Skeleton, StatusBadge, Tabs } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
+
+/* Azman's Events section: .event-cards grid of .panel.event-card articles. */
 
 type Tab = "upcoming" | "past" | "drafts";
 
-function EventCard({ event, href, door }: { event: EventDetails; href: string; door: boolean }) {
-  const used = event.capacity > 0 ? ((event.capacity - event.available) / event.capacity) * 100 : 0;
+function monthShort(iso: string) { return new Intl.DateTimeFormat("en-IN", { month: "short", timeZone: "Asia/Kolkata" }).format(new Date(iso)).toUpperCase(); }
+function dayOfMonth(iso: string) { return new Intl.DateTimeFormat("en-IN", { day: "numeric", timeZone: "Asia/Kolkata" }).format(new Date(iso)); }
+
+function EventCard({ event, href, door, index }: { event: EventDetails; href: string; door: boolean; index: number }) {
+  const used = event.capacity > 0 ? Math.min(100, ((event.capacity - event.available) / event.capacity) * 100) : 0;
   return (
-    <Link href={href} className="mx-card" style={{ display: "block" }}>
-      <div className="mx-between" style={{ marginBottom: 8 }}>
-        <h2 className="mx-h3" style={{ fontFamily: "var(--mx-display)", fontSize: 20 }}>{event.title}</h2>
-        {event.status !== "published" ? <StatusBadge status={event.status} /> : null}
+    <article className="panel event-card">
+      <div className="event-card-top">
+        <div className={`date-tile ${index % 2 ? "purple" : "coral"}`}>
+          <span>{monthShort(event.startsAt)}</span>
+          <strong>{dayOfMonth(event.startsAt)}</strong>
+        </div>
+        {event.status === "published"
+          ? <span className={`badge ${event.available === 0 ? "amber" : "green"}`}>{event.available === 0 ? "Sold out" : "Bookings open"}</span>
+          : <StatusBadge status={event.status} />}
       </div>
-      <p className="mx-muted mx-small"><Icon.calendar style={{ width: 13, height: 13, verticalAlign: -2 }} /> {dateTime(event.startsAt)}</p>
-      <p className="mx-muted mx-small" style={{ marginTop: 2 }}>{event.venue}</p>
-      <div style={{ margin: "14px 0 6px" }}><Progress value={used} tone={event.available === 0 ? "accent" : undefined} /></div>
-      <p className="mx-small"><span className="mx-strong">{event.available}</span> of {event.capacity} seats left</p>
-      <div className="mx-between" style={{ marginTop: 14 }}>
-        <span className="mx-small"><span className="mx-muted">Member</span> <span className="mx-strong">{money(event.memberPricePaise)}</span> · <span className="mx-muted">Guest</span> <span className="mx-strong">{money(event.guestPricePaise)}</span></span>
-        <span className="mx-link mx-small">{door ? "Open door" : "Details"} →</span>
+      <h2>{event.title}</h2>
+      <p>{event.venue} · {dateTime(event.startsAt)}</p>
+      <div className="capacity-bar"><span style={{ width: `${used}%` }} /></div>
+      <div className="event-numbers">
+        <span>{event.capacity - event.available} registered</span>
+        <span>{event.available} of {event.capacity} seats left</span>
       </div>
-    </Link>
+      <div className="ticket-prices">
+        <div><span>Member ticket</span><strong>{money(event.memberPricePaise)}</strong></div>
+        <div><span>Guest ticket</span><strong>{money(event.guestPricePaise)}</strong></div>
+      </div>
+      <div className="mx-row mx-mt">
+        <Link href={href} className="text-button">{door ? "Open door scanner" : "Details"}<Icon name="arrow" size={16} /></Link>
+      </div>
+    </article>
   );
 }
 
@@ -56,22 +72,30 @@ function EventsList() {
   return (
     <>
       <PageHead
-        eyebrow="Events"
+        eyebrow={<>CLUB <span>/</span> {door ? "DOOR SCANNER" : "EVENTS"}</>}
         title={door ? "Door scanner" : "Events"}
         description={door ? "Pick the event you are admitting people to." : "Tickets hold a seat for 30 minutes until an officer confirms payment at the desk."}
-        actions={can("events:write") && !door ? <LinkButton href="/app/events/new" variant="primary"><Icon.plus />New event</LinkButton> : null}
+        actions={can("events:write") && !door ? <Link href="/app/events/new" className="button primary"><Icon name="plus" size={18} />New event</Link> : null}
       />
-      {door ? <div className="mx-mb"><Alert tone="info">Choose an event below to open its scanner. Admission depends on a paid ticket for that event only.</Alert></div> : null}
+      {door ? (
+        <div className="outstanding-notice">
+          <Icon name="scan" size={16} />
+          <div><strong>Choose an event below to open its scanner.</strong><p>Admission depends on a paid ticket for that event only.</p></div>
+        </div>
+      ) : null}
       <Tabs value={tab} onChange={setTab} items={tabs} />
       {events.error ? <ErrorState error={events.error} onRetry={events.reload} /> : events.loading && !events.data ? <Skeleton rows={6} /> : !list.length ? (
-        <EmptyState title={tab === "upcoming" ? "No upcoming events" : tab === "past" ? "No past events" : "No drafts or cancelled events"}>
-          {tab === "upcoming" && can("events:write") ? "Create one to open bookings." : tab === "upcoming" ? "Check back soon." : null}
-        </EmptyState>
+        <section className="panel">
+          <EmptyState title={tab === "upcoming" ? "No upcoming events" : tab === "past" ? "No past events" : "No drafts or cancelled events"} icon="calendar" action={tab === "upcoming" && can("events:write") ? <Button variant="primary" onClick={() => { window.location.href = "/app/events/new"; }}>Create an event</Button> : undefined}>
+            {tab === "upcoming" && can("events:write") ? "Create one to open bookings." : tab === "upcoming" ? "Check back soon." : "Drafts and cancelled events will show here."}
+          </EmptyState>
+        </section>
       ) : (
-        <div className="mx-grid mx-grid-3">
-          {list.map((event) => <EventCard key={event.id} event={event} door={door} href={door ? `/app/events/${event.id}/door` : `/app/events/${event.id}`} />)}
+        <div className="event-cards">
+          {list.map((event, index) => <EventCard key={event.id} event={event} index={index} door={door} href={door ? `/app/events/${event.id}/door` : `/app/events/${event.id}`} />)}
         </div>
       )}
+      <PreviewNote>Members with active dues pay the member price; everyone else pays the guest price. Prices are fixed when the seat is booked.</PreviewNote>
     </>
   );
 }

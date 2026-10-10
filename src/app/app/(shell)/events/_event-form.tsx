@@ -4,7 +4,9 @@ import { useState, type FormEvent } from "react";
 import type { EventDetails, EventStatus } from "@/lib/contracts";
 import { ApiError, describeError } from "../../_lib/api";
 import { fromLocalInput, paiseToRupees, rupeesToPaise, toLocalInput } from "../../_lib/format";
-import { Alert, Button, SelectField, TextareaField, TextField } from "../../_components/ui";
+import { Button } from "../../_components/ui";
+
+/* The legacy .task-form-grid form: label-wrapped inputs, .form-actions, .form-error. */
 
 export type EventPayload = {
   title: string;
@@ -34,6 +36,10 @@ function toForm(event?: EventDetails): Form {
 }
 
 const FIELD_MAP: Record<string, keyof Form> = { title: "title", description: "description", startsAt: "startsAt", venue: "venue", capacity: "capacity", memberPricePaise: "memberPrice", guestPricePaise: "guestPrice", status: "status" };
+
+function FieldError({ message }: { message?: string }) {
+  return message ? <span className="error-text" role="alert" style={{ fontSize: 10, color: "#ac5140", fontWeight: 500 }}>{message}</span> : null;
+}
 
 /** Shared create/edit form. `onSubmit` receives the full payload; for edits the caller diffs against the original. */
 export function EventForm({ initial, submitLabel, onSubmit, onCancel }: { initial?: EventDetails; submitLabel: string; onSubmit: (payload: EventPayload) => Promise<void>; onCancel: () => void }) {
@@ -76,30 +82,58 @@ export function EventForm({ initial, submitLabel, onSubmit, onCancel }: { initia
   }
 
   return (
-    <form className="mx-form" onSubmit={submit} noValidate>
-      {error ? <Alert tone="error">{error}</Alert> : null}
-      <TextField label="Title" value={form.title} onChange={(e) => update("title", e.target.value)} error={errors.title} maxLength={140} autoFocus />
-      <TextareaField label="Description" value={form.description} onChange={(e) => update("description", e.target.value)} error={errors.description} maxLength={2000} hint="Plain text, shown to members and guests." />
-      <div className="mx-form-row">
-        <TextField label="Starts at" type="datetime-local" value={form.startsAt} onChange={(e) => update("startsAt", e.target.value)} error={errors.startsAt} />
-        <TextField label="Venue" value={form.venue} onChange={(e) => update("venue", e.target.value)} error={errors.venue} maxLength={200} />
+    <form onSubmit={submit} noValidate>
+      <div className="task-form-grid">
+        <label>
+          Title
+          <input value={form.title} onChange={(e) => update("title", e.target.value)} maxLength={140} autoFocus disabled={busy} aria-invalid={Boolean(errors.title)} />
+          <FieldError message={errors.title} />
+        </label>
+        <label>
+          Venue
+          <input value={form.venue} onChange={(e) => update("venue", e.target.value)} maxLength={200} disabled={busy} aria-invalid={Boolean(errors.venue)} />
+          <FieldError message={errors.venue} />
+        </label>
+        <label>
+          Starts at
+          <input type="datetime-local" value={form.startsAt} onChange={(e) => update("startsAt", e.target.value)} disabled={busy} aria-invalid={Boolean(errors.startsAt)} />
+          <FieldError message={errors.startsAt} />
+        </label>
+        <label>
+          Capacity (seats)
+          <input type="number" min={0} max={100000} inputMode="numeric" value={form.capacity} onChange={(e) => update("capacity", e.target.value)} disabled={busy} aria-invalid={Boolean(errors.capacity)} />
+          {errors.capacity ? <FieldError message={errors.capacity} /> : initial ? <span className="subtext">Cannot go below seats already held or sold.</span> : null}
+        </label>
+        <label>
+          Member price (₹)
+          <input inputMode="decimal" placeholder="0 for free" value={form.memberPrice} onChange={(e) => update("memberPrice", e.target.value)} disabled={busy} aria-invalid={Boolean(errors.memberPrice)} />
+          {errors.memberPrice ? <FieldError message={errors.memberPrice} /> : <span className="subtext">Charged to members with active dues.</span>}
+        </label>
+        <label>
+          Guest price (₹)
+          <input inputMode="decimal" placeholder="0 for free" value={form.guestPrice} onChange={(e) => update("guestPrice", e.target.value)} disabled={busy} aria-invalid={Boolean(errors.guestPrice)} />
+          {errors.guestPrice ? <FieldError message={errors.guestPrice} /> : <span className="subtext">Everyone else, including expired members.</span>}
+        </label>
+        <label>
+          Status
+          <select value={form.status} onChange={(e) => update("status", e.target.value as EventStatus)} disabled={busy}>
+            <option value="draft">Draft</option>
+            <option value="published">Published</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          {errors.status ? <FieldError message={errors.status} /> : <span className="subtext">Only published events accept bookings.</span>}
+        </label>
+        <label style={{ gridColumn: "1 / -1" }}>
+          Description
+          <textarea value={form.description} onChange={(e) => update("description", e.target.value)} maxLength={2000} rows={3} disabled={busy} />
+          {errors.description ? <FieldError message={errors.description} /> : <span className="subtext">Plain text, shown to members and guests.</span>}
+        </label>
       </div>
-      <div className="mx-form-row">
-        <TextField label="Capacity (seats)" type="number" min={0} max={100000} inputMode="numeric" value={form.capacity} onChange={(e) => update("capacity", e.target.value)} error={errors.capacity} hint={initial ? "Cannot go below seats already held or sold." : undefined} />
-        <SelectField label="Status" value={form.status} onChange={(e) => update("status", e.target.value as EventStatus)} error={errors.status} hint="Only published events accept bookings.">
-          <option value="draft">Draft</option>
-          <option value="published">Published</option>
-          <option value="cancelled">Cancelled</option>
-        </SelectField>
-      </div>
-      <div className="mx-form-row">
-        <TextField label="Member price (₹)" inputMode="decimal" placeholder="0 for free" value={form.memberPrice} onChange={(e) => update("memberPrice", e.target.value)} error={errors.memberPrice} hint="Charged to members with active dues." />
-        <TextField label="Guest price (₹)" inputMode="decimal" placeholder="0 for free" value={form.guestPrice} onChange={(e) => update("guestPrice", e.target.value)} error={errors.guestPrice} hint="Everyone else, including expired members." />
-      </div>
-      <div className="mx-form-actions">
-        <Button onClick={onCancel} disabled={busy}>Cancel</Button>
+      <div className="form-actions">
         <Button type="submit" variant="primary" loading={busy}>{submitLabel}</Button>
+        <Button onClick={onCancel} disabled={busy}>Cancel</Button>
       </div>
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
     </form>
   );
 }
