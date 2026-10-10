@@ -3,6 +3,7 @@ export const destinations = [
   { name: "index", label: "Overview", permission: null },
   { name: "pass", label: "My pass", permission: null },
   { name: "events", label: "Events", permission: null },
+  { name: "door", label: "Door scanner", permission: "tickets:check_in" },
   { name: "shop", label: "Shop", permission: null },
   { name: "announcements", label: "News", permission: null },
   { name: "expenses", label: "Claims", permission: "expenses:submit" },

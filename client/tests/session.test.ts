@@ -5,6 +5,12 @@ import { canVisit } from '../src/lib/navigation';
 import type { SessionUser } from '../src/generated/contracts';
 const user: SessionUser = { id: 'member-1', clubId: 'club-1', name: 'Test member', email: 'member@example.com', role: 'member', permissions: [] };
 const token = 'a'.repeat(43);
+test('door navigation follows check-in permission rather than event reporting', () => {
+  assert.equal(canVisit({ ...user, role: 'volunteer', permissions: ['tickets:check_in'] }, 'door'), true);
+  assert.equal(canVisit({ ...user, role: 'treasurer', permissions: ['events:report', 'ledger:read'] }, 'door'), false);
+  assert.equal(canVisit(user, 'door'), false);
+  for (const name of ['events', 'shop', 'announcements', 'tasks']) assert.equal(canVisit(user, name), true);
+});
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 function setup(platform: 'web' | 'native', handler: (url: string, init: RequestInit) => Response | Promise<Response>, saved: string | null = null) {
   const store = { value: saved, reads: 0, writes: 0, clears: 0,
