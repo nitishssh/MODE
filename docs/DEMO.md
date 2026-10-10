@@ -3,12 +3,12 @@
 ## Runnable starter acceptance
 
 1. Use Node 24, run `npm ci`, then `npm run dev`.
-2. Open http://127.0.0.1:3000. Confirm the fictional-data notice and dashboard records load.
-3. Log in as the synthetic organizer through `POST /api/auth/login`, then create a fictional name/email through `POST /api/members` using its cookie or bearer token; see [API contracts](API.md). The starter web UI has no sign-in flow yet.
+2. Open http://127.0.0.1:3000 and sign in with a synthetic account. Confirm the dashboard records load.
+3. Sign in as `organizer@example.com` using `MODE_DEMO_PASSWORD` (development default `mode-demo-2026`) and create a fictional member from Members. The same flow is available through `POST /api/auth/login` and `POST /api/members` with a cookie or bearer token; see [API contracts](API.md).
 4. Read `GET /api/members` with that session, restart the server, and read again: the new unpaid member remains present.
 5. Submit the same email again through the authorized API: expect 409 without adding another record.
 6. Check invalid name/email handling through the authorized API. Navigate all six web areas and confirm unfinished flows are marked as previews.
-7. Visit `/api/health`; it returns 200 and reports SQLite schema version 3.
+7. Visit `/api/health`; it returns 200 and reports SQLite schema version 7.
 8. Run `npm run typecheck`, `npm test`, `npm run build`.
 9. Set `MODE_DEMO_PASSWORD` before seeding a new production database, then run `npm start`. Public reads work; member creation requires an organizer/admin session. Verify missing authentication returns 401, insufficient permissions return 403, and cross-origin cookie writes return 403. Production ignores `MODE_CORS_ORIGINS`.
 

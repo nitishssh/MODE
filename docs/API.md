@@ -20,7 +20,7 @@ Web clients use the HttpOnly cookie and do not persist the response token in bro
 
 ### Development CORS
 
-`src/proxy.ts` applies to `/api/:path*`. Only `NODE_ENV=development` enables the optional `MODE_CORS_ORIGINS` comma-separated allowlist of exact HTTP(S) origins, for example `http://localhost:8081,http://127.0.0.1:8081`. Paths, trailing slashes, wildcards and `null` origins are not accepted. Production ignores this configuration.
+`src/proxy.ts` applies to `/api/:path*`. Only `NODE_ENV=development` enables the optional `MODE_CORS_ORIGINS` comma-separated allowlist of HTTP(S) origins, for example `http://localhost:8081,http://127.0.0.1:8081`. Configured trailing slashes normalize to the origin; non-root paths, credentials, queries, hashes, wildcards and `null` origins are ignored. Request origins must match a normalized allowlist entry exactly. Production ignores this configuration.
 
 An allowed preflight returns 204 and advertises GET, HEAD, POST, PATCH, DELETE and OPTIONS with Content-Type/Authorization headers. Denied origins, methods or headers get 403 without ACAO. Actual responses grant ACAO only to allowed origins and vary by Origin; credentialed cross-origin cookies are not enabled. Native requests without Origin continue normally.
 
@@ -71,7 +71,7 @@ Roles: `member`, `volunteer`, `organizer`, `treasurer`, `admin` (club lead). Sel
 | `outbox:manage` | | | ✓ | | ✓ |
 | `tasks:write` | | | ✓ | | ✓ |
 
-Permissions for tickets #4–#9 are reserved here so the UI can be built against the final matrix; the routes behind them land with their tickets.
+Permissions for unfinished merchandise and announcement workflows remain reserved. Implemented membership, ticket, task and reimbursement routes are documented below.
 
 ### Demo accounts
 
@@ -83,7 +83,7 @@ Schema v2 seeds four synthetic officer accounts in the sample club: `lead@exampl
 - **Member pass**: every member has a unique 128-bit base64url `qrToken` and a unique 10-character Crockford base32 `shortCode` (bounded collision retry, max 5). `GET /api/auth/me` returns `pass:{qrToken,shortCode,membership,expiresOn}` to the member themselves; `Member` exposes `shortCode` only. Door scanning resolves a pass by token or code, never by sequential id (`findMemberByPass`).
 - **Ledger**: `transactions` gains `sourceType`, `sourceId`, `recordedBy` with a UNIQUE index on the source pair. The three starter rows are backfilled as `opening_balance` entries with "Opening balance (pre-system): …" descriptions. Financial modules call `postLedgerEntry()` inside the same transaction as the source transition; it rejects non-positive or non-integer paise and a second post for the same source.
 - **Reconciliation**: `reconcileLedger(db)` reports balance, opening balances, duplicates, unsourced rows and orphans (rows whose source no longer resolves). Modules register a resolver per `sourceType` in `SOURCE_RESOLVERS` and extend `tests/ledger-reconciliation.test.ts`.
-- **Demo accounts**: `active@example.com` (membership active, expires in 300 days) and `expired@example.com` (expired 10 days ago), password `MODE_DEMO_PASSWORD`, join the four officer accounts. Schema version is 3.
+- **Demo accounts**: `active@example.com` (membership active, expires in 300 days) and `expired@example.com` (expired 10 days ago), password `MODE_DEMO_PASSWORD`, join the four officer accounts. The current schema version is 7.
 
 ## Membership dues, renewals and reminders (#4, P1)
 
@@ -102,7 +102,7 @@ Schema v2 seeds four synthetic officer accounts in the sample club: `lead@exampl
 
 ## Event tickets, holds and the door (#5, P2)
 
-Schema v6 (v5 is reserved for Nitish's P4). `events` gains `clubId`, `status` (`draft|published|cancelled`) and `description`; `tickets` holds member and guest bookings with a 30-minute hold, unique QR token and 10-character Crockford short code (same bounded collision retry as member passes, checked against both tables).
+Ticketing was introduced in schema v6; reserved v5 remains skipped and workspace schema v7 follows v6. `events` gains `clubId`, `status` (`draft|published|cancelled`) and `description`; `tickets` holds member and guest bookings with a 30-minute hold, unique QR token and 10-character Crockford short code (same bounded collision retry as member passes, checked against both tables).
 
 | Method | Path | Permission | Success | Failure |
 |---|---|---|---|---|
@@ -158,14 +158,14 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 - Schema changes are versioned migrations in `src/lib/db/migrations.ts`, applied in one write transaction and recorded in `PRAGMA user_version`. `GET /api/health` reports the current version.
 - Member email has a case-insensitive UNIQUE constraint. API validation is also enforced at the store boundary.
 - Sessions store only a SHA-256 hash of the session token with `expires_at`/`revoked_at`.
-- `audit_events` records who changed what (`member.created`, `member.role_changed`, `member.password_set`, and future finance decisions).
-- A sample event's `registered` count cannot exceed capacity. The starter has no booking operation yet.
+- `audit_events` records who changed what, including member, dues, ticket, task and expense decisions.
+- An event's `registered` count cannot exceed capacity. Booking and hold release update the count transactionally.
 - Ledger amounts are positive integer paise; `kind` determines income versus expense. Balance is calculated on the server.
 - Products are aggregate read-only examples until the merchandise ticket introduces size variants.
 
 ## Planned conventions
 
-These are design constraints for future tickets, not implemented endpoints:
+These are the ticket design constraints. The membership, ticket, task and reimbursement endpoints above and below implement the corresponding parts; merchandise and announcement workflows remain future work:
 
 - Membership: define plans, free/paid status, benefit eligibility, renewal and idempotent dues recording in #4.
 - Ticketing: reserve capacity atomically; issue tickets against confirmed states; reject duplicate check-in in #5.
@@ -179,6 +179,7 @@ Payment and notification adapters must expose pending, succeeded and failed stat
 ## Local demo clock
 
 `MODE_DEMO_NOW=<ISO timestamp>` freezes the server clock so expiry, reminders and deadlines can be demonstrated deterministically. Tests use an injected clock instead of this variable.
+
 ## Tasks, expenses and receipts (schema v7)
 
 All endpoints below require a session. Cookie mutations also enforce same-origin requests; valid bearer sessions retain the native authentication contract.
@@ -219,4 +220,3 @@ EXPO_PUBLIC_API_URL remains configuration for a future Expo client. Browser sign
 ### Authentication status
 
 The workspace uses the existing HttpOnly cookie session for browsers. Native callers can use the existing bearer token returned by login; role and club checks are identical.
-
