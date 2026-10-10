@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent, FormEvent, ReactNode } from "react";
 import { WorkspaceMainSkeleton } from "./skeleton";
+import { LandingPage } from "@/components/landing-page";
 import { localDateTimeValue } from "@/lib/local-datetime";
 import { LanguageSwitcher, useI18n } from "@/i18n/client";
 import type { DictionaryKey } from "@/i18n/dictionaries/en";
@@ -1991,24 +1992,6 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
             </h3>
             <p>{t("nav.noteBody")}</p>
           </div>
-          <a
-            className="repo-link"
-            href="https://github.com/users/nitishssh/projects/14"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t("nav.projectBoard")} <Icon name="arrow" size={16} />
-            <span className="sr-only"> {t("nav.opensNewTab")}</span>
-          </a>
-          <a
-            className="repo-link source-link"
-            href="https://github.com/nitishssh/MODE"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t("nav.source")} <Icon name="arrow" size={16} />
-            <span className="sr-only"> {t("nav.opensNewTab")}</span>
-          </a>
           <div className="sidebar-profile">
             <span className="profile-avatar">{clubInitials}</span>
             <span>
@@ -2546,12 +2529,11 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
 }
 
 export default function Home() {
-  const { t, apiError } = useI18n();
+  const { t } = useI18n();
   const messages = useRequestMessages();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
     fetch("/api/auth/me", { cache: "no-store" }).then(async response => {
@@ -2560,18 +2542,6 @@ export default function Home() {
     }).catch(error => { if (active) setError(error.message); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [messages]);
-  async function signIn(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const values = new FormData(event.currentTarget);
-    setBusy(true); setError("");
-    try {
-      const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: String(values.get("email")), password: String(values.get("password")) }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(apiError(result, "auth.signInFailed"));
-      setUser(result.user);
-    } catch (error) { setError(error instanceof Error ? error.message : t("auth.signInFailed")); }
-    finally { setBusy(false); }
-  }
   async function signOut() {
     setError("");
     try {
@@ -2582,14 +2552,5 @@ export default function Home() {
   }
   if (loading) return <main className="loading-state" role="status">{t("auth.loading")}</main>;
   if (user) return <>{error && <p role="alert">{error}</p>}<Workspace key={user.id} user={user} onLogout={() => void signOut()} /></>;
-  return <main className="auth-screen"><section className="auth-card">
-    <div className="auth-card-tools"><LanguageSwitcher /></div>
-    <h1>{t("auth.title")}</h1><p>{t("auth.body")}</p>
-    <form onSubmit={signIn}>
-      <label htmlFor="email">{t("auth.email")}</label><input id="email" name="email" type="email" autoComplete="username" required />
-      <label htmlFor="password">{t("auth.password")}</label><input id="password" name="password" type="password" autoComplete="current-password" required />
-      {error && <p role="alert">{error}</p>}
-      <button className="button primary" disabled={busy}>{busy ? t("auth.signingIn") : t("auth.signIn")}</button>
-    </form>
-  </section></main>;
+  return <LandingPage onSignIn={() => { window.location.href = "/login"; }} />;
 }
