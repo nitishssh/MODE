@@ -1,13 +1,12 @@
+import { optionalActor } from "../../../lib/auth/authorize";
 import { getDatabase } from "../../../lib/database";
+import { json, route } from "../../../lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  try {
-    return Response.json(getDatabase().getDashboard(), { headers: { "Cache-Control": "no-store" } });
-  } catch (error) {
-    console.error("MODE dashboard read failed", error);
-    return Response.json({ error: "Unable to load the dashboard. Please try again." }, { status: 500 });
-  }
-}
+/** Public overview; member emails and finance appear only for authorized sessions. */
+export const GET = route("dashboard read", (request) => {
+  const db = getDatabase();
+  return json(db.getDashboard(optionalActor(request, db)));
+});
