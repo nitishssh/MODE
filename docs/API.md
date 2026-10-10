@@ -16,7 +16,7 @@ Authentication is a server-side session referenced by the `mode_session` cookie 
 
 Native clients may instead send `Authorization: Bearer <token>` using the token returned by login or registration. This references the same session row as the cookie. Whenever `Authorization` is present, the cookie is ignored: malformed, unknown, expired and revoked bearer tokens return 401, including on the optional-auth dashboard and logout. Valid bearer requests still enforce role permissions. Logout revokes only the selected session; the token and cookie for that session both stop working. Bearer logout sends no `Set-Cookie`, preserving unrelated browser cookies; cookie logout clears the browser session cookie.
 
-Web clients use the HttpOnly cookie and do not persist the response token in browser storage. The planned native client will use `expo-secure-store`. Expo web hosting remains part of #10/#14.
+Web clients use the HttpOnly cookie and do not persist the response token in browser storage. The Expo native client uses `expo-secure-store`; its exported web app uses the Next host for same-origin cookies. Physical-device and installed-PWA acceptance remains tracked under #10/#14.
 
 ### Development CORS
 
@@ -83,7 +83,7 @@ Schema v2 seeds four synthetic officer accounts in the sample club: `lead@exampl
 - **Member pass**: every member has a unique 128-bit base64url `qrToken` and a unique 10-character Crockford base32 `shortCode` (bounded collision retry, max 5). `GET /api/auth/me` returns `pass:{qrToken,shortCode,membership,expiresOn}` to the member themselves; `Member` exposes `shortCode` only. Door scanning resolves a pass by token or code, never by sequential id (`findMemberByPass`).
 - **Ledger**: `transactions` gains `sourceType`, `sourceId`, `recordedBy` with a UNIQUE index on the source pair. The three starter rows are backfilled as `opening_balance` entries with "Opening balance (pre-system): …" descriptions. Financial modules call `postLedgerEntry()` inside the same transaction as the source transition; it rejects non-positive or non-integer paise and a second post for the same source.
 - **Reconciliation**: `reconcileLedger(db)` reports balance, opening balances, duplicates, unsourced rows and orphans (rows whose source no longer resolves). It also walks dues, paid tickets, paid/fulfilled merchandise and paid expenses: `missing` identifies money sources without a ledger row; `mismatched` identifies inconsistent amount, direction, club or officer attribution. Free tickets/orders and unpaid sources require no entry. Expenses retain their paying officer in the ledger; the claim's reviewer may be different. A clean report requires every anomaly array to be empty and `unsourced` to be zero. New financial modules must extend both `SOURCE_RESOLVERS` and the source enumeration in `reconcileLedger`, with missing/mismatched-source coverage.
-- **Demo accounts**: `active@example.com` (membership active, expires in 300 days) and `expired@example.com` (expired 10 days ago), password `MODE_DEMO_PASSWORD`, join the four officer accounts. The current schema version is 11.
+- **Demo accounts**: `active@example.com` (membership active, expires in 300 days) and `expired@example.com` (expired 10 days ago), password `MODE_DEMO_PASSWORD`, join the four officer accounts. The current schema version is 12.
 
 ## Membership dues, renewals and reminders (#4, P1)
 
@@ -112,7 +112,7 @@ Ticketing was introduced in schema v6; reserved v5 remains skipped and workspace
 | PATCH | `/api/events/{id}` | `events:write` | 200 `{event}` | 400 (incl. capacity below held seats); 401; 403; 404 |
 | POST | `/api/events/{id}/tickets` | `bookings:create` | 201 `{ticket:Ticket}` with `qrToken` | 401; 403; 404; 409 `duplicate_ticket` · `sold_out` · `event_not_open` · `event_started` |
 | POST | `/api/events/{id}/guest-tickets` `{name,email}` | public, same-origin | 201 `{ticket, url:"/t/{qrToken}"}` | 400; 403 cross-origin; 404; 409 `duplicate_ticket` · `sold_out` · `member_email` (sign in instead) |
-| GET | `/t/{qrToken}` | public, token only | 200 `{ticket:PublicTicket}` | 404 |
+| GET | `/t/{qrToken}` | public, token only | 200 HTML when Accept includes `text/html`; otherwise `{ticket:PublicTicket}` JSON | 404 |
 | GET | `/api/tickets/mine` | signed in | 200 `{tickets:Ticket[]}` with `qrToken` | 401 |
 | GET | `/api/events/{id}/holds` | `payments:confirm` | 200 `{holds:Ticket[]}` pending only, soonest expiry first | 401; 403; 404 |
 | GET | `/api/events/{id}/tickets` | `payments:confirm` | 200 `{tickets:Ticket[]}` all statuses, full guest email | 401; 403; 404 |
@@ -186,7 +186,7 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 - `audit_events` records who changed what, including member, dues, ticket, task and expense decisions.
 - An event's `registered` count cannot exceed capacity. Booking and hold release update the count transactionally.
 - Ledger amounts are positive integer paise; `kind` determines income versus expense. Balance is calculated on the server.
-- Products are aggregate read-only examples until the merchandise ticket introduces size variants.
+- Products expose per-size inventory through the merchandise endpoints; the dashboard stock total aggregates the available variant quantities.
 
 ## Planned conventions
 
@@ -203,7 +203,7 @@ Payment and notification adapters must expose pending, succeeded and failed stat
 
 ## Interface language
 
-The HTML pages (not the JSON API) are served in the language resolved from, in order: a valid `mode_lang` cookie (`en`, `hi`, `bn`, `mr`, `te`, `ta`, `gu`, `ur`, `kn`, `ml`, `pa`, `as`), the request's `Accept-Language` header, then English. The cookie is a plain preference set by the browser (`Path=/; Max-Age=1y; SameSite=Lax`), not a credential, and is never read by API routes. API error bodies keep their English `error` text; clients should localize from the stable `code` field, which is what the web workspace does.
+The legacy web workspace (not the Expo client, guest ticket HTML or JSON API) is served in the language resolved from, in order: a valid `mode_lang` cookie (`en`, `hi`, `bn`, `mr`, `te`, `ta`, `gu`, `ur`, `kn`, `ml`, `pa`, `as`), the request's `Accept-Language` header, then English. The cookie is a plain preference set by the browser (`Path=/; Max-Age=1y; SameSite=Lax`), not a credential, and is never read by API routes. API error bodies keep their English `error` text; clients should localize from the stable `code` field, which is what the web workspace does.
 
 ## Local demo clock
 
@@ -240,7 +240,7 @@ Version 12 preserves legacy workflow-v2 tasks and receipt metadata, and imports 
 
 Task creation takes `{title,description?,assigneeId?,eventId?,dueAt?}`. PATCH permits the same optional fields, with null to clear description, assignee, event or deadline. Status takes `{status:"todo"|"in_progress"|"done"}`. Deadlines normalize to UTC. Assignment and event references must belong to the caller's club; mine uses the actual session member.
 
-Expense submission takes `{amountPaise,purpose,receiptId,receiptReference?,eventId?}`. New claims require an existing, readable receipt owned by the submitter; a reference string is not an attachment. Amounts must be positive safe integer paise. Receipt ownership is checked; one member cannot submit another member's receipt. Approve takes `{}`, reject takes `{note?}`, and pay takes `{paymentReference}`. No uploader, submitter or reviewer identity fields are accepted in JSON; multipart uploader fields are ignored. Historical claims, including those with no receipt, keep their existing state and payment/retry behavior.
+Expense submission takes `{amountPaise,purpose,receiptId,receiptReference?,eventId?,submissionId?}`. The optional `submissionId` is a client-generated UUID retained across retries. Reusing it with the same submitter and normalized content returns the original claim (including its current status); changed content or another submitter receives 409. Clients should reuse it after a lost response. Both first submission and identical replay return 201 with the expense; replay does not create another claim. New claims require an existing, readable receipt owned by the submitter; a reference string is not an attachment. Amounts must be positive safe integer paise. Receipt ownership is checked; one member cannot submit another member's receipt. Approve takes `{}`, reject takes `{note?}`, and pay takes `{paymentReference}`. No uploader, submitter or reviewer identity fields are accepted in JSON; multipart uploader fields are ignored. Historical claims, including those with no receipt, keep their existing state and payment/retry behavior.
 
 An expense moves submitted → approved/rejected, then approved → paid. Officers cannot review or pay their own expenses. Payment takes a database write lock before reading state, updates the expense and posts one source-linked transaction atomically. Repeating the same payment reference returns the paid expense without another outflow; a different reference conflicts. Payment records a reimbursement already made externally; it does not transfer money.
 
@@ -258,7 +258,7 @@ Errors use 400 for invalid bodies, 401 for absent/expired sessions, 403 for role
 
 The event report preserves ticket counts, attendance and realized revenue, and adds fundraiser progress and task counts. Ticket receipts, dues and merchandise income remain in the same ledger; schema v9 backfilled their club metadata and ticket event attribution. Treasury entries retain their external payment references. Reserved schema gaps remain skipped; later migrations continue above released v9.
 
-EXPO_PUBLIC_API_URL remains configuration for a future Expo client. Browser sign-in and native bearer authentication exist, but the Expo UI is not included. MODE_CORS_ORIGINS follows the development-only policy above.
+`EXPO_PUBLIC_API_URL` configures the implemented Expo native client. Exported Expo web ignores it and uses relative API requests on the Next origin. `MODE_CORS_ORIGINS` follows the development-only policy above.
 
 ## Announcements and simulated delivery (schema v11, #8)
 
@@ -287,3 +287,5 @@ Schema v11 follows the released receipt migration v10 (rather than filling a ski
 ### Authentication status
 
 The workspace uses the existing HttpOnly cookie session for browsers. Native callers can use the existing bearer token returned by login; role and club checks are identical.
+
+Guest ticket links at `/t/{token}` retain JSON for API requests. Requests accepting `text/html` receive a private, noncached ticket page with QR, short code, fixed price, hold/payment/admission state and refresh link. No third-party QR service is used.

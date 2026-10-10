@@ -176,10 +176,19 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     if (!Number.isSafeInteger(input.amountPaise) || input.amountPaise <= 0) throw new ValidationError("Amount must be positive integer paise.");
     if (typeof input.purpose !== "string" || input.purpose.trim().length < 3 || input.purpose.trim().length > 500) throw new ValidationError("Purpose must be 3–500 characters.");
     return transaction(ctx, () => {
+      if (input.submissionId) {
+        const existing = db.prepare("SELECT * FROM expenses WHERE id = ?").get(input.submissionId);
+        if (existing) {
+          if (existing.club_id !== actor.clubId || existing.submitter_id !== actor.memberId || existing.amount_paise !== input.amountPaise || existing.purpose !== input.purpose.trim() || existing.receipt_id !== input.receiptId || existing.receipt_reference !== (input.receiptReference ?? null) || existing.event_id !== (input.eventId ?? null)) {
+            throw new ConflictError("This submission was already recorded with different details. Refresh your claims before starting a new submission.");
+          }
+          return getExpenseById(actor, String(existing.id));
+        }
+      }
       requireEvent(actor, input.eventId);
       if (getReceiptById(actor, input.receiptId).uploaderId !== actor.memberId) throw new ForbiddenError("Use your own receipt.");
       if (!getReceiptFile(actor, input.receiptId)) throw new NotFoundError("Receipt file not found. Upload it again.");
-      const id = randomUUID();
+      const id = input.submissionId ?? randomUUID();
       db.prepare("INSERT INTO expenses (id, club_id, submitter_id, amount_paise, purpose, receipt_id, receipt_reference, event_id, status, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?)")
         .run(id, actor.clubId, actor.memberId, input.amountPaise, input.purpose.trim(), input.receiptId ?? null, input.receiptReference ?? null, input.eventId ?? null, now().toISOString());
       identity.recordAudit(actor, "expense.submitted", "expense", id);

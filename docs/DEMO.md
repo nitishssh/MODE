@@ -10,7 +10,7 @@ Foundation acceptance was verified in [merged PR #26](https://github.com/nitishs
 4. Read `GET /api/members` with that session, restart the server, and read again: the new unpaid member remains present.
 5. Submit the same email again through the authorized API: expect 409 without adding another record.
 6. Check invalid name/email handling through the authorized API. Navigate all six web areas and confirm unfinished flows are marked as previews.
-7. Visit `/api/health`; it returns 200 and reports SQLite schema version 11.
+7. Visit `/api/health`; it returns 200 and reports SQLite schema version 12.
 8. Run `npm run check`, then `npm run test:foundation`. The first command includes typecheck, API documentation contracts, domain/API tests and the build; the second checks HTTP member/session persistence across a server restart using a temporary database.
 9. Set `MODE_DEMO_PASSWORD` before seeding a new production database, then run `npm start`. Public reads work; member creation requires an organizer/admin session. Verify missing authentication returns 401, insufficient permissions return 403, and cross-origin cookie writes return 403. Production ignores `MODE_CORS_ORIGINS`.
 
@@ -70,7 +70,7 @@ On a fresh database the first publication returns `created:true`, `recipientCoun
 
 Repeat after restarting with the same database: the saved key still returns the original publication. Changing the body while keeping the key returns 409. Publishing as a member, volunteer or treasurer returns 403; anonymous publishing or outbox inspection returns 401. No real email or WhatsApp is sent.
 
-Run `node --import tsx --test tests/announcements.test.ts` for reproducible validation, role checks, IST expiry boundaries, database uniqueness, injected delivery/audit failure rollback, retry persistence, notification isolation and v10 migration coverage. After `npm run build`, `npm run test:foundation` also checks publication, protected outbox, member notifications and replay through the built HTTP server across a real restart. The publishing/inbox/outbox UI remains the separate #12 frontend task.
+Run `node --import tsx --test tests/announcements.test.ts` for reproducible validation, role checks, IST expiry boundaries, database uniqueness, injected delivery/audit failure rollback, retry persistence, notification isolation and v10 migration coverage. After `npm run build`, `npm run test:foundation` also checks publication, protected outbox, member notifications and replay through the built HTTP server across a real restart. The Expo publishing, inbox and outbox screens are implemented; see the interactive client journey below. Full #12 acceptance still requires its remaining verification.
 
 ## Full MVP acceptance — integration and remaining tickets
 
@@ -106,6 +106,8 @@ Target coding completion: 11 October 2026 at 10:00 AM IST. Confirm the organizer
 The default development password for these synthetic accounts is mode-demo-2026; use MODE_DEMO_PASSWORD for a private production-mode demo. The local regression suite verifies migration, authorization, persistence and payment retry behavior. A live hosted deployment and physical-device installation still require separate verification.
 
 ## Languages
+
+These steps apply to the legacy web workspace at `/legacy` when the Expo export is enabled. Expo screens and the guest ticket HTML currently use English labels.
 
 1. Open the sign-in screen and pick a language from the switcher (for example हिन्दी or தமிழ்). The page re-renders in that language without reloading data; the choice survives sign-in, navigation and a browser restart because it is stored in the `mode_lang` cookie.
 2. Pick اردو: the whole workspace mirrors to right-to-left, including the sidebar and drawer, while amounts stay left-to-right with Latin digits.
@@ -148,10 +150,58 @@ In PowerShell, set `$env:MODE_EXPO_WEB='1'` and `$env:MODE_DEMO_PASSWORD='your-p
 
 1. Sign in as `lead@example.com`, update a task, refresh and confirm the saved status. Treasury should be visible.
 2. Sign in as `active@example.com`. Treasury must be absent, direct `/treasury` navigation must return to a permitted screen, and unassigned tasks must have no status actions.
-3. Refresh `/tasks` and `/pass` directly. Check phone-width bottom tabs and wide left navigation.
+3. Refresh `/tasks` and `/pass` directly. Check the phone-width horizontally scrollable navigation bar and wide left navigation.
 4. Open `/legacy` and verify the existing workflows remain available.
 5. Run `npm run test:expo-web` after the Expo-enabled build. It checks deep links, assets, guest/API exclusions, PWA icons and cookie login/logout.
 6. For Android/iOS, follow `client/README.md` and verify login, restart, assigned tasks, role navigation, expiry and logout on each real target.
 7. For Windows, serve via HTTPS or localhost, install through Edge/Chrome and verify restart behavior.
 
-Bundle compilation and local browser checks do not establish physical Expo Go or installed Windows PWA acceptance. Keep #10 open until those device checks and the remaining business screens are complete.
+Bundle compilation and local browser checks do not establish physical Expo Go or installed Windows PWA acceptance. Keep #10 open until those device and installed-PWA checks are complete. Business screen implementation is described below.
+
+## Automated semester journey (#15)
+
+Use Node 24 and run from the repository root. These commands create synthetic fixtures in unique OS temporary directories; they do not use or overwrite your normal `.data` database. The tests own and clean up their databases, receipt files and server processes.
+
+```sh
+npm ci
+npx tsx --test tests/journey.test.ts
+npm run check
+npm run test:foundation
+```
+
+The route test registers `journey@example.com` as a new member. Its test-only credentials are local fixtures. It then exercises these transitions through real route handlers:
+
+| Actor | Transition | Evidence asserted |
+|---|---|---|
+| New member / treasurer | Registration and officer-recorded dues | No paid period before dues; active membership afterward; member cannot record their own payment |
+| Member / organizer / treasurer / volunteer | Event, member-price ticket, payment and check-in | Hold posts no income; payment posts once; repeat scan does not admit twice |
+| Member / organizer / treasurer | Merchandise order and payment | Member discount, unpaid hold, exactly one realized income source |
+| Organizer / paid member | Announcement and inbox | New member receives one notification; private outbox access denied to member; replay preserves audience |
+| Organizer / volunteer | Assigned task | Non-assignee member denied; assigned volunteer can finish |
+| Member / treasurer / admin | Receipt, submitted expense, approval and payment | Receipt remains private; approval posts no expense; payment and replay produce one officer-attributed ledger row |
+| Expired member | Advance clock and sign in again | Old session rejected; new ticket/order use non-member prices; new publication excludes expired member; earlier audience and paid records remain intact |
+
+After each monetary transition, the test enumerates expected source IDs and checks amounts, paying officers, source links, both reconciliation directions and the expected balance delta. Existing contract tests run with `npm run check`, including real-process last-seat/stock races, hold expiry, stale confirmation, all door outcomes, membership dates/reminders, receipt validation and announcement rollback/fan-out.
+
+The foundation command starts a built Next.js server on an ephemeral loopback port with its own fresh database and generated password. It creates a second synthetic full journey, stops and restarts the process using the same store, and checks retained source IDs, membership, task, admission, private receipt bytes, announcement inbox/outbox and ledger entries. Replaying dues, ticket/order confirmation, expense payment and publication must leave the settled records and totals unchanged. Look for the final PASS line covering money sources, receipts, tasks, admission and duplicate-free retries.
+
+Run the client commands in the preceding Expo section, followed by an Expo-enabled production build and `npm run test:expo-web`. Save `git rev-parse HEAD`, Node version, command results and the CI run URL with release evidence. These automated checks establish API integration and restart persistence, not a completed interactive native/web journey.
+
+## Interactive client journey
+
+Use the same-origin Expo build above with an isolated synthetic database. All payments below are officer records, not payment gateway charges. Choose your own private demo password; do not use real member data.
+
+1. From sign-in, create a member account, or open the public announcement archive and guest booking. A signed-in member's **My pass** shows their QR, short code, membership and expiry, tickets and orders.
+2. As an organizer, **My pass → Membership desk** records dues using a unique payment reference and queues renewal reminders. A repeated reference does not renew twice. Members have no self-confirm payment control.
+3. **Events → New event** publishes title, venue, timezone-qualified date, capacity and member/guest prices. Select an event, reserve a member or guest ticket, and inspect its server-fixed price and hold expiry. Save the private guest link: browsers show QR, code, payment and admission state; API callers still receive JSON.
+4. An officer uses the event ticket register to confirm payment or cancel a hold; owners can cancel their own pending holds. Select the event before entering a code at the door. Native also offers QR camera scanning and haptic feedback; web uses typed codes. Repeat admission shows the original time. Expired, unpaid and invalid tickets never admit.
+5. **Shop → New product** creates size-specific inventory. Reserve a unit, record payment as an officer, and mark it handed over as an authorized organizer. Holds reserve stock; sold-out and expired responses remain visible and refresh stock. **My pass** also lists orders.
+6. **News** publishes a dated announcement to active members. An uncertain retry retains the same publication key. Members see notifications; authorized officers can inspect the explicitly simulated outbox. **Tasks → New task** assigns a member and optional due date; the assignee can change status. Progress defines on-track as done or not overdue.
+7. **Claims** uploads a JPEG, PNG or PDF no larger than 5 MB and submits a purpose and rupee amount. Drafts retain their uploaded receipt after errors. The client keeps a submission UUID: retries return the same expense; reusing it with different content is rejected. A different finance officer approves or rejects, then records reimbursement payment. Self-review controls are hidden.
+8. **Treasury** shows income/outflow/balance, officer-attributed ledger rows and exact-source details. Authorized receipt downloads retain cookie/bearer security; CSV exports use the same authorization. Native saves to a temporary cache file for the share sheet and deletes it afterward.
+
+Local browser evidence, 10 October 2026: synthetic admin ticket reservation → payment → admitted → repeat rejected with original timestamp; merchandise reservation → paid → fulfilled; announcement publication → three simulated outbox recipients; PDF upload → submitted → approval/payment by a different treasurer; exact ticket ledger-source inspection; authorized receipt download with SHA-256 identical to the uploaded bytes. All actions used loopback API storage, not production. Automated tests cover expense retry identity, changed-content/cross-owner rejection, guest HTML escaping and JSON negotiation, download authentication and stale-session responses, missing-token cleanup and session revalidation failures.
+
+The browser walkthrough is selected-flow evidence, not exhaustive acceptance. Physical Android/iOS camera permission and scanning, haptics, picker/share behavior, LAN reachability and installed Windows PWA tests remain required. Native bundle export verifies compilation only. No physical device or hosted deployment was exercised here; keep issues #10–#15 open until their outstanding acceptance evidence is complete.
+
+For final acceptance, record a separate row for Android/iOS and web/PWA with the exact release SHA, device/browser, API address, synthetic actors, each interaction above and observed restart/retry behavior. Keep a row blocked where a required client screen is absent. Do not substitute direct API calls for UI evidence or close #15 until the required native/web and LAN demonstrations are complete. Real payment gateways and external message delivery remain out of scope.

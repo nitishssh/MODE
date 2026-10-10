@@ -154,6 +154,8 @@ export interface Expense {
 }
 
 export interface SubmitExpenseInput {
+  /** Optional client-generated UUID, retained with unchanged content on retry. */
+  submissionId?: string;
   amountPaise: number;
   purpose: string;
   receiptId: string;
