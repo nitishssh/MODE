@@ -12,7 +12,35 @@
 8. Run `npm run typecheck`, `npm test`, `npm run build`.
 9. Set `MODE_DEMO_PASSWORD` before seeding a new production database, then run `npm start`. Public reads work; member creation requires an organizer/admin session. Verify missing authentication returns 401, insufficient permissions return 403, and cross-origin cookie writes return 403. Production ignores `MODE_CORS_ORIGINS`.
 
-## Full MVP acceptance — future tickets
+## Backend acceptance: foundation, dues, tickets and merchandise
+
+Use Node 24 and a fresh, synthetic SQLite database. The following PowerShell setup freezes the club date for repeatable expiry/pricing results:
+
+```powershell
+npm ci
+npm run check
+$env:SQLITE_PATH = Join-Path $env:TEMP ('mode-demo-' + [guid]::NewGuid().ToString('N') + '.sqlite')
+$env:MODE_DEMO_NOW = '2026-10-10T08:00:00Z'
+npm run dev
+```
+
+Use an HTTP client at `http://127.0.0.1:3000`. Login with `POST /api/auth/login` and `{email,password}` using the synthetic accounts below and `MODE_DEMO_PASSWORD` (development default `mode-demo-2026`). Send the returned token as `Authorization: Bearer <token>`; never print/store it in demo evidence. For browser cookies, send the matching same-origin `Origin` header for mutations. The route inputs and permissions are in [API.md](API.md).
+
+1. **Starter/P0 (#1/#2):** login as `organizer@example.com`. `POST /api/members` with `{name:"Acceptance Student",email:"acceptance@example.com"}` returns 201 and a member ID. Repeat the email: 409. Invalid name/email: 400. Directory access without login: 401; as `active@example.com`: 403. `GET /api/auth/me` for that active account includes its member pass. Keep separate officer/member tokens.
+2. **Dues (#4):** as organizer, `POST /api/membership/dues` with `{memberId:<new ID>,reference:"DEMO-DUES-1"}` returns 201, 50000 paise and expiry `2027-10-10`. Repeat the reference: 200, `created:false`, no new income. For early renewal use `DEMO-DUES-2`; expiry becomes `2028-10-09` (365 days through a leap year). To demonstrate reminders, restart with `MODE_DEMO_NOW=2028-09-20T08:00:00Z`, log in again, inspect `/api/membership/expiring`, and run `POST /api/membership/reminders/run` twice: the second run adds no reminders. Restore the original clock before the next scenarios.
+3. **Tickets (#5):** as organizer create `/api/events` with `{title:"Acceptance Gala",startsAt:"2026-11-01T13:30:00Z",venue:"Demo Hall",capacity:1,memberPricePaise:5000,guestPricePaise:10000}`. As active member, `POST /api/events/{eventId}/tickets` reserves the seat at 5000 paise. As organizer, confirm `/api/tickets/{ticketId}/confirm` with `{reference:"DEMO-TICKET"}`: 201 initially, 200 on retry. Scan `/api/events/{eventId}/scan` with `{credential:<ticket shortCode>}`: `Admitted`, then `Already checked in` with the original timestamp. Run the event test file below for the complete door table and expiry/rebooking cases.
+4. **Merchandise (#6):** as organizer create `/api/products` with `{name:"Acceptance Tee",pricePaise:3000,memberPricePaise:2500,variants:[{size:"M",stock:1}]}`. As active member, `POST /api/orders` with `{variantId:<returned variant ID>}` fixes the price at 2500 and reserves the unit. Confirm `/api/orders/{orderId}/confirm` as organizer with `{reference:"DEMO-ORDER"}`: 201, then 200 on retry. `POST /api/orders/{orderId}/fulfil` marks it fulfilled. Inspect products: M stock remains zero.
+5. **Persistence/ledger:** restart with the same `SQLITE_PATH`; member/expiry, ticket check-in and paid order remain. As `lead@example.com` or `treasurer@example.com`, inspect `/api/ledger/entries` and `/api/ledger/summary`. Each payment reference appears once. With one dues payment, the ticket and the order above, the opening 185000 paise becomes 242500; add 50000 if you also ran the early renewal. Logout revokes the selected session.
+
+Focused automated acceptance (including true simultaneous reservations) runs with:
+
+```text
+node --import tsx --test tests/p0-foundations.test.ts tests/membership-state.regression-1.test.ts tests/membership-dues.test.ts tests/event-tickets.test.ts tests/merchandise.test.ts tests/ledger-reconciliation.test.ts tests/ledger.regression-1.test.ts tests/reservations.regression-1.test.ts
+```
+
+See [acceptance evidence](ACCEPTANCE.md) for observed outcomes and the reconciliation repair. These are backend checks; native camera/Expo and the complete semester journey remain separate delivery issues.
+
+## Full MVP acceptance — integration and remaining tickets
 
 - Member joins and pays/records dues; active status and expiry are visible.
 - Member receives the correct event price; guest price differs; the final seat cannot be sold twice.
