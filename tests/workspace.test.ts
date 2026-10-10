@@ -210,10 +210,14 @@ test("dues, ticket income and expenses share scoped treasury and combined event 
     const ticket=db.events.bookTicket(member,event.id);
     db.events.confirmTicket(admin,ticket.id,{reference:"TICKET-REF"});
     db.dues.recordDues(admin,{memberId:member.memberId,reference:"DUES-REF"});
+    const product=db.merchandise.createProduct(admin,{name:"Integration shirt",pricePaise:1000,variants:[{size:"M",stock:2}]});
+    const order=db.merchandise.createOrder(member,{variantId:product.variants[0].id});
+    db.merchandise.confirmOrder(admin,order.id,{reference:"MERCH-REF"});
     db.createTask(admin,{title:"Prepare hall",eventId:event.id,dueAt:"2026-10-09T12:00:00Z"});
     const entries=db.getLedgerEntries(admin);
     assert.ok(entries.some(e=>e.reference==="TICKET-REF" && e.eventId===event.id && e.category==="events"));
     assert.ok(entries.some(e=>e.reference==="DUES-REF" && e.category==="membership"));
+    assert.ok(entries.some(e=>e.reference==="MERCH-REF" && e.amountPaise===1000));
     const {GET:report}=await import("../src/app/api/events/[id]/report/route");
     const response=await report(apiRequest("/api/events/report",{cookie:await loginCookie(DEMO.admin)}),routeParams({id:event.id}));
     assert.equal(response.status,200);
