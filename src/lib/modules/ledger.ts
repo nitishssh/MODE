@@ -131,6 +131,7 @@ export function reconcileLedger(db: DatabaseSync): ReconciliationReport {
       FROM expenses WHERE status = 'paid'
   `).all();
   const entriesBySource = new Map(rows.map(row => [JSON.stringify([row.source_type, row.source_id]), row]));
+  const historicalUnknownPayers = new Set(db.prepare('SELECT transaction_id FROM legacy_ledger_imports WHERE unknown_payer = 1').all().map(row => text(row.transaction_id)));
   const missing: ReconciliationReport['missing'] = [];
   const mismatched: ReconciliationReport['mismatched'] = [];
   for (const source of sources) {
@@ -143,7 +144,8 @@ export function reconcileLedger(db: DatabaseSync): ReconciliationReport {
     if (entry.club_id !== source.club_id) fields.push('clubId');
     // Expenses may be reviewed and paid by different officers. The source stores
     // its reviewer, not its payer; require ledger attribution without conflating them.
-    if (entry.recorded_by === null || (source.source_type !== 'expense' && entry.recorded_by !== source.recorded_by)) fields.push('recordedBy');
+    const knownHistoricalException = source.source_type === 'expense' && historicalUnknownPayers.has(text(entry.id));
+    if ((entry.recorded_by === null && !knownHistoricalException) || (source.source_type !== 'expense' && entry.recorded_by !== source.recorded_by)) fields.push('recordedBy');
     if (fields.length) mismatched.push({ ...identity, fields });
   }
   return { balancePaise: ledgerBalance(db), entries: rows.length, openingBalances, orphans, duplicates, unsourced, missing, mismatched };

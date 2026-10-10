@@ -2,6 +2,9 @@ import type { Dictionary } from "./en";
 
 const ur: Dictionary = {
   // ── App shell ────────────────────────────────────────────────────────────
+  "topbar.accountMenu": "صارف اکاؤنٹ مینو",
+  "topbar.tasksCompleted": "مکمل شدہ کام",
+  "tasks.dragHint": "کسی کالم میں کھینچیں یا تکمیل کی حالت بدلنے کے لیے کلک کریں",
   "app.title": "MODE — آپ کا کلب، ایک ساتھ",
   "app.description": "ممبرشپ، ایونٹس، والنٹیئرز اور مالیات کے لیے ایک چلنے کے لیے تیار اسٹوڈنٹ آرگنائزیشن ورک اسپیس اسٹارٹر۔",
   "app.brandHome": "MODE ہوم",

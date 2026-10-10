@@ -5,6 +5,9 @@ import type { Dictionary } from "./en";
  */
 const pa: Dictionary = {
   // ── App shell ────────────────────────────────────────────────────────────
+  "topbar.accountMenu": "ਵਰਤੋਂਕਾਰ ਖਾਤਾ ਮੀਨੂ",
+  "topbar.tasksCompleted": "ਪੂਰੇ ਹੋਏ ਕੰਮ",
+  "tasks.dragHint": "ਕਾਲਮ ਵਿੱਚ ਖਿੱਚੋ ਜਾਂ ਪੂਰਾ ਹੋਣ ਦੀ ਸਥਿਤੀ ਬਦਲਣ ਲਈ ਕਲਿੱਕ ਕਰੋ",
   "app.title": "MODE — ਤੁਹਾਡਾ ਕਲੱਬ, ਇੱਕ ਸੁਰ ਵਿੱਚ",
   "app.description": "ਮੈਂਬਰਸ਼ਿਪ, ਇਵੈਂਟ, ਵਲੰਟੀਅਰ ਅਤੇ ਵਿੱਤ ਲਈ ਇੱਕ ਚੱਲਣਯੋਗ ਵਿਦਿਆਰਥੀ ਸੰਗਠਨ ਵਰਕਸਪੇਸ ਸਟਾਰਟਰ।",
   "app.brandHome": "MODE ਹੋਮ",

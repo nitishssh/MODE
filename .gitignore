@@ -10,3 +10,7 @@ test-results/
 *.log
 .DS_Store
 tmp/
+client/.expo/
+client/dist/
+client/dist-native/
+public/expo/

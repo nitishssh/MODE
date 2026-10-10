@@ -25,7 +25,6 @@ function mapTaskDetails(row: Row, now: string): TaskDetails {
     createdAt: String(row.created_at),
   };
 }
-
 function mapExpense(row: Row): Expense {
   return {
     id: String(row.id),
@@ -49,6 +48,7 @@ function mapExpense(row: Row): Expense {
 
 export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, receiptsDir: string) {
   const { db, now } = ctx;
+  const receiptHasUploaderName = (db.prepare("PRAGMA table_info(expense_receipts)").all() as Row[]).some(row => row.name === "uploader_name");
   function requireEvent(actor: Actor, id?: string | null) {
     if (id && !db.prepare("SELECT 1 FROM events WHERE id = ? AND club_id = ?").get(id, actor.clubId)) throw new NotFoundError("Event not found.");
   }
@@ -136,8 +136,13 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     writeFileSync(join(/* turbopackIgnore: true */ receiptsDir, storageName), input.data, { flag: "wx" });
     try {
       return transaction(ctx, () => {
-        db.prepare("INSERT INTO expense_receipts (id, club_id, uploader_id, filename, mime_type, size_bytes, uploaded_at, storage_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(id, actor.clubId, actor.memberId, filename, format.mime, size, now().toISOString(), storageName);
+        if (receiptHasUploaderName) {
+          db.prepare("INSERT INTO expense_receipts (id, club_id, uploader_id, uploader_name, filename, mime_type, size_bytes, uploaded_at, storage_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .run(id, actor.clubId, actor.memberId, actor.name, filename, format.mime, size, now().toISOString(), storageName);
+        } else {
+          db.prepare("INSERT INTO expense_receipts (id, club_id, uploader_id, filename, mime_type, size_bytes, uploaded_at, storage_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            .run(id, actor.clubId, actor.memberId, filename, format.mime, size, now().toISOString(), storageName);
+        }
         return getReceiptById(actor, id);
       });
     } catch (error) {
@@ -149,7 +154,7 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     getReceiptById(actor, id);
     const row = db.prepare("SELECT storage_name FROM expense_receipts WHERE id = ? AND club_id = ?").get(id, actor.clubId)!;
     const storageName = String(row.storage_name);
-    if (!/^[a-f0-9-]{36}(?:\.(?:jpg|png|pdf|webp))?$/i.test(storageName)) throw new NotFoundError("Receipt file not found.");
+    if (!/^(?:[a-f0-9-]{36}(?:\.(?:jpg|png|pdf|webp))?|[a-z0-9_-]{1,128})$/i.test(storageName)) throw new NotFoundError("Receipt file not found.");
     try { return readFileSync(join(/* turbopackIgnore: true */ receiptsDir, storageName)); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
   }

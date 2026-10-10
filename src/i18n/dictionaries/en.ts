@@ -9,6 +9,9 @@
  */
 const en = {
   // ── App shell ────────────────────────────────────────────────────────────
+  "topbar.accountMenu": "User account menu",
+  "topbar.tasksCompleted": "Tasks completed",
+  "tasks.dragHint": "Drag to a lane, or click to toggle completion",
   "app.title": "MODE — Your club, in sync",
   "app.description": "A runnable student organization workspace starter for memberships, events, volunteers, and finances.",
   "app.brandHome": "MODE home",

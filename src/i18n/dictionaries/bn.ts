@@ -6,6 +6,9 @@ import type { Dictionary } from "./en";
  */
 const bn: Dictionary = {
   // ── App shell ────────────────────────────────────────────────────────────
+  "topbar.accountMenu": "ব্যবহারকারীর অ্যাকাউন্ট মেনু",
+  "topbar.tasksCompleted": "সম্পন্ন কাজ",
+  "tasks.dragHint": "কোনো কলামে টেনে আনুন বা সম্পন্ন অবস্থা বদলাতে ক্লিক করুন",
   "app.title": "MODE — আপনার ক্লাব, এক তালে",
   "app.description": "সদস্যপদ, ইভেন্ট, ভলান্টিয়ার ও আর্থিক হিসাবের জন্য একটি চালু করার মতো ছাত্র সংগঠন ওয়ার্কস্পেস স্টার্টার।",
   "app.brandHome": "MODE হোম",

@@ -6,6 +6,9 @@ import type { Dictionary } from "./en";
  */
 const hi: Dictionary = {
   // ── App shell ────────────────────────────────────────────────────────────
+  "topbar.accountMenu": "उपयोगकर्ता खाता मेन्यू",
+  "topbar.tasksCompleted": "पूरे हुए कार्य",
+  "tasks.dragHint": "किसी स्तंभ में खींचें या पूर्णता बदलने के लिए क्लिक करें",
   "app.title": "MODE — आपका क्लब, एक साथ",
   "app.description": "सदस्यता, ईवेंट, वॉलंटियर और वित्त के लिए एक तैयार छात्र संगठन वर्कस्पेस स्टार्टर।",
   "app.brandHome": "MODE होम",

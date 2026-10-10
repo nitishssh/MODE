@@ -6,7 +6,8 @@ export type { Dictionary, DictionaryKey } from "./en";
 /**
  * One lazy loader per language so a request only ever loads the dictionary it
  * renders. Dictionaries are read on the server (root layout) and handed to the
- * client provider as props, so none of them ship in the browser bundle.
+ * client provider as props. Only the selected dictionary is serialized to the
+ * browser; the other dictionaries are not bundled into client JavaScript.
  */
 const loaders: Record<Locale, () => Promise<{ default: Dictionary }>> = {
   en: () => import("./en"),

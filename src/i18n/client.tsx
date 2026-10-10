@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useMemo, type ReactNode } from 
 import { useRouter } from "next/navigation";
 import type { Dictionary, DictionaryKey } from "./dictionaries/en";
 import { createFormatters, type Formatters } from "./format";
+import { translateApiError } from "./errors";
 import {
   DEFAULT_LOCALE,
   LOCALE_COOKIE,
@@ -28,8 +29,8 @@ export interface I18n {
   t: (key: DictionaryKey, vars?: Vars) => string;
   fmt: Formatters;
   /**
-   * Message for a failed API call. Known error codes get a localized message;
-   * anything else falls back to the server's text, then to `fallback`.
+   * Translate known generic errors, preserving more specific server explanations.
+   * Missing messages fall back to `fallback`.
    */
   apiError: (result: { error?: string; code?: string } | null | undefined, fallback: DictionaryKey) => string;
   /** Persist the choice in the `mode_lang` cookie and re-render the server tree. */
@@ -44,14 +45,7 @@ export function I18nProvider({ locale, dict, children }: { locale: Locale; dict:
   const t = useCallback<I18n["t"]>((key, vars) => interpolate(dict[key] ?? key, vars), [dict]);
 
   const apiError = useCallback<I18n["apiError"]>(
-    (result, fallback) => {
-      const code = result?.code;
-      if (code) {
-        const key = `errors.${code}` as DictionaryKey;
-        if (key in dict) return dict[key];
-      }
-      return result?.error || dict[fallback];
-    },
+    (result, fallback) => translateApiError(dict, result, fallback),
     [dict],
   );
 

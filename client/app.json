@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "MODE",
+    "slug": "mode",
+    "scheme": "mode",
+    "version": "0.1.0",
+    "userInterfaceStyle": "automatic",
+    "web": { "output": "single" },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": { "typedRoutes": true },
+    "ios": { "supportsTablet": true },
+    "android": { "allowBackup": false }
+  }
+}

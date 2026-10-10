@@ -6,6 +6,9 @@ import type { Dictionary } from "./en";
  */
 const assamese: Dictionary = {
   // ── App shell ────────────────────────────────────────────────────────────
+  "topbar.accountMenu": "ব্যৱহাৰকাৰীৰ একাউণ্ট মেনু",
+  "topbar.tasksCompleted": "সম্পূৰ্ণ হোৱা কাম",
+  "tasks.dragHint": "এটা স্তম্ভলৈ টানক বা সম্পূৰ্ণতাৰ অৱস্থা সলনি কৰিবলৈ ক্লিক কৰক",
   "app.title": "MODE — আপোনাৰ ক্লাব, একেলগে",
   "app.description": "সদস্যপদ, অনুষ্ঠান, স্বেচ্ছাসেৱক আৰু বিত্তৰ বাবে এটা চলনক্ষম ছাত্ৰ সংগঠন ৱৰ্কস্পেচ ষ্টাৰ্টাৰ।",
   "app.brandHome": "MODE হোম",

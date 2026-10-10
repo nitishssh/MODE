@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { getDictionary } from "../src/i18n/dictionaries";
 import en, { type DictionaryKey } from "../src/i18n/dictionaries/en";
 import { createFormatters } from "../src/i18n/format";
+import { translateApiError } from "../src/i18n/errors";
 import {
   DEFAULT_LOCALE,
   LOCALES,
@@ -15,6 +16,20 @@ import {
 
 const placeholders = (value: string) => (value.match(/\{\w+\}/g) ?? []).sort();
 const NATIVE_DIGITS = /[٠-٩۰-۹०-९০-৯੦-੯૦-૯୦-୯௦-௯౦-౯೦-೯൦-൯]/;
+
+test("API translations retain specific recovery instructions within generic error families", async () => {
+  const dict = await getDictionary("hi");
+  for (const [code, error] of [
+    ["unauthenticated", "Incorrect email or password."],
+    ["validation_failed", "File must not be empty."],
+    ["forbidden", "You cannot approve your own expense."],
+  ]) {
+    assert.equal(translateApiError(dict, { code, error }, "auth.signInFailed"), error);
+  }
+  assert.equal(translateApiError(dict, { code: "unauthenticated", error: "Sign in to continue." }, "auth.signInFailed"), dict["errors.unauthenticated"]);
+  assert.equal(translateApiError(dict, { code: "duplicate_member", error: en["errors.duplicate_member"] }, "members.addFailed"), dict["errors.duplicate_member"]);
+  assert.equal(translateApiError(dict, null, "auth.signInFailed"), dict["auth.signInFailed"]);
+});
 
 test("English plus eleven of the most spoken Indian languages are registered, each with a unique code and native name", () => {
   const codes = LOCALES.map((item) => item.code);

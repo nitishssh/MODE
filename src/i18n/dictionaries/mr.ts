@@ -5,6 +5,9 @@ import type { Dictionary } from "./en";
  */
 const mr: Dictionary = {
   // ── App shell ────────────────────────────────────────────────────────────
+  "topbar.accountMenu": "वापरकर्ता खाते मेनू",
+  "topbar.tasksCompleted": "पूर्ण झालेली कामे",
+  "tasks.dragHint": "स्तंभात ओढा किंवा पूर्ण स्थिती बदलण्यासाठी क्लिक करा",
   "app.title": "MODE — तुमचा क्लब, एकत्र",
   "app.description": "सदस्यत्व, कार्यक्रम, स्वयंसेवक आणि आर्थिक व्यवहारांसाठी विद्यार्थी संघटनेचे चालू होणारे वर्कस्पेस स्टार्टर.",
   "app.brandHome": "MODE मुख्यपृष्ठ",

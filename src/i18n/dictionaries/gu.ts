@@ -2,6 +2,9 @@ import type { Dictionary } from "./en";
 
 const gu: Dictionary = {
   // ── App shell ────────────────────────────────────────────────────────────
+  "topbar.accountMenu": "વપરાશકર્તા ખાતાનું મેનૂ",
+  "topbar.tasksCompleted": "પૂર્ણ થયેલાં કાર્યો",
+  "tasks.dragHint": "કૉલમમાં ખેંચો અથવા પૂર્ણ સ્થિતિ બદલવા ક્લિક કરો",
   "app.title": "MODE — તમારી ક્લબ, એક સાથે",
   "app.description": "સભ્યપદ, ઇવેન્ટ્સ, સ્વયંસેવકો અને નાણાં માટે ચાલતું વિદ્યાર્થી સંગઠન વર્કસ્પેસ સ્ટાર્ટર.",
   "app.brandHome": "MODE હોમ",

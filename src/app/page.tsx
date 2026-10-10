@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { DragEvent, FormEvent, ReactNode } from "react";
 import { WorkspaceMainSkeleton } from "./skeleton";
 import { localDateTimeValue } from "@/lib/local-datetime";
 import { LanguageSwitcher, useI18n } from "@/i18n/client";
@@ -20,6 +20,14 @@ import type {
   TaskDetails,
 } from "@/lib/contracts";
 
+/** Keep asynchronous request messages current without making locale a fetch dependency. */
+function useRequestMessages() {
+  const { t } = useI18n();
+  const messages = useRef(t);
+  useEffect(() => { messages.current = t; }, [t]);
+  return messages;
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type Section =
@@ -31,6 +39,8 @@ type Section =
   | "tasks"
   | "expenses"
   | "treasury";
+
+const dashboardTaskStatuses: TaskDetails["status"][] = ["todo", "in_progress", "done"];
 
 type IconName =
   | "grid"
@@ -347,6 +357,7 @@ type TaskFilter = {
 
 function TaskBoard({ members, events, user, onChanged }: { members: Member[]; events: Event[]; user: SessionUser; onChanged: () => Promise<void> }) {
   const { t, apiError } = useI18n();
+  const messages = useRequestMessages();
   const canWrite = user.permissions.includes("tasks:write");
   const [tasks, setTasks] = useState<TaskDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -370,14 +381,14 @@ function TaskBoard({ members, events, user, onChanged }: { members: Member[]; ev
       if (filter.overdue) params.set("overdue", "true");
       if (filter.mine) params.set("mine", "true");
       const res = await fetch(`/api/tasks?${params}`, { cache: "no-store" });
-      if (!res.ok) throw new Error(t("tasks.loadFailed"));
+      if (!res.ok) throw new Error(messages.current("tasks.loadFailed"));
       setTasks(await res.json() as TaskDetails[]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("tasks.loadFailed"));
+      setError(e instanceof Error ? e.message : messages.current("tasks.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [filter, t]);
+  }, [filter, messages]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (showCreate) titleRef.current?.focus(); }, [showCreate]);
@@ -836,6 +847,7 @@ function TaskCard({
 
 function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
   const { t, fmt, apiError } = useI18n();
+  const messages = useRequestMessages();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -854,14 +866,14 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
     try {
       const url = selfMember ? `/api/expenses?submitterId=${selfMember.id}` : "/api/expenses";
       const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(t("expenses.loadFailed"));
+      if (!res.ok) throw new Error(messages.current("expenses.loadFailed"));
       setExpenses(await res.json() as Expense[]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("expenses.loadFailed"));
+      setError(e instanceof Error ? e.message : messages.current("expenses.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [selfMember, t]);
+  }, [selfMember, messages]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -1155,6 +1167,7 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
 
 function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
   const { t, fmt, apiError } = useI18n();
+  const messages = useRequestMessages();
   const [summary, setSummary] = useState<LedgerSummary | null>(null);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -1182,7 +1195,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
         fetch("/api/ledger/entries", { cache: "no-store" }),
         fetch("/api/expenses", { cache: "no-store" }),
       ]);
-      if (!summaryRes.ok || !entriesRes.ok || !expensesRes.ok) throw new Error(t("treasury.loadFailed"));
+      if (!summaryRes.ok || !entriesRes.ok || !expensesRes.ok) throw new Error(messages.current("treasury.loadFailed"));
       const [s, e, ex] = await Promise.all([
         summaryRes.json() as Promise<LedgerSummary>,
         entriesRes.json() as Promise<LedgerEntry[]>,
@@ -1192,11 +1205,11 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
       setEntries(e);
       setExpenses(ex);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("treasury.loadFailed"));
+      setError(e instanceof Error ? e.message : messages.current("treasury.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [messages]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -1716,6 +1729,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
 
 function EventReportCard({ eventId }: { eventId: string }) {
   const { t, fmt } = useI18n();
+  const messages = useRequestMessages();
   const [report, setReport] = useState<EventReport | null>(null);
   const [error, setError] = useState("");
 
@@ -1723,12 +1737,12 @@ function EventReportCard({ eventId }: { eventId: string }) {
     setError("");
     try {
       const response = await fetch(`/api/events/${eventId}/report`, { cache: "no-store" });
-      if (!response.ok) throw new Error(t("report.unavailable"));
+      if (!response.ok) throw new Error(messages.current("report.unavailable"));
       setReport(await response.json() as EventReport);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t("report.unavailable"));
+      setError(caught instanceof Error ? caught.message : messages.current("report.unavailable"));
     }
-  }, [eventId, t]);
+  }, [eventId, messages]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -1764,6 +1778,7 @@ function EventReportCard({ eventId }: { eventId: string }) {
 
 function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void }) {
   const { t, fmt, apiError } = useI18n();
+  const messages = useRequestMessages();
   const [section, setSection] = useState<Section>("overview");
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1776,7 +1791,13 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
   const [announcementQuery, setAnnouncementQuery] = useState("");
   const [isDark, setIsDark] = useState(false);
   const [isNavOpen, setIsNavOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [savingTaskIds, setSavingTaskIds] = useState<string[]>([]);
+  const pendingTaskIds = useRef(new Set<string>());
+  const [taskErrors, setTaskErrors] = useState<Record<string, string>>({});
   const nameInput = useRef<HTMLInputElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const refreshDashboard = useCallback(async () => {
     setRefreshError("");
@@ -1785,23 +1806,23 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
       if (!response.ok) throw new Error("Dashboard refresh failed.");
       setData((await response.json()) as Dashboard);
     } catch {
-      setRefreshError(t("workspace.refreshFailed"));
+      setRefreshError(messages.current("workspace.refreshFailed"));
     }
-  }, [t]);
+  }, [messages]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const response = await fetch("/api/dashboard", { cache: "no-store" });
-      if (!response.ok) throw new Error(t("workspace.loadFailed"));
+      if (!response.ok) throw new Error(messages.current("workspace.loadFailed"));
       setData((await response.json()) as Dashboard);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t("workspace.loadFailedShort"));
+      setError(caught instanceof Error ? caught.message : messages.current("workspace.loadFailedShort"));
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [messages]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (showForm) nameInput.current?.focus(); }, [showForm]);
@@ -1813,6 +1834,18 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
     document.documentElement.classList.toggle("mode-dark", isDark);
     window.localStorage.setItem("mode-theme", isDark ? "dark" : "light");
   }, [isDark]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    }
+    if (isUserMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isUserMenuOpen]);
 
   useEffect(() => {
     function syncHash() {
@@ -1861,7 +1894,40 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
     }
   }
 
+  async function moveDashboardTask(task: Dashboard["tasks"][number], status: Dashboard["tasks"][number]["status"]) {
+    if (task.status === status || pendingTaskIds.current.has(task.id)) return;
+    if (!user.permissions.includes("tasks:write") && task.assigneeId !== user.id) return;
+    pendingTaskIds.current.add(task.id);
+    setSavingTaskIds([...pendingTaskIds.current]);
+    setTaskErrors(current => ({ ...current, [task.id]: "" }));
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(apiError(result, "tasks.statusFailed"));
+      setData(current => current ? { ...current, tasks: current.tasks.map(item => item.id === task.id ? { ...item, status: result.status } : item) } : current);
+    } catch (error) {
+      setTaskErrors(current => ({ ...current, [task.id]: error instanceof Error ? error.message : t("tasks.statusFailed") }));
+    } finally {
+      pendingTaskIds.current.delete(task.id);
+      setSavingTaskIds([...pendingTaskIds.current]);
+    }
+  }
+  function dropDashboardTask(event: DragEvent<HTMLElement>, status: Dashboard["tasks"][number]["status"]) {
+    event.preventDefault();
+    const taskId = event.dataTransfer.getData("text/plain") || draggedTaskId;
+    const task = data?.tasks.find((item) => item.id === taskId);
+    setDraggedTaskId(null);
+    if (task) moveDashboardTask(task, status);
+  }
+
   const openTasks = data?.tasks.filter((task) => task.status !== "done") ?? [];
+  const totalTasks = data?.tasks.length ?? 0;
+  const completedTasks = data?.tasks.filter((task) => task.status === "done").length ?? 0;
+  const taskProgressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   const clubName = data?.club.name ?? "Skyline Student Association";
   const clubInitials = initials(clubName);
   const visibleAnnouncements = (data?.announcements ?? []).filter((item) => {
@@ -1894,8 +1960,6 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
             <small>{t("nav.studentOrganization")}</small>
           </span>
         </div>
-        <p className="nav-caption">{t("nav.userLine", { name: user.name, role: roleLabel })}</p>
-        <button className="button secondary" type="button" onClick={onLogout}>{t("nav.signOut")}</button>
         <p className="nav-caption">{t("nav.caption")}</p>
         <nav aria-label={t("nav.mainNavigation")}>
           {navigation.filter(item => (item.id !== "treasury" || user.permissions.includes("ledger:read")) && (item.id !== "members" || user.permissions.includes("members:read"))).map((item) => (
@@ -1981,9 +2045,71 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
               <span />
               {t("topbar.sampleData")}
             </span>
-            <span className="top-avatar" aria-label={t("nav.demoWorkspace")}>
-              {clubInitials}
-            </span>
+            <div className="topbar-user-section" ref={userMenuRef}>
+              <div
+                className="topbar-progress-bar"
+                title={`${t("topbar.tasksCompleted")}: ${completedTasks}/${totalTasks} (${taskProgressPercent}%)`}
+              >
+                <div
+                  className="topbar-progress-fill"
+                  style={{ width: `${taskProgressPercent}%` }}
+                />
+              </div>
+              <button
+                type="button"
+                className={`topbar-avatar-btn ${isUserMenuOpen ? "active" : ""}`}
+                onClick={() => setIsUserMenuOpen((open) => !open)}
+                aria-label={t("topbar.accountMenu")}
+                aria-expanded={isUserMenuOpen}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              </button>
+              {isUserMenuOpen && (
+                <div className="topbar-user-dropdown" role="menu">
+                  <div className="dropdown-user-header">
+                    <div className="dropdown-user-avatar">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                        <circle cx="12" cy="7" r="4" />
+                      </svg>
+                    </div>
+                    <div className="dropdown-user-info">
+                      <strong>{user.name}</strong>
+                      <span className="dropdown-role-badge">{roleLabel}</span>
+                    </div>
+                  </div>
+                  <div className="dropdown-progress-stats">
+                    <div className="dropdown-progress-label">
+                      <span>{t("topbar.tasksCompleted")}</span>
+                      <b>{completedTasks}/{totalTasks} ({taskProgressPercent}%)</b>
+                    </div>
+                    <div className="dropdown-progress-bar">
+                      <div className="dropdown-progress-fill" style={{ width: `${taskProgressPercent}%` }} />
+                    </div>
+                  </div>
+                  <div className="dropdown-divider" />
+                  <button
+                    type="button"
+                    className="dropdown-signout-btn"
+                    role="menuitem"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      onLogout();
+                    }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                    <span>{t("nav.signOut")}</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
         <main id="main-content" tabIndex={-1}>
@@ -2125,25 +2251,17 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                         action={t("tasks.viewAll")}
                         onClick={() => setSection("tasks")}
                       />
-                      {openTasks.length ? (
-                        <div className="task-list">
-                          {openTasks.slice(0, 3).map((task) => (
-                            <div className="task-row" key={task.id}>
-                              <span
-                                className={`task-symbol ${task.status === "in_progress" ? "working" : ""}`}
-                                aria-hidden="true"
-                              >
-                                {task.status === "in_progress" ? "•" : ""}
-                              </span>
-                              <div>
-                                <h3>{task.title}</h3>
-                                <p>{task.assignee || t("common.unassigned")}</p>
+                      {data.tasks.length ? (
+                        <div className="dashboard-kanban" aria-label={t("tasks.overviewTitle")}>
+                          {dashboardTaskStatuses.map((status) => {
+                            const tasks = data.tasks.filter((task) => task.status === status);
+                            return <section className={`dashboard-kanban-column ${status} ${draggedTaskId ? "is-drop-target" : ""}`} key={status} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropDashboardTask(event, status)}>
+                              <header><span className={`status-dot ${status}`} aria-hidden="true" /><span>{t(`tasks.status.${status}`)}</span><b>{tasks.length}</b></header>
+                              <div className="dashboard-kanban-cards">
+                                {tasks.length ? tasks.map((task) => <div key={task.id}><button type="button" disabled={savingTaskIds.includes(task.id) || (!user.permissions.includes("tasks:write") && task.assigneeId !== user.id)} draggable={!savingTaskIds.includes(task.id) && (user.permissions.includes("tasks:write") || task.assigneeId === user.id)} className={`dashboard-task-card ${task.status === "done" ? "completed" : ""} ${savingTaskIds.includes(task.id) ? "completing" : ""}`} onClick={() => moveDashboardTask(task, task.status === "done" ? "todo" : "done")} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", task.id); setDraggedTaskId(task.id); }} onDragEnd={() => setDraggedTaskId(null)} title={t("tasks.dragHint")}><span className="dashboard-task-title">{task.title}</span><span className="dashboard-task-assignee">{savingTaskIds.includes(task.id) ? t("tasks.saving") : task.assignee || t("common.unassigned")}</span></button>{taskErrors[task.id] && <p role="alert" className="error-text">{taskErrors[task.id]}</p>}</div>) : <p className="dashboard-kanban-empty">{t("tasks.columnEmpty")}</p>}
                               </div>
-                              <span className={`badge ${task.status === "in_progress" ? "purple" : "neutral"}`}>
-                                {t(`tasks.status.${task.status}`)}
-                              </span>
-                            </div>
-                          ))}
+                            </section>;
+                          })}
                         </div>
                       ) : (
                         <Empty title={t("tasks.overviewEmptyTitle")}>{t("tasks.overviewEmptyBody")}</Empty>
@@ -2429,6 +2547,7 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
 
 export default function Home() {
   const { t, apiError } = useI18n();
+  const messages = useRequestMessages();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2437,10 +2556,10 @@ export default function Home() {
     let active = true;
     fetch("/api/auth/me", { cache: "no-store" }).then(async response => {
       if (response.ok) { const result = await response.json(); if (active) setUser(result.user); }
-      else if (response.status !== 401) throw new Error(t("auth.sessionFailed"));
+      else if (response.status !== 401) throw new Error(messages.current("auth.sessionFailed"));
     }).catch(error => { if (active) setError(error.message); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [t]);
+  }, [messages]);
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = new FormData(event.currentTarget);

@@ -2,6 +2,10 @@
 
 A runnable team starter for the Odoo x NMIT student organization problem: memberships, events, announcements, merchandise, volunteer work and club finances.
 
+## Historical codebase documentation
+
+Start with the [historical codebase guide](docs/CODEBASE.md): architecture and feature status, [source files and shared types](docs/CODE-REFERENCE.md), [database tables and migrations](docs/DATA-MODEL.md), [HTTP APIs](docs/HTTP-API.md), and [setup, walkthroughs and testing](docs/DEVELOPMENT.md). These guides cover commit `a62c6e2` (10 October 2026), with pinned source links. That snapshot predates the Expo client and schema 12; its inventories and setup instructions do not describe current `main`. For current setup, use this README and the [client README](client/README.md).
+
 [Project board](https://github.com/users/nitishssh/projects/14) · [Implementation tickets](https://github.com/nitishssh/MODE/issues) · [Task map](docs/TASKS.md) · [Team ownership](docs/TEAM.md) · [API contracts](docs/API.md) · [Demo checklist](docs/DEMO.md) · [Agent instructions](AGENTS.md)
 
 ## Run locally
@@ -13,7 +17,7 @@ npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 10 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
+Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 12 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
 
 Optional configuration is documented in `.env.example`; copy it to `.env.local` if needed. Never commit `.env.local` or the local database. To try a separate dataset without changing the existing one, set `SQLITE_PATH` to a new filename.
 
@@ -31,10 +35,13 @@ Native API clients can log in without browser Origin headers and use the returne
 
 ## What works today
 
+- SDK 57 Expo shell in `client/`: cookie-based web login, SecureStore native bearer sessions, permission-driven navigation, membership pass details, task updates and treasury totals. See [the Expo walkthrough](docs/DEMO.md#expo-shell-and-same-origin-web).
+- Optional same-origin Expo export at `/`, with the existing business workspace at `/legacy`. Full scanner, holds and native business screens remain work for #11–#13; bundle compilation does not establish physical-device acceptance.
 - Responsive dashboard and navigation for all six club areas.
 - Interface in English and eleven of the most spoken Indian languages (Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Malayalam, Punjabi, Assamese), chosen from the browser's language or the in-app switcher.
 - Browser sign-in/sign-out, task editing, receipt-backed expenses, treasury review and ledger CSV export.
 - Backend APIs for dues/renewals, simulated reminders, ticket holds, payment confirmation, check-in and merchandise orders with stock holds.
+- Announcement publication API with a public dated archive, active-member notifications, atomic simulated outbox delivery and safe retries. See the [announcement demo](docs/DEMO.md#announcement-publication-8).
 - SQLite-backed dashboard, health check and member directory.
 - Registration, login, logout, hashed sessions and role-protected member APIs; native bearer tokens and browser HttpOnly cookies share the same session.
 - Create a member through the authorized API with server validation and case-insensitive duplicate prevention.
@@ -44,9 +51,9 @@ Native API clients can log in without browser Origin headers and use the returne
 
 ## What the team will implement
 
-The planned Expo client, membership and ticket screens, merchandise ordering screens and announcement mailing remain tracked in [the MVP tickets](https://github.com/nitishssh/MODE/milestone/1). Dues, ticket and merchandise backend APIs, editable web tasks and reimbursement approvals are implemented. Unfinished web flows remain previews. Payment confirmations record external payments; no gateway transfer or real email is performed.
+The remaining Expo business screens, membership and ticket screens, merchandise ordering screens and announcement publishing/inbox screens remain tracked in [the MVP tickets](https://github.com/nitishssh/MODE/milestone/1). Dues, ticket, merchandise and announcement backend APIs, editable web tasks and reimbursement approvals are implemented. Unfinished web flows remain previews. Payment confirmations record external payments; no gateway transfer or real email is performed.
 
-The starter is a single-club, local development scaffold with synthetic demo accounts. The web UI has browser sign-in; the planned Expo client remains future work. Anonymous dashboard responses withhold the member directory and finance data. See [API contracts and demo accounts](docs/API.md) to exercise the authenticated endpoints. Hosted SQLite needs a persistent disk and one writable instance; a serverless ephemeral filesystem is not durable storage.
+The starter is a single-club, local development scaffold with synthetic demo accounts. The web and Expo shell have sign-in; full native business flows remain future work. Anonymous dashboard responses withhold the member directory and finance data. See [API contracts and demo accounts](docs/API.md) to exercise the authenticated endpoints. Hosted SQLite needs a persistent disk and one writable instance; a serverless ephemeral filesystem is not durable storage.
 
 ## Stack and layout
 
@@ -85,17 +92,16 @@ Run `npm run dev:lan` to listen on all network interfaces, then open `http://<co
 
 For a production-mode LAN demo, build first, configure `MODE_DEMO_PASSWORD` before the first database seed, and run `npm run start:lan`. Persist the database and its adjacent receipts directory together. A hosted installation needs HTTPS and persistent storage.
 
-The web manifest provides the MODE icon and standalone display metadata. On a supported browser, use its install or Add to Home Screen action when available. Installation support depends on the browser and a secure context; plain HTTP on a LAN address may not qualify. There is no offline cache or service worker: the server must remain reachable. Physical-device installation has not been verified. The Expo client is still planned; `EXPO_PUBLIC_API_URL` is reserved for that future client.
+The web manifest provides the MODE icon and standalone display metadata. On a supported browser, use its install or Add to Home Screen action when available. Installation support depends on the browser and a secure context; plain HTTP on a LAN address may not qualify. There is no offline cache or service worker: the server must remain reachable. Physical-device installation has not been verified. The Expo shell is in `client/`; native devices use `EXPO_PUBLIC_API_URL` to reach this server.
 
 ### Authenticated tasks and reimbursements
 
-The web workspace now has sign-in, a task board, personal expense submissions and treasury review. Task assignment and status changes respect the signed-in member’s permissions. New claims require a JPG, PNG or PDF receipt up to 5 MB, private to their uploader and club finance reviewers. Reimbursements post exactly once to the shared ledger, alongside dues and ticket income. The register links to exact source records and shows the paying officer; its CSV export matches the register totals. Schema v10 preserves existing data and legacy receipt files. See [API](docs/API.md), [demo walkthrough](docs/DEMO.md) and [local reimbursement verification](docs/REIMBURSEMENT-VERIFICATION.md).
+The web workspace now has sign-in, a task board, personal expense submissions and treasury review. Task assignment and status changes respect the signed-in member’s permissions. New claims require a JPG, PNG or PDF receipt up to 5 MB, private to their uploader and club finance reviewers. Reimbursements post exactly once to the shared ledger, alongside dues and ticket income. The register links to exact source records and shows the paying officer; its CSV export matches the register totals. Schema v12 preserves older workflow and ledger records alongside the released receipt and announcement migrations. See [API](docs/API.md), [demo walkthrough](docs/DEMO.md) and [local reimbursement verification](docs/REIMBURSEMENT-VERIFICATION.md).
 
 ## Languages
 
 The web workspace is available in English and eleven of the most spoken scheduled languages of India: Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Malayalam, Punjabi and Assamese. The language is chosen once per request by one rule: a valid `mode_lang` cookie wins, otherwise the browser's `Accept-Language` header, otherwise English. The switcher in the top bar (and on the sign-in screen) writes that cookie and re-renders the server tree, so `<html lang>` and `dir` are always correct and Urdu renders right-to-left.
 
-Dictionaries live in `src/i18n/dictionaries/<code>.ts`; English is the master and the `Dictionary` type plus `tests/i18n.test.ts` force every language to carry the same keys and placeholders. Only the requested language is loaded, on the server, so none of them ship in the browser bundle. Amounts and dates use `Intl` with the matching `*-IN` locale and Latin digits in every language, so figures on screen always match the ledger and the CSV export. API error messages are mapped by their `code` to the active language; the API itself stays English.
+Dictionaries live in `src/i18n/dictionaries/<code>.ts`; English is the master and the `Dictionary` type plus `tests/i18n.test.ts` force every language to carry the same keys and placeholders. Only the requested language is loaded, on the server, so other languages are not bundled into the client (the selected dictionary is sent to the browser). Amounts and dates use `Intl` with the matching `*-IN` locale and Latin digits in every language, so figures on screen always match the ledger and the CSV export. API error messages are mapped by their `code` to the active language; the API itself stays English.
 
 To add a language: append it to `LOCALES` in `src/i18n/locales.ts`, add `src/i18n/dictionaries/<code>.ts` typed as `Dictionary`, and register it in `src/i18n/dictionaries/index.ts`. The test suite fails until every key is translated.
-
