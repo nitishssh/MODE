@@ -99,3 +99,55 @@ export interface LoginInput {
   email: string;
   password: string;
 }
+
+/** Membership lifecycle (#4) */
+export interface MembershipPlan {
+  id: string;
+  name: string;
+  pricePaise: number;
+  durationDays: number;
+  grantsMemberPricing: boolean;
+}
+
+export interface Membership {
+  id: string;
+  memberId: string;
+  planId: string;
+  planName: string;
+  startsOn: string;
+  expiresOn: string;
+  paymentId: string | null;
+  grantsMemberPricing: boolean;
+}
+
+export interface MembershipStatus {
+  memberId: string;
+  active: boolean;
+  memberPricing: boolean;
+  expiresOn: string | null;
+  current: Membership | null;
+  history: Membership[];
+}
+
+export interface Payment {
+  id: string;
+  memberId: string;
+  purpose: "membership" | "ticket" | "order";
+  targetId: string;
+  reference: string;
+  amountPaise: number;
+  recordedAt: string;
+}
+
+/** Outbox: recorded delivery attempts. `previewed` is a local demo, never a real send. */
+export interface OutboxMessage {
+  id: string;
+  kind: string;
+  recipient: string;
+  subject: string;
+  status: "pending" | "previewed" | "sent" | "failed";
+  attempts: number;
+  lastError: string | null;
+  createdAt: string;
+  deliveredAt: string | null;
+}

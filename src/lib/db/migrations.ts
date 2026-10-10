@@ -15,6 +15,7 @@ interface Migration {
 const MIGRATIONS: Migration[] = [
   { version: 1, up: createStarterSchema },
   { version: 2, up: addIdentityAndRoles },
+  { version: 3, up: addMembershipLifecycle },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -184,4 +185,81 @@ function addIdentityAndRoles(db: DatabaseSync, now: Date) {
   for (const officer of DEMO_OFFICERS) {
     insertOfficer.run(officer.id, officer.name, officer.email, now.toISOString(), DEFAULT_CLUB_ID, officer.role, passwordHash);
   }
+}
+
+// ---------------------------------------------------------------------------
+// v3 — membership plans, dues payments, ledger source references, outbox (#4)
+// ---------------------------------------------------------------------------
+export const PLAN_FREE_ID = "plan-associate";
+export const PLAN_ANNUAL_ID = "plan-annual";
+
+function addMembershipLifecycle(db: DatabaseSync, now: Date) {
+  db.exec(`
+    CREATE TABLE membership_plans (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      name TEXT NOT NULL,
+      price_paise INTEGER NOT NULL CHECK (price_paise >= 0),
+      duration_days INTEGER NOT NULL CHECK (duration_days > 0),
+      grants_member_pricing INTEGER NOT NULL CHECK (grants_member_pricing IN (0, 1)),
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+    );
+    CREATE TABLE payments (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      member_id TEXT NOT NULL REFERENCES members(id),
+      purpose TEXT NOT NULL CHECK (purpose IN ('membership', 'ticket', 'order')),
+      target_id TEXT NOT NULL,
+      reference TEXT NOT NULL,
+      amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
+      recorded_by TEXT REFERENCES members(id),
+      recorded_at TEXT NOT NULL,
+      UNIQUE (club_id, reference)
+    );
+    CREATE TABLE memberships (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      member_id TEXT NOT NULL REFERENCES members(id),
+      plan_id TEXT NOT NULL REFERENCES membership_plans(id),
+      starts_on TEXT NOT NULL,
+      expires_on TEXT NOT NULL CHECK (expires_on >= starts_on),
+      payment_id TEXT REFERENCES payments(id),
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX memberships_member_idx ON memberships (club_id, member_id, expires_on);
+    ALTER TABLE transactions ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
+    ALTER TABLE transactions ADD COLUMN category TEXT NOT NULL DEFAULT 'other';
+    ALTER TABLE transactions ADD COLUMN source_type TEXT;
+    ALTER TABLE transactions ADD COLUMN source_id TEXT;
+    ALTER TABLE transactions ADD COLUMN event_id TEXT;
+    ALTER TABLE transactions ADD COLUMN member_id TEXT;
+    CREATE UNIQUE INDEX transactions_source_idx ON transactions (source_type, source_id) WHERE source_type IS NOT NULL;
+    CREATE TABLE outbox_messages (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      kind TEXT NOT NULL,
+      recipient_member_id TEXT REFERENCES members(id),
+      recipient_email TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'previewed', 'sent', 'failed')),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      delivered_at TEXT
+    );
+    CREATE INDEX outbox_status_idx ON outbox_messages (club_id, status);
+  `);
+  const insertPlan = db.prepare("INSERT INTO membership_plans VALUES (?, ?, ?, ?, ?, ?, 1)");
+  insertPlan.run(PLAN_FREE_ID, DEFAULT_CLUB_ID, "Free associate", 0, 365, 0);
+  insertPlan.run(PLAN_ANNUAL_ID, DEFAULT_CLUB_ID, "Annual member", 50000, 365, 1);
+
+  // Backfill the seeded paid starter members so their benefits follow the real rule.
+  const paid = db.prepare("SELECT id, joined_at, expires_on FROM members WHERE dues_status = 'paid' AND expires_on IS NOT NULL").all();
+  const insertMembership = db.prepare("INSERT INTO memberships VALUES (?, ?, ?, ?, ?, ?, NULL, ?)");
+  for (const row of paid) {
+    insertMembership.run(`seed-membership-${row.id}`, DEFAULT_CLUB_ID, row.id, PLAN_ANNUAL_ID, String(row.joined_at).slice(0, 10), row.expires_on, now.toISOString());
+  }
+  db.exec("UPDATE transactions SET category = CASE WHEN description LIKE '%membership%' THEN 'membership' WHEN description LIKE '%ticket%' THEN 'ticket' ELSE 'other' END");
 }
