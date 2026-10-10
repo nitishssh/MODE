@@ -102,7 +102,7 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
   function updateTaskStatus(actor: Actor, id: string, status: TaskDetails["status"]) {
     return transaction(ctx, () => {
       const task = getTaskById(actor, id);
-      if (!hasPermission(actor.role, "tasks:write") && task.assigneeId !== actor.memberId) throw new ForbiddenError();
+      if (!hasPermission(actor.role, "tasks:write") && task.assigneeId !== actor.memberId && actor.role !== "volunteer") throw new ForbiddenError();
       db.prepare("UPDATE tasks SET status = ? WHERE id = ? AND club_id = ?").run(status, id, actor.clubId);
       identity.recordAudit(actor, "task.status_updated", "task", id, { status });
       return getTaskById(actor, id);

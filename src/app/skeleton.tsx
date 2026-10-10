@@ -207,7 +207,10 @@ export function WorkspaceShellSkeleton() {
           <div className="topbar-right" style={{ display: "flex", alignItems: "center", gap: "14px" }}>
             <div className="skeleton" style={{ width: "34px", height: "34px", borderRadius: "10px" }} />
             <div className="skeleton skeleton-pill" style={{ width: "120px", height: "24px" }} />
-            <div className="skeleton" style={{ width: "34px", height: "34px", borderRadius: "50%" }} />
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
+              <div className="skeleton" style={{ width: "36px", height: "4px", borderRadius: "999px" }} />
+              <div className="skeleton" style={{ width: "36px", height: "36px", borderRadius: "50%" }} />
+            </div>
           </div>
         </header>
 
