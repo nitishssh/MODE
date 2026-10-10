@@ -33,10 +33,46 @@ export interface Product {
   stock: number;
 }
 
+/** Basic task shape used by the dashboard overview. */
 export interface Task {
   id: string;
   title: string;
   assignee: string;
+  status: "todo" | "in_progress" | "done";
+}
+
+/** Detailed task shape used by the full task board (issue #13). */
+export interface TaskDetails {
+  id: string;
+  title: string;
+  description: string | null;
+  assignee: string | null;
+  assigneeId: string | null;
+  status: "todo" | "in_progress" | "done";
+  eventId: string | null;
+  eventTitle: string | null;
+  dueAt: string | null;
+  overdue: boolean;
+  createdAt: string;
+}
+
+export interface CreateTaskInput {
+  title: string;
+  description?: string;
+  assigneeId?: string;
+  eventId?: string;
+  dueAt?: string;
+}
+
+export interface PatchTaskInput {
+  title?: string;
+  description?: string | null;
+  assigneeId?: string | null;
+  eventId?: string | null;
+  dueAt?: string | null;
+}
+
+export interface UpdateTaskStatusInput {
   status: "todo" | "in_progress" | "done";
 }
 
@@ -47,6 +83,94 @@ export interface Transaction {
   amountPaise: number;
   occurredAt: string;
 }
+
+// ── Receipt ──────────────────────────────────────────────────────────────────
+
+export interface Receipt {
+  id: string;
+  uploaderId: string;
+  uploaderName: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
+
+// ── Expense ───────────────────────────────────────────────────────────────────
+
+export type ExpenseStatus = "submitted" | "approved" | "rejected" | "paid";
+
+export interface Expense {
+  id: string;
+  submitterId: string;
+  submitterName: string;
+  amountPaise: number;
+  purpose: string;
+  receiptId: string | null;
+  receiptReference: string | null;
+  eventId: string | null;
+  eventTitle: string | null;
+  status: ExpenseStatus;
+  rejectionNote: string | null;
+  paymentReference: string | null;
+  submittedAt: string;
+  reviewedAt: string | null;
+  paidAt: string | null;
+}
+
+export interface SubmitExpenseInput {
+  amountPaise: number;
+  purpose: string;
+  receiptId?: string;
+  receiptReference?: string;
+  eventId?: string;
+}
+
+// ── Ledger ────────────────────────────────────────────────────────────────────
+
+export interface LedgerSummary {
+  inflowPaise: number;
+  outflowPaise: number;
+  balancePaise: number;
+  approvedUnpaidPaise: number;
+  byCategory: { category: string; inflowPaise: number; outflowPaise: number }[];
+  byEvent: { eventId: string; eventTitle: string; inflowPaise: number; outflowPaise: number }[];
+}
+
+export interface LedgerEntry {
+  id: string;
+  type: "income" | "expense_paid";
+  description: string;
+  amountPaise: number;
+  category: string | null;
+  eventId: string | null;
+  eventTitle: string | null;
+  reference: string | null;
+  occurredAt: string;
+}
+
+// ── Event report ──────────────────────────────────────────────────────────────
+
+export interface EventReport {
+  eventId: string;
+  eventTitle: string;
+  fundraiser: {
+    goalPaise: number;
+    raisedPaise: number;
+    remainingPaise: number;
+    percent: number;
+    onTrack: boolean;
+  };
+  tasks: {
+    total: number;
+    todo: number;
+    inProgress: number;
+    done: number;
+    overdue: number;
+  };
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
 
 export interface Dashboard {
   club: { name: string; description: string };

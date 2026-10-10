@@ -32,6 +32,10 @@ The production build defaults to read-only demo behavior: member creation return
 - SQLite-backed dashboard, health check and member directory.
 - Create a member with server validation and case-insensitive duplicate prevention.
 - Server-calculated member/event counts and a sample ledger balance in integer paise.
+- Task board with status, assignment, event, deadline, overdue and “assigned to me” filters.
+- Receipt-backed volunteer expense submission, approval/rejection/payment workflow, treasury summaries and ledger CSV export.
+- Event fundraiser and task progress reports sourced from the event report API.
+- Mobile-friendly product catalogue and searchable announcement archive using the available server-backed dashboard data.
 - Fictional records showing how events, announcements, merchandise, volunteer work and finances will fit together.
 - Tests, TypeScript checks, production build and GitHub Actions configuration.
 
@@ -39,7 +43,7 @@ The production build defaults to read-only demo behavior: member creation return
 
 Authentication/RBAC, membership dues/renewals, ticket sales and check-in, size-specific merchandise orders, announcement mailing, editable volunteer tasks and reimbursement approvals are tracked in [the MVP tickets](https://github.com/nitishssh/MODE/milestone/1). Those screens are explicitly read-only starter previews today. No real payment or email has been processed.
 
-The starter is a single-club, local development scaffold. Its read endpoints are unauthenticated and must contain synthetic data only. Complete [the identity/RBAC ticket](https://github.com/nitishssh/MODE/issues/3) before using real member data or exposing a shared writable deployment. Hosted SQLite needs a persistent disk and one writable instance; a serverless ephemeral filesystem is not durable storage.
+The starter is a single-club, local development scaffold. Its read endpoints are unauthenticated and must contain synthetic data only. Complete [the identity/RBAC ticket](https://github.com/nitishssh/MODE/issues/3) before using real member data or exposing a shared writable deployment. Hosted SQLite needs a persistent disk and one writable instance; a serverless ephemeral filesystem is not durable storage. Expense and ledger writes are demo-gated until the backend identity/RBAC branch is integrated. Merchandise variants/orders and announcement publication/delivery remain blocked until their backend contracts are available.
 
 ## Stack and layout
 

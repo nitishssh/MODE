@@ -52,7 +52,7 @@ test("member records persist after reopening and migration does not duplicate se
     assert.deepEqual(db.getMembers().find((item) => item.id === member.id), member);
     assert.equal(db.getMembers().length, 4);
     assert.equal(db.getDashboard().transactions.length, 3);
-    assert.equal(db.health().schemaVersion, 1);
+    assert.equal(db.health().schemaVersion, 2);
   } finally {
     db?.close();
     rmSync(directory, { recursive: true, force: true });
@@ -71,6 +71,35 @@ test("dashboard subtracts expenses in integer paise and excludes expired members
     date = new Date("2028-01-01T00:00:00.000Z");
     assert.equal(db.getDashboard().metrics.activeMembers, 0);
     assert.equal(db.getDashboard().metrics.upcomingEvents, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test("task filters and expense transitions keep approved liabilities out of paid outflow", () => {
+  const db = openClubDatabase(":memory:", { now: fixedNow });
+  try {
+    assert.equal(db.getTasks({ eventId: "demo-event-1" }).length, 2);
+    assert.equal(db.getTasks({ assigneeId: "demo-member-1" }).length, 2);
+    assert.equal(db.getTasks({ overdue: true }).length, 0);
+
+    const submitted = db.submitExpense({
+      submitterId: "demo-member-3",
+      amountPaise: 4200,
+      purpose: "Volunteer travel",
+      eventId: "demo-event-1",
+    });
+    const before = db.getLedgerSummary();
+    const approved = db.approveExpense(submitted.id, "demo-member-1");
+    assert.equal(approved.status, "approved");
+    assert.equal(db.getLedgerSummary().approvedUnpaidPaise, before.approvedUnpaidPaise + 4200);
+    assert.equal(db.getLedgerSummary().outflowPaise, before.outflowPaise);
+
+    const paid = db.payExpense(submitted.id, "UPI-TEST-4200");
+    assert.equal(paid.status, "paid");
+    assert.equal(db.getLedgerSummary().approvedUnpaidPaise, before.approvedUnpaidPaise);
+    assert.equal(db.getLedgerSummary().outflowPaise, before.outflowPaise + 4200);
+    assert.throws(() => db.payExpense(submitted.id, "UPI-DUPLICATE"));
   } finally {
     db.close();
   }
