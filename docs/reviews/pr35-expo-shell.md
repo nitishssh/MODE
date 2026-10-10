@@ -2,7 +2,7 @@
 
 Reviewed 10 October 2026. PR: https://github.com/nitishssh/MODE/pull/35
 
-Reviewed Azman's head `c598b3a0b854c260a722ca266d3c1de25e0b4aab` against main `771ec78d7ecec9e5c0d597951877e5968ead7e84`. Work continues locally on `expo-shell-completion`, based on that PR. No remote push, merge or issue closure is implied by this report.
+Reviewed Azman's head `c598b3a0b854c260a722ca266d3c1de25e0b4aab`, then merged current main `a62c6e27724eccfafe54f3d85c9ddf066fb7c033` into `expo-shell-completion`. The integrated candidate retains main's reimbursement and announcement work. No merge or issue closure is implied by this report.
 
 ## Findings repaired
 
@@ -11,7 +11,7 @@ Reviewed Azman's head `c598b3a0b854c260a722ca266d3c1de25e0b4aab` against main `7
 | P1 | Volunteers could update any same-club task, contrary to the assigned-member contract. | Server permits only the assignee or `tasks:write`; both clients derive actions from that rule. Workspace regression tests cover unrelated and unassigned tasks. |
 | P2 | Failed dashboard task writes could silently disappear behind a successful reload. | Keep an error on the affected row and apply status only after server confirmation. |
 | P2 | Delayed completion could overwrite a later task action. | Remove delayed mutations; serialize pending writes per task. |
-| P1 | Historical workflow-v2 databases lack `tasks.assignee`, breaking current task inserts/updates. | Version 10 adds/populates the compatible field; historical-fixture creation and reassignment tests pass. |
+| P1 | Historical workflow-v2 databases lack `tasks.assignee`, breaking current task inserts/updates. | Version 12 adds/populates the compatible field after the released v10/v11 migrations; historical-fixture creation and reassignment tests pass. |
 | P2 | Historical receipts require `uploader_name`, but current inserts omitted it. | Preserve/add the column and write the actor's name. Old bytes/references and new uploads are tested. |
 | P1 | Paid historical expenses remained in the old ledger table, understating current outflows. | Import with source identity, date and event, avoid duplicated seed income, retain unknown payer attribution honestly, and abort ambiguous migrations. Reopen and reconciliation tests pass. |
 
@@ -29,7 +29,7 @@ A follow-up adversarial review found a P2 race in the new client: an old logout 
 
 ## Verification
 
-- Backend: 67 tests pass, including real legacy schema fixtures and ledger reconciliation.
+- Backend: 79 tests pass, including current-main announcement/reimbursement checks, real legacy schema fixtures and ledger reconciliation.
 - Client: 10 tests pass, covering cookie/bearer separation, restoration, 401/403, failed logout, stale responses, permissions and invalid native API origins.
 - Root/client TypeScript, client ESLint, contract documentation and generated-contract drift checks pass.
 - Expo web export and Next production build pass. Android and iOS Hermes bundle exports pass; these are compilation checks, not device execution.
