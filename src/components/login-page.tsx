@@ -1,12 +1,18 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 export function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+
+  useEffect(() => {
+    fetch("/api/auth/me", { cache: "no-store" }).then((res) => {
+      if (res.ok) window.location.assign("/");
+    });
+  }, []);
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,20 +49,20 @@ export function LoginPage() {
   return <main className="mode-login">
     <section className="mode-login-form-column" aria-label="Sign in">
       <section className="mode-login-card" aria-labelledby="login-title">
-        <a className="mode-login-back" href="/">← Back to MODE</a>
-        <p className="mode-login-brand">MO<span>DE</span><b>✦</b></p>
-        <h1 id="login-title">Sign in to MODE</h1>
-        <p>Use your club account to manage tasks and expenses</p>
+        <h1 id="login-title">Welcome back!</h1>
+        <p>Sign in to your Student Organization System (SOS).<br />Events · Members · Money in one place.</p>
         <form onSubmit={signIn} noValidate>
-          <label htmlFor="email">Email address</label>
+          <label htmlFor="email">Email or Student ID</label>
           <input id="email" name="email" type="email" autoComplete="username" aria-invalid={Boolean(fieldErrors.email)} aria-describedby={fieldErrors.email ? "email-error" : undefined} onChange={() => setFieldErrors((current) => ({ ...current, email: undefined }))} />
           {fieldErrors.email && <span className="mode-field-error" id="email-error">{fieldErrors.email}</span>}
           <label htmlFor="password">Password</label>
           <span className="mode-password-field"><input id="password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" aria-invalid={Boolean(fieldErrors.password)} aria-describedby={fieldErrors.password ? "password-error" : undefined} onChange={() => setFieldErrors((current) => ({ ...current, password: undefined }))} /><button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? "Hide" : "Show"}</button></span>
           {fieldErrors.password && <span className="mode-field-error" id="password-error">{fieldErrors.password}</span>}
+          <div className="mode-login-options"><label><input type="checkbox" name="remember" />Remember me</label><span>Forgot password?</span></div>
           {error && <p className="mode-login-error" role="alert">{error}</p>}
-          <button type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in to MODE →"}</button>
+          <button type="submit" disabled={busy}>{busy ? "Signing in…" : "Log In"}</button>
         </form>
+        <p className="mode-login-help">New student? <strong>Join the Association</strong><br />Treasurer &amp; Admin Help</p>
       </section>
     </section>
   </main>;

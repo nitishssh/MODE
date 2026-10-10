@@ -1,1 +1,1 @@
-export { default } from '../components/announcements';
+export { default } from '../components/announcement-experience';

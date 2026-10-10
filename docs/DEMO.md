@@ -205,3 +205,22 @@ Local browser evidence, 10 October 2026: synthetic admin ticket reservation → 
 The browser walkthrough is selected-flow evidence, not exhaustive acceptance. Physical Android/iOS camera permission and scanning, haptics, picker/share behavior, LAN reachability and installed Windows PWA tests remain required. Native bundle export verifies compilation only. No physical device or hosted deployment was exercised here; keep issues #10–#15 open until their outstanding acceptance evidence is complete.
 
 For final acceptance, record a separate row for Android/iOS and web/PWA with the exact release SHA, device/browser, API address, synthetic actors, each interaction above and observed restart/retry behavior. Keep a row blocked where a required client screen is absent. Do not substitute direct API calls for UI evidence or close #15 until the required native/web and LAN demonstrations are complete. Real payment gateways and external message delivery remain out of scope.
+
+## Issue #12 — Expo merchandise and announcements
+
+This walkthrough uses only synthetic data. It exercises the Expo UI against the real Next.js/SQLite APIs; it does not claim external payment or message delivery.
+
+1. Install root and client dependencies with `npm ci` and `npm ci --prefix client`. Create a temporary SQLite path, set `MODE_DEMO_NOW=2026-10-11T08:00:00Z`, and set a private `MODE_DEMO_PASSWORD` as described above.
+2. For Expo web, run `npm run build:client`, set `MODE_EXPO_WEB=1`, then run the normal Next production build/start. For native Expo Go, follow `client/README.md` and point the client at the same LAN API server.
+3. Sign in as `active@example.com`, open **Shop**, and select a size. Confirm that each size shows its own live stock and unavailable sizes cannot be selected. The product card shows both standard and active-member pricing when the API provides both.
+4. Select quantity 1 or 2 and reserve. Confirm the resulting order displays the server-fixed pricing, status `Payment pending`, and the server-confirmed hold expiry. Repeated taps are locked while the request is in flight.
+5. To demonstrate stale inventory, open the same last-stock size in two sessions and reserve concurrently. One request succeeds; the other displays the server's sold-out response and refreshes the catalogue. A member already holding two unpaid units receives the pending-limit response.
+6. Cancel the member's own pending hold and verify stock returns. Confirm that a member sees no payment-confirmation or fulfilment controls and cannot cancel another member's order.
+7. Sign in as `treasurer@example.com`. In **Shop**, verify the officer order desk can record a simulated payment reference or cancel an eligible pending hold, but cannot mark a paid order handed over. Sign in as `organizer@example.com` to confirm payment and mark a paid order handed over. No client action creates ledger rows directly.
+8. Sign out and open **Public announcement archive** from the login screen. Confirm published notices appear newest first with title, body, and publication date, while compose, notification, and outbox controls are absent.
+9. Sign in as `organizer@example.com`, open **News**, submit an empty form to see required-field messages, preview synthetic content, then publish it. Confirm the archive refreshes only after the API succeeds. A member, volunteer, and treasurer must not see the publishing form.
+10. Sign in as an active recipient and open **News**. Confirm the private notification appears with its actual read/unread state. The current API exposes no mark-read mutation, so the UI must not invent one.
+11. As organizer/admin, inspect the announcement outbox. Every row must be labelled **Simulated**, with copy stating that no email or WhatsApp was sent. Other roles must not see this control and receive 403 if they call the endpoint directly.
+12. Run `npm run check:client-contracts`, `npm --prefix client run typecheck`, `npm --prefix client run lint`, `npm --prefix client test`, `node --import tsx --test tests/merchandise.test.ts tests/announcements.test.ts tests/ledger-reconciliation.test.ts`, and `npm run build:client`.
+
+The client tests include pure action-policy coverage for product creation, member reservations, owner cancellation, officer payment confirmation, fulfilment, announcement publishing, and outbox inspection. Android/iOS physical-device interaction and installed Windows PWA behavior remain **NOT TESTED** until recorded on those targets.

@@ -33,6 +33,13 @@ test('web restores cookies on the same origin and never reads or persists a bear
   assert.equal(store.reads, 0); assert.equal(store.writes, 0); assert.equal(store.value, null);
   assert.deepEqual(calls, ['/api/auth/me', '/api/auth/login']);
 });
+test('web preview explains when its local server returns HTML instead of the MODE API', async () => {
+  const { client } = setup('web', () => new Response('<!doctype html><title>Expo</title>', { headers: { 'Content-Type': 'text/html' } }));
+  await client.bootstrap();
+  assert.equal(client.snapshot().status, 'unavailable');
+  assert.match(client.snapshot().error ?? '', /same-origin API/);
+  assert.match(client.snapshot().error ?? '', /MODE_EXPO_WEB=1/);
+});
 test('native restores SecureStore bearer with cookies omitted, then clears on 401', async () => {
   let expired = false;
   const { client, store } = setup('native', (url, init) => {

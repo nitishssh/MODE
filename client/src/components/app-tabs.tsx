@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Pressable, ScrollView, useWindowDimensions } from "react-native";
+import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { destinations, canVisit } from "../lib/navigation";
 import { useSession } from "../lib/session";
 import { Copy, useTheme } from "./ui";
@@ -16,12 +16,17 @@ export default function AppTabs() {
           horizontal={width < 900}
           style={{
             flexGrow: 0,
-            maxWidth: width >= 900 ? 180 : undefined,
-            backgroundColor: theme.panel,
+            maxWidth: width >= 900 ? 224 : undefined,
+            backgroundColor: theme.workspace,
           }}
-          contentContainerStyle={{ gap: 4, padding: 8 }}
-          showsHorizontalScrollIndicator
+          contentContainerStyle={{ gap: 4, padding: width >= 900 ? 16 : 8 }}
+          showsHorizontalScrollIndicator={width < 900}
         >
+          <View style={{ gap: 4, marginBottom: width >= 900 ? 22 : 4, paddingHorizontal: width >= 900 ? 8 : 4 }}>
+            <Text style={{ color: theme.workspaceText, fontFamily: fonts.display, fontSize: width >= 900 ? 24 : 16, letterSpacing: -0.4 }}>MODE</Text>
+            <Text style={{ color: theme.landingAccent, fontFamily: fonts.mono, fontSize: 10, letterSpacing: 1.1 }}>CLUB REGISTER</Text>
+            {width >= 900 && <Text numberOfLines={1} style={{ color: theme.workspaceMuted, fontFamily: fonts.body, fontSize: 12 }}>{user.name}</Text>}
+          </View>
           {state.routes
             .filter((route) => canVisit(user, route.name))
             .map((route) => (
@@ -40,15 +45,18 @@ export default function AppTabs() {
                   if (!event.defaultPrevented) navigation.navigate(route.name);
                 }}
                 style={{
-                  padding: 12,
+                  paddingHorizontal: 12,
+                  paddingVertical: 11,
                   minHeight: 48,
+                  borderLeftWidth: 2,
+                  borderLeftColor: state.routes[state.index].key === route.key ? theme.landingAccent : "transparent",
                   backgroundColor:
                     state.routes[state.index].key === route.key
-                      ? theme.hairline
-                      : theme.panel,
+                      ? "#FFFFFF14"
+                      : "transparent",
                 }}
               >
-                <Copy kind="label">
+                <Copy kind="label" style={{ color: state.routes[state.index].key === route.key ? theme.workspaceText : theme.workspaceMuted }}>
                   {destinations.find((item) => item.name === route.name)?.label}
                 </Copy>
               </Pressable>
@@ -58,10 +66,10 @@ export default function AppTabs() {
       screenOptions={{
         headerShown: false,
         tabBarPosition: width >= 900 ? "left" : "bottom",
-        tabBarActiveTintColor: theme.terracottaInk,
-        tabBarActiveBackgroundColor: theme.hairline,
-        tabBarInactiveBackgroundColor: theme.panel,
-        tabBarInactiveTintColor: theme.instruction,
+        tabBarActiveTintColor: theme.workspaceText,
+        tabBarActiveBackgroundColor: '#FFFFFF14',
+        tabBarInactiveBackgroundColor: theme.workspace,
+        tabBarInactiveTintColor: theme.workspaceMuted,
         tabBarLabelStyle: {
           fontFamily: fonts.strong,
           fontSize: 14,
@@ -70,8 +78,8 @@ export default function AppTabs() {
         tabBarIconStyle: { display: "none" },
         tabBarItemStyle: { justifyContent: "center" },
         tabBarStyle: {
-          backgroundColor: theme.panel,
-          borderColor: theme.hairline,
+          backgroundColor: theme.workspace,
+          borderColor: theme.workspace,
           borderTopWidth: 1,
           elevation: 0,
           shadowOpacity: 0,

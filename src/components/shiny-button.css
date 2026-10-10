@@ -1,0 +1,99 @@
+/* Hyperiux Shiny Button, recolored for MODE's ruled-paper palette. */
+.workspace{
+  --mode-button-terracotta:#a8664e;
+  --mode-button-terracotta-deep:#744735;
+  --mode-button-parchment:#f0dca5;
+  --mode-button-ivory:#fff8ec;
+  --mode-button-marigold:#e8c878;
+}
+
+.workspace button:not(.nav-scrim),
+.workspace .mode-shiny-button{
+  position:relative;
+  isolation:isolate;
+  overflow:hidden;
+}
+
+/* Keep icons and labels readable while the highlight passes underneath. */
+.workspace button:not(.nav-scrim)>*,
+.workspace .mode-shiny-button>*{
+  position:relative;
+  z-index:3;
+}
+
+.workspace button:not(.nav-scrim)::after,
+.workspace .mode-shiny-button::after{
+  content:"";
+  position:absolute;
+  z-index:2;
+  top:-180%;
+  bottom:-180%;
+  left:-58%;
+  width:42%;
+  pointer-events:none;
+  opacity:0;
+  transform:translate3d(-145%,0,0) rotate(18deg);
+  background:linear-gradient(90deg,transparent 0%,rgba(255,248,236,.08) 22%,rgba(255,248,236,.7) 49%,rgba(232,200,120,.38) 56%,transparent 100%);
+  transition:opacity .18s ease;
+}
+
+.workspace button:not(.nav-scrim):is(:hover,:focus-visible):not(:disabled)::after,
+.workspace .mode-shiny-button:is(:hover,:focus-visible):not(:disabled)::after{
+  opacity:1;
+  animation:mode-button-shine .82s cubic-bezier(.2,.72,.25,1) both;
+}
+
+.workspace .button.primary.mode-shiny-button,
+.workspace button.button.primary{
+  background:var(--mode-button-terracotta);
+  color:var(--mode-button-ivory);
+  border:1px solid var(--mode-button-terracotta-deep);
+  box-shadow:3px 3px 0 var(--mode-button-terracotta-deep);
+}
+
+.workspace .button.primary.mode-shiny-button:hover:not(:disabled),
+.workspace button.button.primary:hover:not(:disabled){
+  background:#b87258;
+  filter:none;
+  transform:translate(-1px,-1px);
+  box-shadow:4px 4px 0 var(--mode-button-terracotta-deep);
+}
+
+.workspace button.button:not(.primary),
+.workspace button.button-small:not(.green-btn):not(.red-btn){
+  border-color:var(--mode-button-terracotta-deep);
+  background:var(--mode-button-parchment);
+  color:#382a20;
+}
+
+.workspace button:not(.nav-scrim):disabled::after{display:none}
+
+.mode-dark .workspace button.button:not(.primary),
+.mode-dark .workspace button.button-small:not(.green-btn):not(.red-btn){
+  background:#5a4034;
+  color:var(--mode-button-ivory);
+  border-color:#9c6a55;
+}
+
+/* Do not let the light-theme sidebar hover surface wash out dark-mode labels. */
+.mode-dark .workspace .sidebar .nav-item:hover:not(:disabled),
+.mode-dark .workspace .sidebar .nav-item:focus-visible{
+  background:#3a3532;
+  color:var(--mode-button-ivory);
+  filter:none;
+}
+
+.mode-dark .workspace .sidebar .nav-item.active:hover:not(:disabled){
+  background:#514944;
+  color:#f0a58b;
+}
+
+@keyframes mode-button-shine{
+  from{transform:translate3d(-145%,0,0) rotate(18deg)}
+  to{transform:translate3d(470%,0,0) rotate(18deg)}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .workspace button:not(.nav-scrim)::after,
+  .workspace .mode-shiny-button::after{animation:none!important;display:none}
+}
