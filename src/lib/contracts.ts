@@ -62,6 +62,35 @@ export interface LedgerEntry extends Transaction {
   recordedBy: string | null;
 }
 
+/** Membership dues (P1, #4) */
+export interface DuesPayment {
+  id: string;
+  memberId: string;
+  reference: string;
+  amountPaise: number;
+  previousExpiresOn: string | null;
+  newExpiresOn: string;
+  recordedBy: string;
+  recordedAt: string;
+}
+
+export interface ExpiringMember {
+  id: string;
+  name: string;
+  email: string;
+  expiresOn: string;
+  daysLeft: number;
+}
+
+export interface Notification {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  readAt: string | null;
+}
+
 /** What a member shows at the door: QR payload and typed fallback. */
 export interface MemberPass {
   qrToken: string;

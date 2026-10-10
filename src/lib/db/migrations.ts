@@ -18,6 +18,7 @@ const MIGRATIONS: Migration[] = [
   { version: 1, up: createStarterSchema },
   { version: 2, up: addIdentityAndRoles },
   { version: 3, up: addLedgerSourcesAndMemberPasses },
+  { version: 4, up: addMembershipDues },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -241,5 +242,59 @@ function addLedgerSourcesAndMemberPasses(db: DatabaseSync, now: Date) {
   db.exec(`
     CREATE UNIQUE INDEX members_qr_token_idx ON members (qr_token);
     CREATE UNIQUE INDEX members_short_code_idx ON members (short_code);
+  `);
+}
+
+// ---------------------------------------------------------------------------
+// v4 — P1 (#4): club dues configuration, dues payments, reminders, notifications
+// ---------------------------------------------------------------------------
+export const DEFAULT_ANNUAL_DUES_PAISE = 50000;
+
+function addMembershipDues(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE clubs ADD COLUMN annual_dues_paise INTEGER NOT NULL DEFAULT ${DEFAULT_ANNUAL_DUES_PAISE} CHECK (annual_dues_paise > 0);
+    CREATE TABLE dues_payments (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      member_id TEXT NOT NULL REFERENCES members(id),
+      reference TEXT NOT NULL,
+      amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
+      previous_expires_on TEXT,
+      new_expires_on TEXT NOT NULL,
+      recorded_by TEXT NOT NULL REFERENCES members(id),
+      recorded_at TEXT NOT NULL,
+      UNIQUE (club_id, reference)
+    );
+    CREATE INDEX dues_payments_member_idx ON dues_payments (club_id, member_id);
+    CREATE TABLE membership_reminders (
+      member_id TEXT NOT NULL REFERENCES members(id),
+      expires_on TEXT NOT NULL,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      sent_at TEXT NOT NULL,
+      UNIQUE (member_id, expires_on)
+    );
+    CREATE TABLE notifications (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      member_id TEXT NOT NULL REFERENCES members(id),
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      read_at TEXT
+    );
+    CREATE INDEX notifications_member_idx ON notifications (member_id, created_at);
+    CREATE TABLE outbox_messages (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      member_id TEXT REFERENCES members(id),
+      kind TEXT NOT NULL,
+      recipient_email TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('simulated', 'pending', 'sent', 'failed')),
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX membership_expiry_idx ON members (club_id, expires_on);
   `);
 }
