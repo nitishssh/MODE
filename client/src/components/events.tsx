@@ -175,9 +175,44 @@ function EventDesk({
       {user && (
         <TicketList key={version} eventId={event.id} refresh={refresh} />
       )}
+      {user?.permissions.includes("payments:confirm") && (
+        <PendingHolds eventId={event.id} refresh={refresh} />
+      )}
       {user?.permissions.includes("tickets:check_in") && (
         <Door eventId={event.id} eventTitle={event.title} />
       )}
+    </Row>
+  );
+}
+function PendingHolds({
+  eventId,
+  refresh,
+}: {
+  eventId: string;
+  refresh(): Promise<void>;
+}) {
+  const holds = useResource<{ holds: Ticket[] }>(`/api/events/${eventId}/holds`);
+  return (
+    <Row>
+      <Copy kind="title">Pending holds</Copy>
+      <Copy>
+        These are live server holds, ordered by expiry. Confirmation records
+        simulated payment; it never charges a customer.
+      </Copy>
+      <ErrorNotice error={holds.error} />
+      <Action onPress={() => void holds.reload()}>Refresh pending holds</Action>
+      {holds.loading && !holds.data && <LoadingRows />}
+      {holds.data?.holds.length === 0 && <Copy>No pending holds for this event.</Copy>}
+      {holds.data?.holds.map((ticket) => (
+        <TicketRow
+          key={ticket.id}
+          ticket={ticket}
+          refresh={async () => {
+            await holds.reload();
+            await refresh();
+          }}
+        />
+      ))}
     </Row>
   );
 }

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent, FormEvent, ReactNode } from "react";
 import { WorkspaceMainSkeleton } from "./skeleton";
 import { LandingPage } from "@/components/landing-page";
+import ShinyButton from "@/components/ui/shiny-button";
+import MerchandiseShop from "@/components/merchandise-shop";
 import { localDateTimeValue } from "@/lib/local-datetime";
 import { LanguageSwitcher, useI18n } from "@/i18n/client";
 import type { DictionaryKey } from "@/i18n/dictionaries/en";
@@ -20,6 +22,8 @@ import type {
   Member,
   TaskDetails,
 } from "@/lib/contracts";
+import { PricingInteraction } from "@/components/ui/pricing-interaction";
+import { ReorderList } from "@/components/ui/reorder-list";
 
 /** Keep asynchronous request messages current without making locale a fetch dependency. */
 function useRequestMessages() {
@@ -39,7 +43,8 @@ type Section =
   | "merchandise"
   | "tasks"
   | "expenses"
-  | "treasury";
+  | "treasury"
+  | "subscription";
 
 const dashboardTaskStatuses: TaskDetails["status"][] = ["todo", "in_progress", "done"];
 
@@ -62,10 +67,11 @@ type IconName =
   | "alert"
   | "receipt"
   | "coin"
+  | "search"
   | "sun"
   | "moon";
 
-const navigation: { id: Section; icon: IconName }[] = [
+const navigation: { id: Exclude<Section, "subscription">; icon: IconName }[] = [
   { id: "overview", icon: "grid" },
   { id: "members", icon: "people" },
   { id: "events", icon: "calendar" },
@@ -198,6 +204,12 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
         <circle cx="12" cy="12" r="10" />
         <path d="M12 6v2m0 8v2M8 12h8" />
         <path d="M14.5 9.5A2.5 2.5 0 0 0 12 7a2.5 2.5 0 0 0 0 5 2.5 2.5 0 0 0 0 5 2.5 2.5 0 0 0 2.5-2.5" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="6.5" />
+        <path d="m16 16 5 5" />
       </>
     ),
     sun: (
@@ -1775,6 +1787,29 @@ function EventReportCard({ eventId }: { eventId: string }) {
   );
 }
 
+function SubscriptionSection({
+  notice,
+  onBack,
+  onStart,
+}: {
+  notice: string;
+  onBack: () => void;
+  onStart: (plan: "starter" | "pro", period: "monthly" | "yearly") => void;
+}) {
+  return (
+    <section className="subscription-page" aria-labelledby="subscription-title">
+      <div className="subscription-intro">
+        <button type="button" className="text-button" onClick={onBack}>← Back to overview</button>
+        <div className="eyebrow">MODE PLANS / CLUB OPERATIONS</div>
+        <h2 id="subscription-title">Give your club<br /><span>more room to move.</span></h2>
+        <p>Pick the level of support that fits your team today. Change plans whenever your club grows.</p>
+      </div>
+      <PricingInteraction starterMonth={9.99} starterAnnual={7.49} proMonth={19.99} proAnnual={17.49} onStart={onStart} />
+      {notice && <p className="subscription-notice" role="status">{notice}</p>}
+    </section>
+  );
+}
+
 // ── Main App ───────────────────────────────────────────────────────────────────
 
 function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void }) {
@@ -1793,10 +1828,13 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
   const [isDark, setIsDark] = useState(false);
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [workspaceSearch, setWorkspaceSearch] = useState("");
+  const [subscriptionNotice, setSubscriptionNotice] = useState("");
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [savingTaskIds, setSavingTaskIds] = useState<string[]>([]);
   const pendingTaskIds = useRef(new Set<string>());
   const [taskErrors, setTaskErrors] = useState<Record<string, string>>({});
+  const [todoTaskOrder, setTodoTaskOrder] = useState<string[]>([]);
   const nameInput = useRef<HTMLInputElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -1826,6 +1864,17 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
   }, [messages]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!data) return;
+    const ids = data.tasks.filter((task) => task.status === "todo").map((task) => task.id);
+    setTodoTaskOrder((current) => {
+      const next = [
+        ...current.filter((id) => ids.includes(id)),
+        ...ids.filter((id) => !current.includes(id)),
+      ];
+      return next.length === current.length && next.every((id, index) => id === current[index]) ? current : next;
+    });
+  }, [data]);
   useEffect(() => { if (showForm) nameInput.current?.focus(); }, [showForm]);
   useEffect(() => {
     const stored = window.localStorage.getItem("mode-theme");
@@ -1937,6 +1986,16 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
   });
   const roleLabel = t(`roles.${user.role}`);
   const themeLabel = isDark ? t("topbar.lightTheme") : t("topbar.darkTheme");
+  const sectionLabel = section === "subscription" ? "Subscription" : t(`nav.${section as Exclude<Section, "subscription">}`);
+  const sectionDescription = section === "subscription" ? "Choose a plan that fits the way your club works." : t(`desc.${section as Exclude<Section, "subscription">}`);
+  const workspaceResults = workspaceSearch.trim()
+    ? [
+        ...(data?.tasks.filter((task) => `${task.title} ${task.assignee}`.toLowerCase().includes(workspaceSearch.trim().toLowerCase())).map((task) => ({ label: task.title, detail: task.assignee || t("common.unassigned"), target: "tasks" as const })) ?? []),
+        ...(data?.members.filter((member) => `${member.name} ${member.email}`.toLowerCase().includes(workspaceSearch.trim().toLowerCase())).map((member) => ({ label: member.name, detail: member.email, target: "members" as const })) ?? []),
+        ...(data?.events.filter((event) => `${event.title} ${event.venue}`.toLowerCase().includes(workspaceSearch.trim().toLowerCase())).map((event) => ({ label: event.title, detail: event.venue, target: "events" as const })) ?? []),
+        ...(data?.announcements.filter((item) => `${item.title} ${item.body}`.toLowerCase().includes(workspaceSearch.trim().toLowerCase())).map((item) => ({ label: item.title, detail: t("nav.announcements"), target: "announcements" as const })) ?? []),
+      ].slice(0, 6)
+    : [];
 
   return (
     <div className="workspace">
@@ -1981,6 +2040,10 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
               )}
             </button>
           ))}
+          <a className="nav-item" href="/pass" onClick={() => setIsNavOpen(false)}>
+            <Icon name="coin" />
+            <span>My pass</span>
+          </a>
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-note">
@@ -2011,7 +2074,36 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
           </button>
           <div className="breadcrumb">
             {t("app.workspace")} <Icon name="chevron" size={13} />
-            <span>{t(`nav.${section}`)}</span>
+            <span>{sectionLabel}</span>
+          </div>
+          <div className="workspace-search-wrap">
+            <label className="workspace-search">
+              <Icon name="search" size={15} />
+              <input
+                value={workspaceSearch}
+                onChange={(event) => setWorkspaceSearch(event.target.value)}
+                placeholder="Search workspace"
+                aria-label="Search workspace"
+              />
+            </label>
+            {workspaceSearch.trim() && (
+              <div className="workspace-search-results" role="listbox">
+                {workspaceResults.length ? workspaceResults.map((result) => (
+                  <button
+                    key={`${result.target}:${result.label}`}
+                    type="button"
+                    role="option"
+                    onClick={() => {
+                      setSection(result.target);
+                      setWorkspaceSearch("");
+                    }}
+                  >
+                    <strong>{result.label}</strong>
+                    <span>{result.detail}</span>
+                  </button>
+                )) : <p>No matching workspace records.</p>}
+              </div>
+            )}
           </div>
           <div className="topbar-right">
             <LanguageSwitcher />
@@ -2076,6 +2168,20 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                   <div className="dropdown-divider" />
                   <button
                     type="button"
+                    className="dropdown-subscription-btn"
+                    role="menuitem"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      setSubscriptionNotice("");
+                      setSection("subscription");
+                    }}
+                  >
+                    <span aria-hidden="true">✦</span>
+                    <span>Subscription</span>
+                    <small>Plans &amp; billing</small>
+                  </button>
+                  <button
+                    type="button"
                     className="dropdown-signout-btn"
                     role="menuitem"
                     onClick={() => {
@@ -2107,13 +2213,13 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                     {t("hero.titleLine1")} <span>{t("hero.titleLine2")}</span>
                   </>
                 ) : (
-                  t(`nav.${section}`)
+                  sectionLabel
                 )}
               </h1>
-              <p>{t(`desc.${section}`)}</p>
+              <p>{sectionDescription}</p>
             </div>
             {user.permissions.includes("members:create") && (section === "overview" || section === "members") && (
-              <button
+              <ShinyButton
                 className="button primary"
                 type="button"
                 onClick={openMembers}
@@ -2121,7 +2227,7 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
               >
                 <Icon name="plus" size={18} />
                 {t("members.addMember")}
-              </button>
+              </ShinyButton>
             )}
           </div>
 
@@ -2150,6 +2256,13 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
 
           {!loading && !error && data && (
             <>
+              {section === "subscription" && (
+                <SubscriptionSection
+                  notice={subscriptionNotice}
+                  onBack={() => { setSubscriptionNotice(""); setSection("overview"); }}
+                  onStart={(plan, period) => setSubscriptionNotice(`${plan === "pro" ? "Pro" : "Starter"} ${period} selected. Checkout will be available here soon.`)}
+                />
+              )}
               {/* ── Overview ─────────────────────────────────────────────── */}
               {section === "overview" && (
                 <>
@@ -2237,11 +2350,41 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                       {data.tasks.length ? (
                         <div className="dashboard-kanban" aria-label={t("tasks.overviewTitle")}>
                           {dashboardTaskStatuses.map((status) => {
-                            const tasks = data.tasks.filter((task) => task.status === status);
+                            const tasks = data.tasks
+                              .filter((task) => task.status === status)
+                              .sort((a, b) => {
+                                if (status !== "todo") return 0;
+                                return (todoTaskOrder.indexOf(a.id) === -1 ? Number.MAX_SAFE_INTEGER : todoTaskOrder.indexOf(a.id))
+                                  - (todoTaskOrder.indexOf(b.id) === -1 ? Number.MAX_SAFE_INTEGER : todoTaskOrder.indexOf(b.id));
+                              });
                             return <section className={`dashboard-kanban-column ${status} ${draggedTaskId ? "is-drop-target" : ""}`} key={status} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropDashboardTask(event, status)}>
                               <header><span className={`status-dot ${status}`} aria-hidden="true" /><span>{t(`tasks.status.${status}`)}</span><b>{tasks.length}</b></header>
                               <div className="dashboard-kanban-cards">
-                                {tasks.length ? tasks.map((task) => <div key={task.id}><button type="button" disabled={savingTaskIds.includes(task.id) || (!user.permissions.includes("tasks:write") && task.assigneeId !== user.id)} draggable={!savingTaskIds.includes(task.id) && (user.permissions.includes("tasks:write") || task.assigneeId === user.id)} className={`dashboard-task-card ${task.status === "done" ? "completed" : ""} ${savingTaskIds.includes(task.id) ? "completing" : ""}`} onClick={() => moveDashboardTask(task, task.status === "done" ? "todo" : "done")} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", task.id); setDraggedTaskId(task.id); }} onDragEnd={() => setDraggedTaskId(null)} title={t("tasks.dragHint")}><span className="dashboard-task-title">{task.title}</span><span className="dashboard-task-assignee">{savingTaskIds.includes(task.id) ? t("tasks.saving") : task.assignee || t("common.unassigned")}</span></button>{taskErrors[task.id] && <p role="alert" className="error-text">{taskErrors[task.id]}</p>}</div>) : <p className="dashboard-kanban-empty">{t("tasks.columnEmpty")}</p>}
+                                {tasks.length ? status === "todo" ? (
+                                  <ReorderList
+                                    items={tasks}
+                                    getId={(task) => task.id}
+                                    getLabel={(task) => task.title}
+                                    onReorder={(next) => setTodoTaskOrder(next.map((task) => task.id))}
+                                    onLongPress={(task) => moveDashboardTask(task, "done")}
+                                    onExternalDragStart={(task) => setDraggedTaskId(task.id)}
+                                    onExternalDragEnd={() => setDraggedTaskId(null)}
+                                    label={t("tasks.status.todo")}
+                                    disabled={false}
+                                    itemClassName="dashboard-reorder-item"
+                                    showGrip={false}
+                                  >
+                                    {(task) => (
+                                      <div>
+                                        <div className={`dashboard-task-card ${savingTaskIds.includes(task.id) ? "completing" : ""}`} title={t("tasks.dragHint")}>
+                                          <span className="dashboard-task-title">{task.title}</span>
+                                          <span className="dashboard-task-assignee">{savingTaskIds.includes(task.id) ? t("tasks.saving") : task.assignee || t("common.unassigned")}</span>
+                                        </div>
+                                        {taskErrors[task.id] && <p role="alert" className="error-text">{taskErrors[task.id]}</p>}
+                                      </div>
+                                    )}
+                                  </ReorderList>
+                                ) : tasks.map((task) => <div key={task.id}><button type="button" disabled={savingTaskIds.includes(task.id) || (!user.permissions.includes("tasks:write") && task.assigneeId !== user.id)} draggable={!savingTaskIds.includes(task.id) && (user.permissions.includes("tasks:write") || task.assigneeId === user.id)} className={`dashboard-task-card ${task.status === "done" ? "completed" : ""} ${savingTaskIds.includes(task.id) ? "completing" : ""}`} onClick={() => moveDashboardTask(task, task.status === "done" ? "todo" : "done")} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", task.id); setDraggedTaskId(task.id); }} onDragEnd={() => setDraggedTaskId(null)} title={t("tasks.dragHint")}><span className="dashboard-task-title">{task.title}</span><span className="dashboard-task-assignee">{savingTaskIds.includes(task.id) ? t("tasks.saving") : task.assignee || t("common.unassigned")}</span></button>{taskErrors[task.id] && <p role="alert" className="error-text">{taskErrors[task.id]}</p>}</div>) : <p className="dashboard-kanban-empty">{t("tasks.columnEmpty")}</p>}
                               </div>
                             </section>;
                           })}
@@ -2466,42 +2609,7 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
 
               {/* ── Merchandise ───────────────────────────────────────────── */}
               {section === "merchandise" && (
-                <>
-                  <div className="catalogue-notice" role="status">
-                    <Icon name="bag" size={16} />
-                    <span>{t("merch.notice")}</span>
-                  </div>
-                  <div className="product-grid">
-                    {data.products.map((product, index) => (
-                      <article key={product.id} className="panel product-card">
-                        <div className={`product-art art-${index % 3}`}>
-                          <Icon name="bag" size={64} />
-                          <span>{t("merch.collectionKicker")}</span>
-                        </div>
-                        <div className="product-details">
-                          <div>
-                            <h2>{product.name}</h2>
-                            <span className={product.stock > 0 ? "stock-available" : "stock-empty"}>
-                              {product.stock > 0 ? t("merch.inStock", { count: product.stock }) : t("merch.outOfStock")}
-                            </span>
-                          </div>
-                          <div className="product-price">
-                            <strong>{fmt.currency(product.pricePaise)}</strong>
-                            <button className="button-small" type="button" disabled aria-disabled="true">
-                              {t("merch.variantsUnavailable")}
-                            </button>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                  {!data.products.length && (
-                    <section className="panel">
-                      <Empty title={t("merch.emptyTitle")}>{t("merch.emptyBody")}</Empty>
-                    </section>
-                  )}
-                  <PreviewNote>{t("merch.preview")}</PreviewNote>
-                </>
+                <MerchandiseShop user={user} />
               )}
 
               {/* ── Tasks ────────────────────────────────────────────────── */}

@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
 import { Platform, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import * as Haptics from "expo-haptics";
 import type { ScanResult } from "../generated/contracts";
 import { useSession } from "../lib/session";
 import { doorTone } from "../lib/journey";
+import { notifyDoorResult } from "../lib/door-haptics";
 import { Action, Copy, Row, useTheme } from "./ui";
 import { Field, useWrite, WriteNotice } from "./forms";
 
@@ -38,12 +38,7 @@ export function Door({
           },
         );
         setResult(next);
-        if (Platform.OS !== "web")
-          await Haptics.notificationAsync(
-            next.admitted
-              ? Haptics.NotificationFeedbackType.Success
-              : Haptics.NotificationFeedbackType.Error,
-          ).catch(() => {});
+        await notifyDoorResult(next);
       } finally {
         scanned.current = false;
       }

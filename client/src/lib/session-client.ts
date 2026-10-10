@@ -147,6 +147,10 @@ export class SessionClient {
           ? body.error
           : "Request failed. Please try again.",
       );
+    if (response.status !== 204 && body === null && !native)
+      throw new Error(
+        "This web preview is not connected to MODE's same-origin API. Run npm run build:client, then start MODE with MODE_EXPO_WEB=1 and open the Next server URL.",
+      );
     if (response.status !== 204 && body === null)
       throw new Error(
         "The server returned an unreadable response. Please retry.",

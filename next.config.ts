@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   turbopack: { root: process.cwd() },
+  allowedDevOrigins: ["127.0.0.1", "localhost", "172.17.43.186", "172.17.39.131"],
   async rewrites() {
     if (!expoWeb) return [];
     return {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { amountPaise, doorTone, taskProgress } from '../src/lib/journey';
+import { hapticKind } from '../src/lib/door-feedback';
 import type { ScanOutcome, TaskDetails } from '../src/generated/contracts';
 
 // Value: protects=Exact money input and rejection of ambiguous or unsafe amounts; fails_when=Rupees round or invalid text reaches payments; why_new=New client money parser has no coverage; seam=none
@@ -16,4 +17,12 @@ test('door feedback distinguishes admission from every denial and progress exclu
   assert.deepEqual(taskProgress([]), { total: 0, done: 0, overdue: 0, onTrack: 0 });
   const task = (status: TaskDetails['status'], overdue: boolean): TaskDetails => ({ id: status, title: 'Task', description: null, assignee: null, assigneeId: null, status, eventId: null, eventTitle: null, dueAt: null, overdue, createdAt: '2026-10-10T08:00:00Z' });
   assert.deepEqual(taskProgress([task('done', true), task('in_progress', true), task('todo', false)]), { total: 3, done: 1, overdue: 1, onTrack: 2 });
+});
+
+// Value: protects=Native haptic intent follows only a completed server result; fails_when=an error feels like admission or a success feels like rejection; why_new=E4 must not change admission semantics; seam=pure result mapping
+test('door haptic intent maps every completed result without local admission rules', () => {
+  assert.equal(hapticKind({ outcome: 'admitted', admitted: true, message: 'Admitted' }), 'success');
+  for (const outcome of ['already_checked_in', 'payment_pending', 'not_valid', 'member_no_ticket', 'no_ticket_membership_expired'] as const) {
+    assert.equal(hapticKind({ outcome, admitted: false, message: outcome }), 'error');
+  }
 });

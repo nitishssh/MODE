@@ -14,3 +14,4 @@ client/.expo/
 client/dist/
 client/dist-native/
 public/expo/
+.chrome*/

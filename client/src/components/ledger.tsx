@@ -3,7 +3,7 @@ import type { ExpenseLedgerEntry, LedgerSource } from "../generated/contracts";
 import { useResource } from "../lib/use-resource";
 import { useSession } from "../lib/session";
 import { savePrivateFile } from "../lib/files";
-import { Action, Copy, ErrorNotice, LoadingRows, Row, money } from "./ui";
+import { Action, ActionGroup, Copy, ErrorNotice, LoadingRows, Row, money } from "./ui";
 import { useWrite, WriteNotice } from "./forms";
 
 export function Ledger() {
@@ -14,22 +14,24 @@ export function Ledger() {
     <Row>
       <Copy kind="title">Ledger entries</Copy>
       <ErrorNotice error={entries.error} />
-      <Action onPress={() => void entries.reload()}>Refresh entries</Action>
       <WriteNotice state={write} />
-      <Action
-        disabled={write.busy}
-        onPress={() =>
-          void write.run(() =>
-            savePrivateFile(
-              client,
-              "/api/ledger/export.csv",
-              "mode-ledger.csv",
-            ),
-          )
-        }
-      >
-        Export ledger CSV
-      </Action>
+      <ActionGroup>
+        <Action onPress={() => void entries.reload()}>Refresh entries</Action>
+        <Action
+          disabled={write.busy}
+          onPress={() =>
+            void write.run(() =>
+              savePrivateFile(
+                client,
+                "/api/ledger/export.csv",
+                "mode-ledger.csv",
+              ),
+            )
+          }
+        >
+          Export ledger CSV
+        </Action>
+      </ActionGroup>
       {entries.loading && !entries.data && <LoadingRows />}
       {entries.data?.length === 0 && <Copy>No ledger entries.</Copy>}
       {entries.data?.map((entry) => (

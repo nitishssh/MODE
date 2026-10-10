@@ -196,7 +196,7 @@ export interface LedgerSource {
   type: string;
   id: string;
   title: string;
-  details: Array<{ label: string; value: string }>;
+  details: { label: string; value: string }[];
   receiptId: string | null;
 }
 
