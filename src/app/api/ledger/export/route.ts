@@ -34,7 +34,7 @@ export const GET = route("ledger export", (request) => {
           escapeCSV(e.category),
           escapeCSV(e.eventTitle),
           escapeCSV(e.reference),
-          escapeCSV(e.type === "income" ? `+${paise(e.amountPaise)}` : `-${paise(e.amountPaise)}`),
+          paise(e.type === "income" ? e.amountPaise : -e.amountPaise),
         ].join(",")
       ),
     ];

@@ -176,7 +176,7 @@ Schema v8 (v7 is reserved for Nitish's P5). `products` gains `clubId`, `descript
 
 Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 characters. Email is trimmed, validated, lowercased, at most 254 characters, and unique case-insensitively. A new member has `duesStatus:"unpaid"`, `expiresOn:null` and `role:"member"`; the officer who created it is recorded in the audit trail. Creating a member does not record a payment, activate benefits or grant a login.
 
-`Dashboard` contains `club`, `metrics`, `members`, `events`, `announcements`, `products`, `tasks`, `transactions` and `access:{members:boolean,finance:boolean}`. Anonymous callers and plain members receive `members:[]`, `transactions:[]` and `balancePaise:0`; the `access` flags tell the UI which sections were withheld rather than empty. The active-member metric uses the shared membership predicate against today's Asia/Kolkata date, including memberships expiring today.
+`Dashboard` contains `club`, `metrics`, `members`, `events`, `announcements`, `products`, `tasks`, `transactions` and `access:{members:boolean,finance:boolean}`. Anonymous callers and plain members receive `members:[]`, `transactions:[]` and `balancePaise:0`; the `access` flags tell the UI which sections were withheld rather than empty. Anonymous dashboard responses also return tasks:[]; task details require a signed-in club member. Products are scoped to the current club. The active-member metric uses the shared membership predicate against today's Asia/Kolkata date, including memberships expiring today.
 
 ## Data and invariants
 
@@ -223,7 +223,7 @@ Identity and club scope come from the session, never from request-body member ID
 | GET | `/api/receipts/{id}` | uploader or expenses:review, same club | original file, private/no-store |
 | GET | `/api/ledger/summary` | ledger:read | LedgerSummary |
 | GET | `/api/ledger/entries` | ledger:read | ExpenseLedgerEntry[] |
-| GET | `/api/ledger/export` | ledger:read | CSV with formula cells escaped |
+| GET | `/api/ledger/export` | ledger:read | CSV with user text formula-escaped and numeric amount cells |
 | GET | `/api/events/{id}/report` | events:report | Existing ticket report plus WorkspaceEventReport fields |
 
 Task creation takes `{title,description?,assigneeId?,eventId?,dueAt?}`. PATCH permits the same optional fields, with null to clear description, assignee, event or deadline. Status takes `{status:"todo"|"in_progress"|"done"}`. Deadlines normalize to UTC. Assignment and event references must belong to the caller's club; mine uses the actual session member.
