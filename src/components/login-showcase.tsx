@@ -1,5 +1,6 @@
 export function LoginShowcase() {
   return <section className="mode-login-showcase" aria-label="MODE club workspace overview">
+    <img className="mode-login-art" src="/mode-login-scrapbook-left.png" alt="Illustrated MODE club register, event, membership pass, and expenses notebook" />
     <div className="mode-showcase-copy">
       <p className="mode-login-brand">MO<span>DE</span><b>✦</b></p>
       <h2>Your club,<br />in <em>good order.</em></h2>
