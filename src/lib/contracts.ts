@@ -151,3 +151,34 @@ export interface OutboxMessage {
   createdAt: string;
   deliveredAt: string | null;
 }
+
+/** Event booking and ticket check-in (#5) */
+export interface EventDetails extends Event {
+  description: string;
+  status: "draft" | "published" | "cancelled";
+  /** Seats still bookable: capacity minus held (reserved + confirmed) seats. */
+  available: number;
+}
+
+export interface Booking {
+  id: string;
+  eventId: string;
+  memberId: string;
+  pricePaise: number;
+  pricing: "member" | "guest";
+  status: "reserved" | "confirmed" | "cancelled" | "expired";
+  paymentId: string | null;
+  /** Issued only once the booking is confirmed (paid or free). */
+  ticketCode: string | null;
+  reservedUntil: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EventReport {
+  event: EventDetails;
+  bookings: { reserved: number; confirmed: number; cancelled: number; expired: number };
+  checkedIn: number;
+  incomePaise: number;
+  attendees: Array<{ memberId: string; name: string; pricing: "member" | "guest"; checkedInAt: string | null }>;
+}

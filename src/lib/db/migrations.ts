@@ -16,6 +16,7 @@ const MIGRATIONS: Migration[] = [
   { version: 1, up: createStarterSchema },
   { version: 2, up: addIdentityAndRoles },
   { version: 3, up: addMembershipLifecycle },
+  { version: 4, up: addEventTicketing },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -262,4 +263,40 @@ function addMembershipLifecycle(db: DatabaseSync, now: Date) {
     insertMembership.run(`seed-membership-${row.id}`, DEFAULT_CLUB_ID, row.id, PLAN_ANNUAL_ID, String(row.joined_at).slice(0, 10), row.expires_on, now.toISOString());
   }
   db.exec("UPDATE transactions SET category = CASE WHEN description LIKE '%membership%' THEN 'membership' WHEN description LIKE '%ticket%' THEN 'ticket' ELSE 'other' END");
+}
+
+// ---------------------------------------------------------------------------
+// v4 — event bookings, tickets and check-ins (#5)
+// ---------------------------------------------------------------------------
+function addEventTicketing(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE events ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
+    ALTER TABLE events ADD COLUMN description TEXT NOT NULL DEFAULT '';
+    ALTER TABLE events ADD COLUMN status TEXT NOT NULL DEFAULT 'published'
+      CHECK (status IN ('draft', 'published', 'cancelled'));
+    ALTER TABLE events ADD COLUMN created_by TEXT;
+    ALTER TABLE events ADD COLUMN created_at TEXT;
+    CREATE TABLE bookings (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      event_id TEXT NOT NULL REFERENCES events(id),
+      member_id TEXT NOT NULL REFERENCES members(id),
+      price_paise INTEGER NOT NULL CHECK (price_paise >= 0),
+      pricing TEXT NOT NULL CHECK (pricing IN ('member', 'guest')),
+      status TEXT NOT NULL CHECK (status IN ('reserved', 'confirmed', 'cancelled', 'expired')),
+      payment_id TEXT REFERENCES payments(id),
+      ticket_code TEXT UNIQUE,
+      reserved_until TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX bookings_event_idx ON bookings (event_id, status);
+    CREATE INDEX bookings_member_idx ON bookings (club_id, member_id);
+    CREATE TABLE check_ins (
+      booking_id TEXT PRIMARY KEY REFERENCES bookings(id),
+      event_id TEXT NOT NULL REFERENCES events(id),
+      checked_in_by TEXT REFERENCES members(id),
+      checked_in_at TEXT NOT NULL
+    );
+  `);
 }
