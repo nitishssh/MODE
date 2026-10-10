@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { DbContext } from "./db/core";
 import { SCHEMA_VERSION, migrate } from "./db/migrations";
@@ -10,12 +10,13 @@ import { createLedgerModule } from "./modules/ledger";
 import { createMembershipModule } from "./modules/membership";
 import { createMerchandiseModule } from "./modules/merchandise";
 import { createOutboxModule } from "./modules/outbox";
+import { createTreasuryModule } from "./modules/treasury";
 
 export { DuplicateMemberError } from "./errors";
 export { SCHEMA_VERSION };
 
 /** Local store. This file must only be imported by server code. */
-export function openClubDatabase(filename: string, options: { now?: () => Date } = {}) {
+export function openClubDatabase(filename: string, options: { now?: () => Date; receiptDirectory?: string } = {}) {
   const now = options.now ?? (() => new Date());
   const path = filename === ":memory:" ? filename : resolve(filename);
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -38,6 +39,8 @@ export function openClubDatabase(filename: string, options: { now?: () => Date }
   const membership = createMembershipModule(ctx, identity, ledger, outbox);
   const events = createEventsModule(ctx, identity, membership, ledger);
   const merchandise = createMerchandiseModule(ctx, identity, membership, ledger);
+  const receiptDirectory = options.receiptDirectory ?? (path === ":memory:" ? resolve(".data", "receipts-memory") : join(dirname(path), "receipts"));
+  const treasury = createTreasuryModule(ctx, identity, ledger, { receiptDirectory });
   let closed = false;
 
   return {
@@ -48,6 +51,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date }
     membership,
     events,
     merchandise,
+    treasury,
     health: () => {
       db.prepare("SELECT 1").get();
       return { status: "ok" as const, database: "sqlite" as const, schemaVersion: SCHEMA_VERSION };
