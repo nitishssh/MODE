@@ -1,0 +1,30 @@
+# Local PostgreSQL for the MODE export/migration path (docs/POSTGRESQL.md).
+# The application itself still runs on SQLite; this service receives
+# `npm run postgres:push` loads and is the target for the future async driver.
+#
+#   npm run postgres:up      start (data persists in the mode-postgres volume)
+#   npm run postgres:push    export .data/mode.sqlite and load it here
+#   npm run postgres:down    stop and keep data; add -v to drop the volume
+#
+# Connection string for tools: postgres://mode:mode@127.0.0.1:5432/mode (port = MODE_POSTGRES_PORT)
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: mode-postgres
+    environment:
+      POSTGRES_USER: mode
+      POSTGRES_PASSWORD: mode
+      POSTGRES_DB: mode
+    ports:
+      # Host port; override when 5432 is taken (Windows often reserves it): MODE_POSTGRES_PORT=55432
+      - "127.0.0.1:${MODE_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - mode-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mode -d mode"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mode-postgres:

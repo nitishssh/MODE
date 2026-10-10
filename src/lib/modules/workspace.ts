@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { MAX_RECEIPT_SIZE_BYTES, type Expense, type ExpenseStatus, type ExpenseLedgerEntry, type LedgerSummary, type LedgerSource, type Receipt, type TaskDetails, type CreateTaskInput, type PatchTaskInput, type SubmitExpenseInput } from "../contracts";
-import { transaction, type DbContext, type Row } from "../db/core";
+import { SQLITE_CONSTRAINT_UNIQUE, isConstraintError, transaction, type DbContext, type Row } from "../db/core";
 import { hasPermission } from "../auth/permissions";
 import { assertPermission, type Actor, type IdentityModule } from "./identity";
 import { ConflictError, DomainError, ForbiddenError, NotFoundError, ValidationError } from "../errors";
@@ -188,9 +188,18 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
       requireEvent(actor, input.eventId);
       if (getReceiptById(actor, input.receiptId).uploaderId !== actor.memberId) throw new ForbiddenError("Use your own receipt.");
       if (!getReceiptFile(actor, input.receiptId)) throw new NotFoundError("Receipt file not found. Upload it again.");
+      // One receipt backs one live claim (audit #2); a rejected claim frees it. The partial UNIQUE index is the backstop.
+      if (db.prepare("SELECT 1 FROM expenses WHERE receipt_id = ? AND status <> 'rejected'").get(input.receiptId)) {
+        throw new ConflictError("This receipt already backs another claim.", "receipt_already_claimed");
+      }
       const id = input.submissionId ?? randomUUID();
-      db.prepare("INSERT INTO expenses (id, club_id, submitter_id, amount_paise, purpose, receipt_id, receipt_reference, event_id, status, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?)")
-        .run(id, actor.clubId, actor.memberId, input.amountPaise, input.purpose.trim(), input.receiptId ?? null, input.receiptReference ?? null, input.eventId ?? null, now().toISOString());
+      try {
+        db.prepare("INSERT INTO expenses (id, club_id, submitter_id, amount_paise, purpose, receipt_id, receipt_reference, event_id, status, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?)")
+          .run(id, actor.clubId, actor.memberId, input.amountPaise, input.purpose.trim(), input.receiptId ?? null, input.receiptReference ?? null, input.eventId ?? null, now().toISOString());
+      } catch (error) {
+        if (isConstraintError(error, SQLITE_CONSTRAINT_UNIQUE)) throw new ConflictError("This receipt already backs another claim.", "receipt_already_claimed");
+        throw error;
+      }
       identity.recordAudit(actor, "expense.submitted", "expense", id);
       return getExpenseById(actor, id);
     });
@@ -214,12 +223,30 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
       if (expense.submitterId === actor.memberId) throw new ForbiddenError("You cannot pay your own expense.");
       if (expense.status === "paid" && expense.paymentReference === paymentReference) return expense;
       if (expense.status !== "approved") throw new ConflictError("Only approved expenses can be paid.");
+      // One external transfer settles one claim (audit #3).
+      if (db.prepare("SELECT 1 FROM expenses WHERE club_id = ? AND payment_reference = ? AND id <> ?").get(actor.clubId, paymentReference, id)) {
+        throw new ConflictError("This payment reference is already recorded against another claim.", "payment_reference_reused");
+      }
+      // Separation of duties (audit #14), opt-in per club because a one-treasurer club cannot satisfy it.
+      const policy = db.prepare("SELECT require_separate_payer FROM clubs WHERE id = ?").get(actor.clubId);
+      const reviewer = db.prepare("SELECT reviewer_id FROM expenses WHERE id = ?").get(id);
+      if (Number(policy?.require_separate_payer) === 1 && reviewer?.reviewer_id === actor.memberId) {
+        throw new ForbiddenError("The officer who approved this claim cannot also pay it.");
+      }
       const changed = db.prepare("UPDATE expenses SET status = 'paid', paid_at = ?, payment_reference = ? WHERE id = ? AND club_id = ? AND status = 'approved'")
         .run(now().toISOString(), paymentReference, id, actor.clubId);
       if (Number(changed.changes) !== 1) throw new ConflictError("Only approved expenses can be paid.");
       postLedgerEntry(ctx, {kind: "expense", amountPaise: expense.amountPaise, description: expense.purpose, source: {type: "expense", id}, recordedBy: actor.memberId, clubId: actor.clubId, eventId: expense.eventId});
       identity.recordAudit(actor, "expense.paid", "expense", id, {paymentReference});
       return getExpenseById(actor, id);
+    });
+  }
+  /** Admin toggle for the approve/pay separation (audit #14). */
+  function setRequireSeparatePayer(actor: Actor, enabled: boolean): void {
+    assertPermission(actor, "roles:manage");
+    transaction(ctx, () => {
+      db.prepare("UPDATE clubs SET require_separate_payer = ? WHERE id = ?").run(enabled ? 1 : 0, actor.clubId);
+      identity.recordAudit(actor, "club.policy_updated", "club", actor.clubId, { requireSeparatePayer: enabled });
     });
   }
   function ledgerRows(actor: Actor): ExpenseLedgerEntry[] {
@@ -297,6 +324,6 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
   return {getTasks,getTaskById,createTask,patchTask,updateTaskStatus,saveReceipt,getReceiptById,getReceiptFile,getExpenses,getExpenseById,submitExpense,
     approveExpense: (actor: Actor,id:string) => reviewExpense(actor,id,"approved"),
     rejectExpense: (actor: Actor,id:string,note?:string) => reviewExpense(actor,id,"rejected",note),
-    payExpense,getLedgerEntries,getLedgerSource,getLedgerSummary,getEventReport};
+    payExpense,setRequireSeparatePayer,getLedgerEntries,getLedgerSource,getLedgerSummary,getEventReport};
 }
 

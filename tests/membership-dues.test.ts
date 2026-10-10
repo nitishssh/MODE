@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { DEFAULT_CLUB_ID } from "../src/lib/db/migrations";
 import { test } from "node:test";
 import { POST as duesRoute } from "../src/app/api/membership/dues/route";
 import { GET as expiringRoute } from "../src/app/api/membership/expiring/route";
@@ -20,16 +21,16 @@ test("first payment, early renewal and expired renewal follow the +365 rule and 
     const organizer = actorFor(db, DEMO.organizer);
     const member = db.createMember({ name: "Dues Student", email: "dues@example.com" });
     assert.equal(member.membership, "none");
-    const before = db.ledger.balance();
+    const before = db.ledger.balance(DEFAULT_CLUB_ID);
 
     const first = db.dues.recordDues(organizer, { memberId: member.id, reference: "UPI-1" });
     assert.deepEqual([first.created, first.payment.amountPaise, first.payment.previousExpiresOn, first.expiresOn, first.membership], [true, 50000, null, "2027-10-10", "active"]);
-    assert.equal(db.ledger.balance(), before + 50000);
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before + 50000);
     assert.equal(first.payment.recordedBy, organizer.memberId);
 
     const replay = db.dues.recordDues(organizer, { memberId: member.id, reference: "UPI-1" });
     assert.equal(replay.created, false);
-    assert.equal(db.ledger.balance(), before + 50000, "duplicate recording credits nothing");
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before + 50000, "duplicate recording credits nothing");
     assert.equal(db.dues.paymentsFor(organizer.clubId, member.id).length, 1);
 
     // Early renewal: continues from the current expiry, not from today.
@@ -51,7 +52,7 @@ test("first payment, early renewal and expired renewal follow the +365 rule and 
     assert.throws(() => db.dues.recordDues(actorFor(db, DEMO.volunteer), { memberId: other.id, reference: "UPI-9" }), ForbiddenError);
     const report = db.ledger.reconcile();
     assert.deepEqual([report.orphans, report.duplicates, report.unsourced], [[], [], 0]);
-    assert.equal(db.ledger.list().filter((e) => e.sourceType === "dues_payment").length, 3);
+    assert.equal(db.ledger.list(DEFAULT_CLUB_ID).filter((e) => e.sourceType === "dues_payment").length, 3);
   } finally {
     db.close();
   }

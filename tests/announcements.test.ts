@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { getDatabase, openClubDatabase } from "../src/lib/database";
 import { DEFAULT_CLUB_ID, migrate, SCHEMA_VERSION } from "../src/lib/db/migrations";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../src/lib/errors";
-import { actorFor, apiRequest, DEMO, FIXED_NOW, loginCookie, memoryDatabase, routeParams, withRouteDatabase } from "./helpers";
+import { actorFor, apiRequest, DEMO, FIXED_NOW, loginCookie, memoryDatabase, routeParams, withRouteDatabase, TEST_DATABASE_URL } from "./helpers";
 import { GET as archive, POST as publish } from "../src/app/api/announcements/route";
 import { GET as detail } from "../src/app/api/announcements/[id]/route";
 import { GET as outbox } from "../src/app/api/announcements/[id]/outbox/route";
@@ -38,7 +38,7 @@ test("publication validates input and enforces every role at the domain boundary
   } finally { db.close(); }
 });
 
-test("publication freezes active recipients at IST midnight and retries do not add new members", async () => {
+test("publication freezes active recipients at IST midnight and retries do not add new members", { skip: TEST_DATABASE_URL ? "edits the SQLite file directly" : false }, async () => {
   await withRouteDatabase(async () => {
     const db = getDatabase();
     const raw = new DatabaseSync(process.env.SQLITE_PATH!);
@@ -72,7 +72,7 @@ test("publication freezes active recipients at IST midnight and retries do not a
   });
 });
 
-test("failure in either delivery table or audit rolls back publication and permits a clean retry", async () => {
+test("failure in either delivery table or audit rolls back publication and permits a clean retry", { skip: TEST_DATABASE_URL ? "edits the SQLite file directly" : false }, async () => {
   await withRouteDatabase(async () => {
     const db = getDatabase();
     const actor = actorFor(db, DEMO.organizer);

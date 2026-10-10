@@ -1,10 +1,29 @@
-import type { DatabaseSync } from "node:sqlite";
-
 export type Row = Record<string, string | number | bigint | Uint8Array | null>;
+
+export type SqlValue = string | number | bigint | Uint8Array | null;
+
+/** A prepared statement; the subset of node:sqlite's StatementSync the modules use. */
+export interface SqlStatement {
+  get(...params: SqlValue[]): Row | undefined;
+  all(...params: SqlValue[]): Row[];
+  run(...params: SqlValue[]): { changes: number | bigint };
+}
+
+/**
+ * The synchronous database contract every module is written against. `node:sqlite`'s
+ * DatabaseSync satisfies it directly; `openPostgresSync()` provides the PostgreSQL twin.
+ */
+export interface SqlDatabase {
+  prepare(sql: string): SqlStatement;
+  exec(sql: string): void;
+  close(): void;
+  /** Absent for node:sqlite; "postgres" for the PostgreSQL bridge. Migrations branch on it only for DDL SQLite cannot express. */
+  dialect?: "postgres";
+}
 
 /** Shared state handed to every domain module. */
 export interface DbContext {
-  db: DatabaseSync;
+  db: SqlDatabase;
   now: () => Date;
   /** Transaction nesting depth; inner calls become savepoints. */
   depth: number;

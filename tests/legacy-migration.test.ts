@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { DEFAULT_CLUB_ID } from "../src/lib/db/migrations";
 import { test } from 'node:test';
 import { legacyFixture } from './legacy-fixture';
 import { rmSync } from 'node:fs';
@@ -32,7 +33,7 @@ test('historical payments import once with source identity, date and event prese
     for (let i = 0; i < 2; i++) {
       db = openClubDatabase(fixture.filename, fixture.options);
       const actor = actorFor(db, DEMO.treasurer);
-      const payment = db.ledger.list().filter(row => row.sourceType === 'expense' && row.sourceId === 'demo-expense-1');
+      const payment = db.ledger.list(DEFAULT_CLUB_ID).filter(row => row.sourceType === 'expense' && row.sourceId === 'demo-expense-1');
       assert.equal(payment.length, 1);
       assert.equal(payment[0].amountPaise, 25000);
       assert.equal(payment[0].recordedBy, null, 'historical payer is unknown; never invent an officer');

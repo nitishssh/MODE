@@ -5,7 +5,7 @@ import { MEMBERSHIP_ACTIVE_SQL } from "./membership-state";
 import { hasPermission } from "../auth/permissions";
 import type { Actor, IdentityModule } from "./identity";
 
-export function createDashboardModule(ctx: DbContext, identity: IdentityModule) {
+export function createDashboardModule(ctx: DbContext, identity: IdentityModule, options: { beforeRead?: () => void } = {}) {
   const { db } = ctx;
 
   /**
@@ -13,6 +13,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
    * caller holds the matching permission; the shape stays stable for the UI.
    */
   function getDashboard(actor: Actor | null = null): Dashboard {
+    options.beforeRead?.(); // lapsed holds are returned before the public counters are read (audit #22)
     const clubId = actor?.clubId ?? DEFAULT_CLUB_ID;
     const timestamp = ctx.now().toISOString();
     const canSeeMembers = actor !== null && hasPermission(actor.role, "members:read");
