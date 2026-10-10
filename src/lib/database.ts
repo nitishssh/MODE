@@ -6,6 +6,7 @@ import { SCHEMA_VERSION, migrate } from "./db/migrations";
 import { createWorkspaceModule } from "./modules/workspace";
 import { createDashboardModule } from "./modules/dashboard";
 import { createDuesModule } from "./modules/dues";
+import { createAnnouncementsModule } from "./modules/announcements";
 import { createEventsModule } from "./modules/events";
 import { createIdentityModule } from "./modules/identity";
 import { createMerchandiseModule } from "./modules/merchandise";
@@ -43,6 +44,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date; 
     ...dashboard,
     ...createWorkspaceModule(ctx, identity, options.receiptsDir ?? resolve(dirname(path === ":memory:" ? ".data/mode.sqlite" : path), "receipts")),
     dues,
+    announcements: createAnnouncementsModule(ctx, identity),
     events,
     merchandise,
     ledger: {

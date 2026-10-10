@@ -21,8 +21,17 @@ export const DEMO = {
 /** In-memory database with a controllable clock for domain-level tests. */
 export function memoryDatabase(): { db: ClubDatabase; clock: { now: Date } } {
   const clock = { now: new Date(FIXED_NOW) };
-  const db = openClubDatabase(":memory:", { now: () => new Date(clock.now) });
+  const receiptsDir = mkdtempSync(join(tmpdir(), "mode-memory-receipts-"));
+  const db = openClubDatabase(":memory:", { now: () => new Date(clock.now), receiptsDir });
+  const close = db.close;
+  db.close = () => { close(); rmSync(receiptsDir, { recursive: true, force: true }); };
   return { db, clock };
+}
+
+/** Small synthetic attachment through the same domain path used by uploads. */
+export function receiptFor(db: ClubDatabase, actor: Actor): string {
+  const data = Buffer.from("%PDF-1.4 synthetic test receipt");
+  return db.saveReceipt(actor, { filename: "test.pdf", mimeType: "application/pdf", sizeBytes: data.length, data }).id;
 }
 
 /** Signed-in actor for a seeded account (officers) or a member given credentials. */

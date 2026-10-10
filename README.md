@@ -13,7 +13,7 @@ npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 10 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
+Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 12 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
 
 Optional configuration is documented in `.env.example`; copy it to `.env.local` if needed. Never commit `.env.local` or the local database. To try a separate dataset without changing the existing one, set `SQLITE_PATH` to a new filename.
 
@@ -33,10 +33,10 @@ Native API clients can log in without browser Origin headers and use the returne
 
 - SDK 57 Expo shell in `client/`: cookie-based web login, SecureStore native bearer sessions, permission-driven navigation, membership pass details, task updates and treasury totals. See [the Expo walkthrough](docs/DEMO.md#expo-shell-and-same-origin-web).
 - Optional same-origin Expo export at `/`, with the existing business workspace at `/legacy`. Full scanner, holds and native business screens remain work for #11–#13; bundle compilation does not establish physical-device acceptance.
-
 - Responsive dashboard and navigation for all six club areas.
 - Browser sign-in/sign-out, task editing, receipt-backed expenses, treasury review and ledger CSV export.
 - Backend APIs for dues/renewals, simulated reminders, ticket holds, payment confirmation, check-in and merchandise orders with stock holds.
+- Announcement publication API with a public dated archive, active-member notifications, atomic simulated outbox delivery and safe retries. See the [announcement demo](docs/DEMO.md#announcement-publication-8).
 - SQLite-backed dashboard, health check and member directory.
 - Registration, login, logout, hashed sessions and role-protected member APIs; native bearer tokens and browser HttpOnly cookies share the same session.
 - Create a member through the authorized API with server validation and case-insensitive duplicate prevention.
@@ -46,9 +46,9 @@ Native API clients can log in without browser Origin headers and use the returne
 
 ## What the team will implement
 
-The planned Expo client, membership and ticket screens, merchandise ordering screens and announcement mailing remain tracked in [the MVP tickets](https://github.com/nitishssh/MODE/milestone/1). Dues, ticket and merchandise backend APIs, editable web tasks and reimbursement approvals are implemented. Unfinished web flows remain previews. Payment confirmations record external payments; no gateway transfer or real email is performed.
+The remaining Expo business screens, membership and ticket screens, merchandise ordering screens and announcement publishing/inbox screens remain tracked in [the MVP tickets](https://github.com/nitishssh/MODE/milestone/1). Dues, ticket, merchandise and announcement backend APIs, editable web tasks and reimbursement approvals are implemented. Unfinished web flows remain previews. Payment confirmations record external payments; no gateway transfer or real email is performed.
 
-The starter is a single-club, local development scaffold with synthetic demo accounts. The web UI has browser sign-in; the planned Expo client remains future work. Anonymous dashboard responses withhold the member directory and finance data. See [API contracts and demo accounts](docs/API.md) to exercise the authenticated endpoints. Hosted SQLite needs a persistent disk and one writable instance; a serverless ephemeral filesystem is not durable storage.
+The starter is a single-club, local development scaffold with synthetic demo accounts. The web and Expo shell have sign-in; full native business flows remain future work. Anonymous dashboard responses withhold the member directory and finance data. See [API contracts and demo accounts](docs/API.md) to exercise the authenticated endpoints. Hosted SQLite needs a persistent disk and one writable instance; a serverless ephemeral filesystem is not durable storage.
 
 ## Stack and layout
 
@@ -90,4 +90,4 @@ The web manifest provides the MODE icon and standalone display metadata. On a su
 
 ### Authenticated tasks and reimbursements
 
-The web workspace now has sign-in, a task board, personal expense submissions and treasury review. Task assignment and status changes respect the signed-in member’s permissions. Receipts are private to their uploader and club finance reviewers. Reimbursements post exactly once to the shared ledger, alongside dues and ticket income. Schema v9 preserves the existing dues and ticket data. See [API](docs/API.md) and [demo walkthrough](docs/DEMO.md).
+The web workspace now has sign-in, a task board, personal expense submissions and treasury review. Task assignment and status changes respect the signed-in member’s permissions. New claims require a JPG, PNG or PDF receipt up to 5 MB, private to their uploader and club finance reviewers. Reimbursements post exactly once to the shared ledger, alongside dues and ticket income. The register links to exact source records and shows the paying officer; its CSV export matches the register totals. Schema v10 preserves existing data and legacy receipt files. See [API](docs/API.md), [demo walkthrough](docs/DEMO.md) and [local reimbursement verification](docs/REIMBURSEMENT-VERIFICATION.md).

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent, FormEvent, ReactNode } from "react";
 import { WorkspaceMainSkeleton } from "./skeleton";
 import { localDateTimeValue } from "@/lib/local-datetime";
+import { MAX_RECEIPT_SIZE_BYTES } from "@/lib/contracts";
 import type {
   Dashboard,
   Event,
@@ -12,6 +13,7 @@ import type {
   ExpenseLedgerEntry as LedgerEntry,
   SessionUser,
   LedgerSummary,
+  LedgerSource,
   Member,
   TaskDetails,
 } from "@/lib/contracts";
@@ -906,14 +908,18 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
       setSubmitError("Please enter a valid amount in rupees.");
       return;
     }
+    if (!file || file.size === 0) {
+      setSubmitError("Attach a JPG, PNG, or PDF receipt.");
+      return;
+    }
     if (file) {
-      const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
-      if (file.size > 2 * 1024 * 1024) {
-        setSubmitError("Receipt files must be 2 MB or smaller.");
+      const allowedTypes = new Set(["image/jpeg", "image/png", "application/pdf"]);
+      if (file.size > MAX_RECEIPT_SIZE_BYTES) {
+        setSubmitError("Receipt files must be 5 MB or smaller.");
         return;
       }
-      if (!allowedTypes.has(file.type)) {
-        setSubmitError("Receipt must be a JPEG, PNG, WebP, or PDF file.");
+      if (file.type && !allowedTypes.has(file.type)) {
+        setSubmitError("Receipt must be a JPG, PNG, or PDF file.");
         return;
       }
     }
@@ -1068,11 +1074,12 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
                 </select>
               </label>
               <label>
-                Receipt file (JPEG, PNG, WebP, or PDF · max 2 MB)
+                Receipt file (JPG, PNG, or PDF · max 5 MB) *
                 <input
                   name="receiptFile"
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  accept="image/jpeg,image/png,application/pdf"
+                  required
                   disabled={submitting}
                   onChange={() => setUploading(false)}
                 />
@@ -1180,6 +1187,13 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [paymentExpense, setPaymentExpense] = useState<Expense | null>(null);
+  const [paymentReference, setPaymentReference] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  const [source, setSource] = useState<LedgerSource | null>(null);
+  const [sourceEntryId, setSourceEntryId] = useState<string | null>(null);
+  const [sourceBusy, setSourceBusy] = useState(false);
+  const [sourceError, setSourceError] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "expenses" | "ledger">("overview");
 
   const load = useCallback(async () => {
@@ -1213,7 +1227,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
     setExporting(true);
     setExportError("");
     try {
-      const res = await fetch("/api/ledger/export");
+      const res = await fetch("/api/ledger/export.csv");
       if (!res.ok) throw new Error("Export failed.");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -1230,14 +1244,13 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
   }
 
   async function handleExpenseAction(expenseId: string, action: "approve" | "reject" | "pay", extra: Record<string, string> = {}) {
+    if (actionBusy) return;
     setActionError("");
     const expense = expenses.find((e) => e.id === expenseId);
     if (!expense) return;
     if (action === "pay") {
-      const reference = window.prompt("Enter the reference from the completed bank or UPI payment:");
-      if (reference === null) return;
-      if (!reference.trim()) { setActionError("Enter the actual payment reference before marking paid."); return; }
-      extra = { paymentReference: reference.trim() };
+      if (!extra.paymentReference?.trim()) { setActionError("Enter the payment reference before marking paid."); return; }
+      extra = { paymentReference: extra.paymentReference.trim() };
     }
     if (action === "reject") {
       const note = window.prompt("Reason for rejecting this expense (optional):");
@@ -1246,7 +1259,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
     }
     if (action === "approve" && !window.confirm(`Approve ${currency(expense.amountPaise)} for ${expense.purpose}?`)) return;
     if (action === "reject" && !window.confirm(`Reject the expense "${expense.purpose}"?`)) return;
-    if (action === "pay" && !window.confirm(`Mark ${currency(expense.amountPaise)} as paid? This creates the ledger outflow.`)) return;
+    setActionBusy(true);
     try {
       const body: Record<string, string> = { ...extra };
       const res = await fetch(`/api/expenses/${expenseId}/${action}`, {
@@ -1256,10 +1269,28 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
       });
       const result = await res.json() as { error?: string };
       if (!res.ok) throw new Error(result.error || `Failed to ${action} expense.`);
+      if (action === "pay") { setPaymentExpense(null); setPaymentReference(""); }
       await Promise.all([load(), onChanged()]);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : `Failed to ${action} expense.`);
+    } finally {
+      setActionBusy(false);
     }
+  }
+
+  async function showSource(entryId: string) {
+    setSourceEntryId(entryId);
+    setSource(null);
+    setSourceError("");
+    setSourceBusy(true);
+    try {
+      const res = await fetch(`/api/ledger/entries/${encodeURIComponent(entryId)}/source`, { cache: "no-store" });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Could not load the source record.");
+      setSource(result as LedgerSource);
+    } catch (error) {
+      setSourceError(error instanceof Error ? error.message : "Could not load the source record.");
+    } finally { setSourceBusy(false); }
   }
 
   const filteredEntries = entries.filter((e) => {
@@ -1466,6 +1497,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
                               type="button"
                               className="button-small green-btn"
                               onClick={() => void handleExpenseAction(exp.id, "approve")}
+                              disabled={actionBusy}
                             >
                               Approve
                             </button>
@@ -1473,6 +1505,7 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
                               type="button"
                               className="button-small red-btn"
                               onClick={() => void handleExpenseAction(exp.id, "reject")}
+                              disabled={actionBusy}
                             >
                               Reject
                             </button>
@@ -1511,7 +1544,8 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
                           <button
                             type="button"
                             className="button-small"
-                            onClick={() => void handleExpenseAction(exp.id, "pay")}
+                            onClick={() => { setPaymentExpense(exp); setPaymentReference(""); setActionError(""); }}
+                            disabled={actionBusy}
                           >
                             Mark paid
                           </button>
@@ -1574,6 +1608,28 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
         </div>
       )}
 
+      {paymentExpense && activeTab === "expenses" && (
+        <section className="panel task-create-panel" aria-labelledby="payment-heading">
+          <h2 id="payment-heading">Record completed payment</h2>
+          <p>{paymentExpense.purpose} · {currency(paymentExpense.amountPaise)} · {paymentExpense.submitterName}</p>
+          <p>This records an officer-confirmed reimbursement. It does not transfer money.</p>
+          <form onSubmit={event => {
+            event.preventDefault();
+            void handleExpenseAction(paymentExpense.id, "pay", { paymentReference });
+          }}>
+            <label>Payment reference
+              <input value={paymentReference} onChange={event => setPaymentReference(event.target.value)}
+                required maxLength={200} disabled={actionBusy} autoFocus />
+            </label>
+            <div className="expense-action-row">
+              <button className="button primary" type="submit" disabled={actionBusy}>
+                {actionBusy ? "Recording…" : "Confirm paid"}
+              </button>
+              <button className="button" type="button" disabled={actionBusy} onClick={() => setPaymentExpense(null)}>Cancel</button>
+            </div>
+          </form>
+        </section>
+      )}
       {/* Ledger tab */}
       {activeTab === "ledger" && (
         <section className="panel">
@@ -1607,6 +1663,19 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
               {exportError}
             </p>
           )}
+          {sourceEntryId && (
+            <section className="task-create-panel" aria-label="Ledger source record">
+              <button type="button" className="button-small" disabled={sourceBusy} onClick={() => { setSourceEntryId(null); setSource(null); }}>Close source</button>
+              {sourceBusy && <p role="status">Loading source record…</p>}
+              {sourceError && <p role="alert">{sourceError} <button className="button-small" onClick={() => void showSource(sourceEntryId)}>Retry source</button></p>}
+              {source && <>
+                <h3>{source.title}</h3>
+                <p>{source.type} · {source.id}</p>
+                <dl>{source.details.map(detail => <div key={detail.label}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>)}</dl>
+                {source.receiptId && <a href={`/api/receipts/${encodeURIComponent(source.receiptId)}`} download>Download receipt</a>}
+              </>}
+            </section>
+          )}
           {filteredEntries.length === 0 ? (
             <Empty title="No transactions found">
               {search ? "Try a different search term." : "No ledger entries have been recorded yet."}
@@ -1621,6 +1690,8 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
                     <th scope="col">Category</th>
                     <th scope="col">Event</th>
                     <th scope="col">Reference</th>
+                    <th scope="col">Recorded by</th>
+                    <th scope="col">Source</th>
                     <th scope="col">Type</th>
                     <th scope="col" className="amount-cell">Amount</th>
                   </tr>
@@ -1633,6 +1704,11 @@ function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
                       <td>{entry.category ?? "—"}</td>
                       <td>{entry.eventTitle ?? "—"}</td>
                       <td>{entry.reference ?? "—"}</td>
+                      <td>{entry.recordedByName ?? (entry.sourceType === "opening_balance" ? "System opening balance" : "Unknown officer")}</td>
+                      <td>{entry.sourceId ? <a href={`/api/ledger/entries/${encodeURIComponent(entry.id)}/source`}
+                        onClick={event => { event.preventDefault(); if (!sourceBusy) void showSource(entry.id); }}>
+                        {entry.sourceType} · {entry.sourceId}
+                      </a> : "Opening balance"}</td>
                       <td>
                         <span className={`badge ${entry.type === "income" ? "green" : "neutral"}`}>
                           {entry.type === "income" ? "Income" : "Expense (paid)"}

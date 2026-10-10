@@ -31,6 +31,32 @@ export interface Announcement {
   publishedAt: string;
 }
 
+/** Publishing is immediate; reuse this key and normalized content when retrying. */
+export interface PublishAnnouncementInput {
+  idempotencyKey: string;
+  title: string;
+  body: string;
+}
+
+export interface AnnouncementPublication {
+  announcement: Announcement;
+  created: boolean;
+  recipientCount: number;
+  delivery: "simulated";
+}
+
+/** Private delivery inspection, restricted to outbox:manage holders. */
+export interface AnnouncementOutboxMessage {
+  id: string;
+  announcementId: string;
+  memberId: string;
+  recipientEmail: string;
+  subject: string;
+  body: string;
+  status: "simulated";
+  createdAt: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -92,6 +118,9 @@ export interface Transaction {
 
 // ── Receipt ──────────────────────────────────────────────────────────────────
 
+/** Decimal MB; shared by web validation and the upload boundary. */
+export const MAX_RECEIPT_SIZE_BYTES = 5_000_000;
+
 export interface Receipt {
   id: string;
   uploaderId: string;
@@ -127,7 +156,7 @@ export interface Expense {
 export interface SubmitExpenseInput {
   amountPaise: number;
   purpose: string;
-  receiptId?: string;
+  receiptId: string;
   receiptReference?: string;
   eventId?: string;
 }
@@ -153,6 +182,20 @@ export interface ExpenseLedgerEntry {
   eventTitle: string | null;
   reference: string | null;
   occurredAt: string;
+  kind: "income" | "expense";
+  sourceType: string;
+  sourceId: string | null;
+  recordedBy: string | null;
+  recordedByName: string | null;
+}
+
+/** Permission-scoped details of the exact record behind a ledger row. */
+export interface LedgerSource {
+  type: string;
+  id: string;
+  title: string;
+  details: Array<{ label: string; value: string }>;
+  receiptId: string | null;
 }
 
 // ── Event report ──────────────────────────────────────────────────────────────
@@ -264,6 +307,7 @@ export interface Notification {
   body: string;
   createdAt: string;
   readAt: string | null;
+  announcementId: string | null;
 }
 
 /** Event tickets (P2, #5) */

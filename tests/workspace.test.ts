@@ -4,9 +4,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { openClubDatabase, getDatabase } from "../src/lib/database";
+import { openClubDatabase, getDatabase, SCHEMA_VERSION } from "../src/lib/database";
 import { ForbiddenError, NotFoundError, ConflictError } from "../src/lib/errors";
-import { actorFor, DEMO, FIXED_NOW, memoryDatabase, withRouteDatabase, loginCookie, apiRequest, routeParams } from "./helpers";
+import { actorFor, DEMO, FIXED_NOW, memoryDatabase, withRouteDatabase, loginCookie, apiRequest, routeParams, receiptFor } from "./helpers";
 import { GET as tasks, POST as createTask } from "../src/app/api/tasks/route";
 import { POST as taskStatus } from "../src/app/api/tasks/[id]/status/route";
 import { GET as expenses, POST as submit } from "../src/app/api/expenses/route";
@@ -23,7 +23,7 @@ test("workspace routes require sessions and derive submitter/reviewer identity f
     assert.equal((await createTask(apiRequest("/api/tasks",{cookie:member,body:{title:"Not allowed"}}))).status,403);
     assert.equal((await ledger(apiRequest("/api/ledger/summary",{cookie:member}))).status,403);
     assert.equal((await submit(apiRequest("/api/expenses",{cookie:member,body:{amountPaise:12500,purpose:"Test supplies",submitterId:"someone-else"}}))).status,400);
-    const created=await submit(apiRequest("/api/expenses",{cookie:member,body:{amountPaise:12500,purpose:"Test supplies"}}));
+    const created=await submit(apiRequest("/api/expenses",{cookie:member,body:{amountPaise:12500,purpose:"Test supplies",receiptId:receiptFor(getDatabase(),actorFor(getDatabase(),"active@example.com"))}}));
     assert.equal(created.status,201);
     const expense=await created.json();
     const params=routeParams({id:expense.id,action:"approve"});
@@ -39,6 +39,7 @@ test("workspace routes require sessions and derive submitter/reviewer identity f
     assert.equal((await submit(apiRequest("/api/expenses",{cookie:member,rawBody:"{"}))).status,400);
   });
 });
+
 test("tasks enforce club boundaries, assignment permissions and normalized deadlines",()=>{
   const {db}=memoryDatabase();
   try{
@@ -47,13 +48,11 @@ test("tasks enforce club boundaries, assignment permissions and normalized deadl
     assert.equal(task.dueAt,"2026-10-10T08:30:00.000Z"); assert.equal(task.overdue,false);
     assert.equal(db.getTasks(volunteer,{mine:true}).some(t=>t.id===task.id),true);
     assert.throws(()=>db.updateTaskStatus(member,task.id,"done"),ForbiddenError);
-    const someoneElsesTask = db.createTask(organizer, { title: "Member's task", assigneeId: member.memberId });
-    const unassignedTask = db.createTask(organizer, { title: "Unassigned task" });
-    for (const otherTask of [someoneElsesTask, unassignedTask]) {
-      assert.throws(() => db.updateTaskStatus(volunteer, otherTask.id, "done"), ForbiddenError);
-      assert.equal(db.getTaskById(organizer, otherTask.id).status, "todo");
+    for (const otherTask of [db.createTask(organizer,{title:"Member task",assigneeId:member.memberId}), db.createTask(organizer,{title:"Unassigned task"})]) {
+      assert.throws(()=>db.updateTaskStatus(volunteer,otherTask.id,"done"),ForbiddenError);
+      assert.equal(db.getTaskById(organizer,otherTask.id).status,"todo");
     }
-    assert.equal(db.getDashboard(volunteer).tasks.find(row => row.id === task.id)?.assigneeId, volunteer.memberId);
+    assert.equal(db.getDashboard(volunteer).tasks.find(row=>row.id===task.id)?.assigneeId,volunteer.memberId);
     assert.equal(db.updateTaskStatus(volunteer,task.id,"done").status,"done");
     assert.throws(()=>db.patchTask(volunteer,task.id,{title:"Changed"}),ForbiddenError);
     const clubId=db.createClub("Other club");
@@ -74,9 +73,9 @@ test("expense ownership, self review, payment retry and rollback keep one reconc
   try{
     const member=actorFor(db,"active@example.com"), reviewer=actorFor(db,DEMO.treasurer), admin=actorFor(db,DEMO.admin);
     const before=db.ledger.balance();
-    const expense=db.submitExpense(member,{amountPaise:25000,purpose:"Supplies",eventId:"demo-event-1"});
+    const expense=db.submitExpense(member,{amountPaise:25000,purpose:"Supplies",eventId:"demo-event-1",receiptId:receiptFor(db,member)});
     assert.throws(()=>db.payExpense(reviewer,expense.id,"TEST-REF"),ConflictError);
-    const own=db.submitExpense(reviewer,{amountPaise:500,purpose:"Own expense"});
+    const own=db.submitExpense(reviewer,{amountPaise:500,purpose:"Own expense",receiptId:receiptFor(db,reviewer)});
     assert.throws(()=>db.approveExpense(reviewer,own.id),ForbiddenError);
     db.approveExpense(admin,own.id);
     assert.throws(()=>db.payExpense(reviewer,own.id,"SELF"),ForbiddenError);
@@ -135,14 +134,18 @@ test("schema v8 upgrades preserve members, passes, sessions, merchandise and ope
     db.merchandise.confirmOrder(other,order.id,{reference:"MIGRATED-MERCH"});
     const pass=db.getPass(session.member.id),balance=db.ledger.balance(),count=db.getMembers().length;
     db.close();
-    // Reconstruct the released v8 shape by removing later additive schema.
+    // Reconstruct the released v8 shape by removing later additive migrations.
     const raw=new DatabaseSync(path);
-    raw.exec("DROP TABLE legacy_ledger_imports; DROP TABLE expenses; DROP TABLE receipts; DROP INDEX tasks_club_idx;");
+    raw.exec("DROP INDEX announcements_request_idx; DROP INDEX announcements_archive_idx; DROP INDEX notifications_announcement_recipient_idx; DROP INDEX outbox_announcement_recipient_idx;");
+    raw.exec("ALTER TABLE notifications DROP COLUMN announcement_id; ALTER TABLE outbox_messages DROP COLUMN announcement_id;");
+    for(const column of ["club_id","published_by","idempotency_key","recipient_count"])raw.exec("ALTER TABLE announcements DROP COLUMN "+column);
+    raw.exec("DROP TABLE legacy_ledger_imports;");
+    raw.exec("DROP TABLE expenses; DROP TABLE expense_receipts; DROP INDEX tasks_club_idx;");
     for(const column of ["club_id","description","assignee_id","event_id","due_at","created_at"])raw.exec("ALTER TABLE tasks DROP COLUMN "+column);
     for(const column of ["club_id","event_id"])raw.exec("ALTER TABLE transactions DROP COLUMN "+column);
     raw.exec("ALTER TABLE events DROP COLUMN fundraiser_goal_paise; PRAGMA user_version=8;");raw.close();
     db=openClubDatabase(path,{now:()=>FIXED_NOW});
-    assert.equal(db.health().schemaVersion,10);assert.equal(db.getMembers().length,count);
+    assert.equal(db.health().schemaVersion,SCHEMA_VERSION);assert.equal(db.getMembers().length,count);
     assert.equal(db.ledger.balance(),balance);assert.deepEqual(db.getPass(session.member.id),pass);
     assert.equal(db.getActor(session.token)?.memberId,session.member.id);
     assert.equal(db.getTasks(db.getActor(session.token)!).length,3);
@@ -176,13 +179,14 @@ test("expense rejection and CSV export preserve decisions and escape spreadsheet
   await withRouteDatabase(async()=>{
     const member=await loginCookie("active@example.com"), reviewer=await loginCookie(DEMO.treasurer);
     const db=getDatabase(),treasurer=actorFor(db,DEMO.treasurer);
-    const expense=await (await submit(apiRequest("/api/expenses",{cookie:member,body:{amountPaise:175,purpose:'=SUM(1,2) "test"'}}))).json();
+    const receiptId=receiptFor(db,actorFor(db,"active@example.com"));
+    const expense=await (await submit(apiRequest("/api/expenses",{cookie:member,body:{amountPaise:175,purpose:'=SUM(1,2) "test"',receiptId}}))).json();
     assert.equal((await action(apiRequest("/api/expenses",{cookie:reviewer,body:{note:"Duplicate invoice"}}),routeParams({id:expense.id,action:"reject"}))).status,200);
     assert.equal(db.getExpenseById(treasurer,expense.id).rejectionNote,"Duplicate invoice");
     assert.equal((await action(apiRequest("/api/expenses",{cookie:reviewer,body:{}}),routeParams({id:expense.id,action:"approve"}))).status,409);
     assert.equal((await action(apiRequest("/api/expenses",{cookie:reviewer,body:{}}),routeParams({id:expense.id,action:"missing"}))).status,404);
     assert.equal((await action(apiRequest("/api/expenses",{cookie:reviewer,body:{paymentReference:""}}),routeParams({id:expense.id,action:"pay"}))).status,400);
-    const payable=db.submitExpense(actorFor(db,"active@example.com"),{amountPaise:175,purpose:'=SUM(1,2) "test"'});
+    const payable=db.submitExpense(actorFor(db,"active@example.com"),{amountPaise:175,purpose:'=SUM(1,2) "test"',receiptId});
     db.approveExpense(treasurer,payable.id);db.payExpense(treasurer,payable.id,"REF-CSV");
     const {GET:csv}=await import("../src/app/api/ledger/export/route");
     assert.equal((await csv(apiRequest("/api/ledger/export"))).status,401);
@@ -200,7 +204,7 @@ test("receipt validation rejects empty, oversized and disguised files",async()=>
     for(const [bytes,name,type,expected] of [
       ["","empty.pdf","application/pdf",400],
       ["not an image","fake.png","image/png",415],
-      [new Uint8Array(2*1024*1024+1),"large.pdf","application/pdf",413],
+      [new Uint8Array(5_000_001),"large.pdf","application/pdf",413],
     ] as const){
       const form=new FormData();form.append("file",new File([bytes],name,{type}));
       assert.equal((await upload(new Request("http://localhost:3000/api/receipts",{method:"POST",headers:{Cookie:cookie,Origin:"http://localhost:3000"},body:form}))).status,expected);

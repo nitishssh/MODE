@@ -44,7 +44,37 @@ test("merchandise income stays in its club ledger with its payment reference", (
     assert.deepEqual(db.ledger.reconcile().orphans, []);
   } finally { db.close(); }
 });
-import { DEMO, actorFor, memoryDatabase } from "./helpers";
+import { DEMO, actorFor, memoryDatabase, receiptFor } from "./helpers";
+
+test("reimbursements (#7): only payment changes balance, with one source and the paying officer", () => {
+  const { db } = memoryDatabase();
+  try {
+    const submitter = actorFor(db, "active@example.com"), reviewer = actorFor(db, DEMO.treasurer), payer = actorFor(db, DEMO.admin);
+    const before = db.ledger.reconcile();
+    const receiptId = receiptFor(db, submitter);
+    const expense = db.submitExpense(submitter, { amountPaise: 12345, purpose: "Synthetic transport", receiptId });
+    const rejected = db.submitExpense(submitter, { amountPaise: 500, purpose: "Duplicate claim", receiptId });
+    db.rejectExpense(reviewer, rejected.id, "Duplicate");
+    db.approveExpense(reviewer, expense.id);
+    assert.deepEqual(db.ledger.reconcile(), before);
+    assert.throws(() => db.transaction(() => { db.payExpense(payer, expense.id, "ROLLBACK"); throw new Error("abort"); }));
+    assert.deepEqual(db.ledger.reconcile(), before);
+    db.payExpense(payer, expense.id, "SYNTHETIC-PAID");
+    db.payExpense(payer, expense.id, "SYNTHETIC-PAID");
+    assert.throws(() => db.payExpense(payer, expense.id, "DIFFERENT"), ConflictError);
+    const entries = db.getLedgerEntries(payer).filter(e => e.sourceId === expense.id);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].recordedBy, payer.memberId);
+    assert.equal(entries[0].recordedByName, db.getMembers().find(m => m.id === payer.memberId)!.name);
+    assert.equal(entries[0].kind, "expense");
+    assert.equal(db.getLedgerSource(payer, entries[0].id).receiptId, receiptId);
+    const report = db.ledger.reconcile();
+    assert.deepEqual([report.orphans, report.duplicates, report.missing, report.mismatched], [[], [], [], []]);
+    assert.equal(report.unsourced, 0);
+    assert.equal(report.balancePaise, before.balancePaise - 12345);
+    assert.equal(db.getLedgerSummary(payer).balancePaise, report.balancePaise);
+  } finally { db.close(); }
+});
 
 const fixedNow = () => new Date("2026-10-10T08:00:00.000Z");
 

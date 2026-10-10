@@ -17,8 +17,9 @@ test('historical v2 upgrade supports task creation, reassignment and old/new rec
     assert.equal(db.patchTask(organizer, created.id, { assigneeId: treasurer.memberId }).assigneeId, treasurer.memberId);
     assert.equal(db.getReceiptFile(treasurer, 'legacy-receipt')?.toString(), 'legacy');
     assert.equal(db.getExpenseById(treasurer, 'demo-expense-2').receiptId, 'legacy-receipt');
-    const receipt = db.saveReceipt(treasurer, { filename: 'new.txt', mimeType: 'text/plain', sizeBytes: 3, data: Buffer.from('new') });
-    assert.equal(db.getReceiptFile(treasurer, receipt.id)?.toString(), 'new');
+    const pdf = Buffer.from('%PDF-new');
+    const receipt = db.saveReceipt(treasurer, { filename: 'new.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length, data: pdf });
+    assert.equal(db.getReceiptFile(treasurer, receipt.id)?.toString(), '%PDF-new');
     const claim = db.submitExpense(treasurer, { purpose: 'New supplies', amountPaise: 500, receiptId: receipt.id });
     assert.equal(claim.receiptId, receipt.id);
   } finally { db?.close(); rmSync(fixture.directory, { recursive: true, force: true }); }

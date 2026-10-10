@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import type { Expense, ExpenseStatus, ExpenseLedgerEntry, LedgerSummary, Receipt, TaskDetails, CreateTaskInput, PatchTaskInput, SubmitExpenseInput } from "../contracts";
+import { MAX_RECEIPT_SIZE_BYTES, type Expense, type ExpenseStatus, type ExpenseLedgerEntry, type LedgerSummary, type LedgerSource, type Receipt, type TaskDetails, type CreateTaskInput, type PatchTaskInput, type SubmitExpenseInput } from "../contracts";
 import { transaction, type DbContext, type Row } from "../db/core";
 import { hasPermission } from "../auth/permissions";
 import { assertPermission, type Actor, type IdentityModule } from "./identity";
-import { ConflictError, ForbiddenError, NotFoundError } from "../errors";
+import { ConflictError, DomainError, ForbiddenError, NotFoundError, ValidationError } from "../errors";
 import { postLedgerEntry } from "./ledger";
 
 function mapTaskDetails(row: Row, now: string): TaskDetails {
@@ -49,6 +49,7 @@ function mapExpense(row: Row): Expense {
 
 export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, receiptsDir: string) {
   const { db, now } = ctx;
+  const receiptHasUploaderName = (db.prepare("PRAGMA table_info(expense_receipts)").all() as Row[]).some(row => row.name === "uploader_name");
   function requireEvent(actor: Actor, id?: string | null) {
     if (id && !db.prepare("SELECT 1 FROM events WHERE id = ? AND club_id = ?").get(id, actor.clubId)) throw new NotFoundError("Event not found.");
   }
@@ -109,27 +110,53 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     });
   }
   function getReceiptById(actor: Actor, id: string): Receipt {
-    const row = db.prepare("SELECT r.*, m.name AS uploader_name FROM receipts r JOIN members m ON m.id = r.uploader_id WHERE r.id = ? AND r.club_id = ?").get(id, actor.clubId);
+    const row = db.prepare("SELECT r.*, m.name AS uploader_name FROM expense_receipts r JOIN members m ON m.id = r.uploader_id WHERE r.id = ? AND r.club_id = ?").get(id, actor.clubId);
     if (!row) throw new NotFoundError("Receipt not found.");
     if (row.uploader_id !== actor.memberId && !hasPermission(actor.role, "expenses:review")) throw new ForbiddenError();
     return {id: String(row.id), uploaderId: String(row.uploader_id), uploaderName: String(row.uploader_name), filename: String(row.filename), mimeType: String(row.mime_type), sizeBytes: Number(row.size_bytes), uploadedAt: String(row.uploaded_at)};
   }
   function saveReceipt(actor: Actor, input: {filename: string; mimeType: string; sizeBytes: number; data: Buffer}) {
     assertPermission(actor, "expenses:submit");
+    const size = input.data.byteLength;
+    if (size === 0) throw new ValidationError("File must not be empty.");
+    if (size > MAX_RECEIPT_SIZE_BYTES) throw new DomainError("File is too large. Maximum size is 5 MB.", 413, "receipt_too_large");
+    // Detect from bytes at the domain boundary, including non-HTTP callers.
+    const formats = [
+      { signature: Buffer.from([0xff, 0xd8, 0xff]), mime: "image/jpeg", ext: "jpg" },
+      { signature: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), mime: "image/png", ext: "png" },
+      { signature: Buffer.from("%PDF-"), mime: "application/pdf", ext: "pdf" },
+    ];
+    const format = formats.find(f => input.data.subarray(0, f.signature.length).equals(f.signature));
+    if (!format) throw new DomainError("Unsupported file type. Upload a JPG, PNG, or PDF.", 415, "receipt_type");
     const id = randomUUID();
+    const storageName = `${id}.${format.ext}`;
+    const basename = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/\.[^.]*$/, "").slice(0, 150) || "receipt";
+    const filename = `${basename}.${format.ext}`;
     mkdirSync(receiptsDir, { recursive: true });
-    writeFileSync(join(receiptsDir, id), input.data, { flag: "wx" });
+    // Runtime user uploads are persistent data, not files to bundle at build time.
+    writeFileSync(join(/* turbopackIgnore: true */ receiptsDir, storageName), input.data, { flag: "wx" });
     try {
       return transaction(ctx, () => {
-        db.prepare("INSERT INTO receipts (id, club_id, uploader_id, uploader_name, filename, mime_type, size_bytes, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(id, actor.clubId, actor.memberId, actor.name, input.filename, input.mimeType, input.sizeBytes, now().toISOString());
+        if (receiptHasUploaderName) {
+          db.prepare("INSERT INTO expense_receipts (id, club_id, uploader_id, uploader_name, filename, mime_type, size_bytes, uploaded_at, storage_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .run(id, actor.clubId, actor.memberId, actor.name, filename, format.mime, size, now().toISOString(), storageName);
+        } else {
+          db.prepare("INSERT INTO expense_receipts (id, club_id, uploader_id, filename, mime_type, size_bytes, uploaded_at, storage_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            .run(id, actor.clubId, actor.memberId, filename, format.mime, size, now().toISOString(), storageName);
+        }
         return getReceiptById(actor, id);
       });
-    } catch (error) { unlinkSync(join(receiptsDir, id)); throw error; }
+    } catch (error) {
+      try { unlinkSync(join(/* turbopackIgnore: true */ receiptsDir, storageName)); } catch (cleanupError) { console.error("Receipt cleanup failed", cleanupError); }
+      throw error;
+    }
   }
   function getReceiptFile(actor: Actor, id: string) {
     getReceiptById(actor, id);
-    try { return readFileSync(join(receiptsDir, id)); }
+    const row = db.prepare("SELECT storage_name FROM expense_receipts WHERE id = ? AND club_id = ?").get(id, actor.clubId)!;
+    const storageName = String(row.storage_name);
+    if (!/^(?:[a-f0-9-]{36}(?:\.(?:jpg|png|pdf|webp))?|[a-z0-9_-]{1,128})$/i.test(storageName)) throw new NotFoundError("Receipt file not found.");
+    try { return readFileSync(join(/* turbopackIgnore: true */ receiptsDir, storageName)); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
   }
   const expenseQuery = `SELECT e.*, m.name AS submitter_name, ev.title AS event_title FROM expenses e JOIN members m ON m.id = e.submitter_id LEFT JOIN events ev ON ev.id = e.event_id`;
@@ -146,9 +173,13 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
   }
   function submitExpense(actor: Actor, input: SubmitExpenseInput) {
     assertPermission(actor, "expenses:submit");
+    if (!input.receiptId) throw new ValidationError("A receipt is required.", [{field: "receiptId", message: "Upload a receipt."}]);
+    if (!Number.isSafeInteger(input.amountPaise) || input.amountPaise <= 0) throw new ValidationError("Amount must be positive integer paise.");
+    if (typeof input.purpose !== "string" || input.purpose.trim().length < 3 || input.purpose.trim().length > 500) throw new ValidationError("Purpose must be 3–500 characters.");
     return transaction(ctx, () => {
       requireEvent(actor, input.eventId);
-      if (input.receiptId && getReceiptById(actor, input.receiptId).uploaderId !== actor.memberId) throw new ForbiddenError("Use your own receipt.");
+      if (getReceiptById(actor, input.receiptId).uploaderId !== actor.memberId) throw new ForbiddenError("Use your own receipt.");
+      if (!getReceiptFile(actor, input.receiptId)) throw new NotFoundError("Receipt file not found. Upload it again.");
       const id = randomUUID();
       db.prepare("INSERT INTO expenses (id, club_id, submitter_id, amount_paise, purpose, receipt_id, receipt_reference, event_id, status, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?)")
         .run(id, actor.clubId, actor.memberId, input.amountPaise, input.purpose.trim(), input.receiptId ?? null, input.receiptReference ?? null, input.eventId ?? null, now().toISOString());
@@ -175,25 +206,67 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
       if (expense.submitterId === actor.memberId) throw new ForbiddenError("You cannot pay your own expense.");
       if (expense.status === "paid" && expense.paymentReference === paymentReference) return expense;
       if (expense.status !== "approved") throw new ConflictError("Only approved expenses can be paid.");
-      db.prepare("UPDATE expenses SET status = 'paid', paid_at = ?, payment_reference = ? WHERE id = ? AND club_id = ?")
+      const changed = db.prepare("UPDATE expenses SET status = 'paid', paid_at = ?, payment_reference = ? WHERE id = ? AND club_id = ? AND status = 'approved'")
         .run(now().toISOString(), paymentReference, id, actor.clubId);
+      if (Number(changed.changes) !== 1) throw new ConflictError("Only approved expenses can be paid.");
       postLedgerEntry(ctx, {kind: "expense", amountPaise: expense.amountPaise, description: expense.purpose, source: {type: "expense", id}, recordedBy: actor.memberId, clubId: actor.clubId, eventId: expense.eventId});
       identity.recordAudit(actor, "expense.paid", "expense", id, {paymentReference});
       return getExpenseById(actor, id);
     });
   }
   function ledgerRows(actor: Actor): ExpenseLedgerEntry[] {
-    return db.prepare(`SELECT l.*, e.title AS event_title,
+    return db.prepare(`SELECT l.*, e.title AS event_title, officer.name AS officer_name,
       COALESCE(x.payment_reference, tk.payment_reference, dp.reference, mo.payment_reference) AS payment_reference
       FROM transactions l LEFT JOIN events e ON e.id = l.event_id
+      LEFT JOIN members officer ON officer.id = l.recorded_by AND officer.club_id = l.club_id
       LEFT JOIN expenses x ON l.source_type = 'expense' AND x.id = l.source_id
       LEFT JOIN tickets tk ON l.source_type = 'ticket' AND tk.id = l.source_id
       LEFT JOIN dues_payments dp ON l.source_type = 'dues_payment' AND dp.id = l.source_id
       LEFT JOIN merch_orders mo ON l.source_type = 'merch_order' AND mo.id = l.source_id
       WHERE l.club_id = ? ORDER BY l.occurred_at DESC, l.rowid DESC`)
-      .all(actor.clubId).map(row => ({id: String(row.id), type: row.kind === "income" ? "income" : "expense_paid", description: String(row.description), amountPaise: Number(row.amount_paise), category: row.source_type === "dues_payment" ? "membership" : row.source_type === "ticket" ? "events" : String(row.source_type), eventId: row.event_id === null ? null : String(row.event_id), eventTitle: row.event_title === null ? null : String(row.event_title), reference: row.payment_reference === null ? null : String(row.payment_reference), occurredAt: String(row.occurred_at)}));
+      .all(actor.clubId).map(row => ({
+        id: String(row.id), type: row.kind === "income" ? "income" : "expense_paid",
+        kind: row.kind as "income" | "expense", description: String(row.description), amountPaise: Number(row.amount_paise),
+        category: row.source_type === "dues_payment" ? "membership" : row.source_type === "ticket" ? "events" : String(row.source_type),
+        eventId: row.event_id === null ? null : String(row.event_id), eventTitle: row.event_title === null ? null : String(row.event_title),
+        reference: row.payment_reference === null ? null : String(row.payment_reference), occurredAt: String(row.occurred_at),
+        sourceType: String(row.source_type), sourceId: row.source_type === "opening_balance" ? null : String(row.source_id),
+        recordedBy: row.recorded_by === null ? null : String(row.recorded_by),
+        recordedByName: row.officer_name === null ? null : String(row.officer_name),
+      }));
   }
   function getLedgerEntries(actor: Actor) { assertPermission(actor, "ledger:read"); return ledgerRows(actor); }
+  function getLedgerSource(actor: Actor, entryId: string): LedgerSource {
+    assertPermission(actor, "ledger:read");
+    const entry = db.prepare("SELECT * FROM transactions WHERE id = ? AND club_id = ?").get(entryId, actor.clubId);
+    if (!entry || entry.source_type === "opening_balance") throw new NotFoundError("Source not found.");
+    let source: Row | undefined;
+    let receiptId: string | null = null;
+    switch (entry.source_type) {
+      case "expense": {
+        const expense = db.prepare("SELECT e.*, m.name AS submitter_name FROM expenses e JOIN members m ON m.id = e.submitter_id WHERE e.id = ? AND e.club_id = ?").get(entry.source_id, actor.clubId);
+        if (expense) {
+          source = { Submitter: expense.submitter_name, Purpose: expense.purpose, Status: expense.status, Reference: expense.payment_reference, Paid: expense.paid_at };
+          if (expense.receipt_id && (expense.submitter_id === actor.memberId || hasPermission(actor.role, "expenses:review"))) receiptId = String(expense.receipt_id);
+        }
+        break;
+      }
+      case "dues_payment":
+        source = db.prepare("SELECT m.name AS Member, d.reference AS Reference, d.recorded_at AS Recorded, d.new_expires_on AS 'Membership expires' FROM dues_payments d JOIN members m ON m.id = d.member_id WHERE d.id = ? AND d.club_id = ?").get(entry.source_id, actor.clubId);
+        break;
+      case "ticket":
+        source = db.prepare("SELECT COALESCE(m.name, t.guest_name) AS Holder, e.title AS Event, t.short_code AS 'Ticket code', t.status AS Status, t.payment_reference AS Reference FROM tickets t JOIN events e ON e.id = t.event_id LEFT JOIN members m ON m.id = t.member_id WHERE t.id = ? AND t.club_id = ?").get(entry.source_id, actor.clubId);
+        break;
+      case "merch_order":
+        source = db.prepare("SELECT m.name AS Member, p.name AS Product, v.size AS Size, o.quantity AS Quantity, o.status AS Status, o.payment_reference AS Reference FROM merch_orders o JOIN members m ON m.id = o.member_id JOIN products p ON p.id = o.product_id JOIN product_variants v ON v.id = o.variant_id WHERE o.id = ? AND o.club_id = ?").get(entry.source_id, actor.clubId);
+        break;
+    }
+    if (!source) throw new NotFoundError("Source not found.");
+    return {
+      type: String(entry.source_type), id: String(entry.source_id), title: String(entry.description), receiptId,
+      details: Object.entries(source).map(([label, value]) => ({ label, value: value === null ? "—" : String(value) })),
+    };
+  }
   function getLedgerSummary(actor: Actor): LedgerSummary {
     const entries = getLedgerEntries(actor);
     const totals = (rows: ExpenseLedgerEntry[]) => ({inflowPaise: rows.filter(r => r.type === "income").reduce((sum,r) => sum+r.amountPaise,0), outflowPaise: rows.filter(r => r.type === "expense_paid").reduce((sum,r) => sum+r.amountPaise,0)});
@@ -216,5 +289,6 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
   return {getTasks,getTaskById,createTask,patchTask,updateTaskStatus,saveReceipt,getReceiptById,getReceiptFile,getExpenses,getExpenseById,submitExpense,
     approveExpense: (actor: Actor,id:string) => reviewExpense(actor,id,"approved"),
     rejectExpense: (actor: Actor,id:string,note?:string) => reviewExpense(actor,id,"rejected",note),
-    payExpense,getLedgerEntries,getLedgerSummary,getEventReport};
+    payExpense,getLedgerEntries,getLedgerSource,getLedgerSummary,getEventReport};
 }
+
