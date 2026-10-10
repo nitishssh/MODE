@@ -45,7 +45,7 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
     return () => context.revert();
   }, []);
 
-  return <main className="landing-page">
+  return <main className="landing-page" id="landing-main">
     <a className="skip-link" href="#landing-main">Skip to main content</a>
     <header className="landing-header">
       <a className="landing-brand" href="#top" aria-label="MODE home">
@@ -104,5 +104,23 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
     </section>
 
     <footer className="landing-footer"><span className="landing-brand"><span className="landing-mark" aria-hidden="true"><i /><i /><i /></span>MODE<span>.</span></span><p>Student organization workspace</p><button type="button" onClick={onSignIn}>Sign in</button></footer>
+
+    <a
+      className="landing-whatsapp"
+      href="https://wa.me/?text=Hi%20MODE%2C%20I%20would%20like%20to%20know%20more%20about%20the%20club%20workspace."
+      target="_blank"
+      rel="noreferrer"
+      aria-label="Chat with MODE on WhatsApp"
+    >
+      <span className="landing-whatsapp-card" aria-hidden="true">
+        <span className="landing-whatsapp-card-top"><i>MODE</i><b>Typically replies soon</b></span>
+        <span className="landing-whatsapp-message">Hey! Need a hand getting your club into MODE? <em>We&apos;re here.</em></span>
+        <span className="landing-whatsapp-cta">Start a chat <b>↗</b></span>
+      </span>
+      <span className="landing-whatsapp-orb" aria-hidden="true">
+        <svg viewBox="0 0 32 32" focusable="false"><path d="M16 3.2a12.5 12.5 0 0 0-10.7 19L3.7 28.8l6.8-1.8A12.5 12.5 0 1 0 16 3.2Zm0 22.8c-1.75 0-3.47-.47-4.98-1.35l-.36-.2-4.04 1.06 1.08-3.93-.24-.4A10.1 10.1 0 1 1 16 26Zm5.54-7.55c-.3-.16-1.77-.87-2.04-.97-.27-.1-.47-.15-.67.15-.2.3-.76.97-.93 1.17-.17.2-.34.22-.63.07-.3-.15-1.24-.46-2.36-1.46a8.84 8.84 0 0 1-1.63-2.02c-.17-.3-.02-.45.13-.6.14-.14.3-.34.45-.5.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.07-.15-.67-1.62-.92-2.22-.24-.57-.49-.49-.67-.5h-.57c-.2 0-.52.08-.8.38-.27.3-1.04 1.02-1.04 2.48 0 1.46 1.07 2.88 1.22 3.08.15.2 2.1 3.2 5.08 4.49.71.3 1.26.48 1.69.61.71.23 1.36.2 1.87.12.57-.08 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.13-.27-.2-.57-.35Z" /></svg>
+      </span>
+      <span className="landing-whatsapp-hint" aria-hidden="true">Ask us anything</span>
+    </a>
   </main>;
 }
