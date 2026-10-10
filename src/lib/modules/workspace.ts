@@ -25,7 +25,6 @@ function mapTaskDetails(row: Row, now: string): TaskDetails {
     createdAt: String(row.created_at),
   };
 }
-
 function mapExpense(row: Row): Expense {
   return {
     id: String(row.id),

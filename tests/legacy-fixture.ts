@@ -13,4 +13,3 @@ export function legacyFixture() {
   raw.close(); mkdirSync(receiptsDir); writeFileSync(join(receiptsDir, 'legacy-receipt'), 'legacy');
   return { directory, filename, receiptsDir, options: { now: () => FIXED_NOW, receiptsDir } };
 }
-
