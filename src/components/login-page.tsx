@@ -1,12 +1,18 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 export function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+
+  useEffect(() => {
+    fetch("/api/auth/me", { cache: "no-store" }).then((res) => {
+      if (res.ok) window.location.assign("/");
+    });
+  }, []);
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

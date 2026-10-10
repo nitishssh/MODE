@@ -107,7 +107,7 @@ const globalStore = globalThis as typeof globalThis & { modeDatabase?: ClubDatab
 export function getDatabase(): ClubDatabase {
   // DATABASE_URL (postgres://…) selects PostgreSQL; otherwise the SQLite file.
   const path = process.env.DATABASE_URL || process.env.SQLITE_PATH || ".data/mode.sqlite";
-  if (!globalStore.modeDatabase || globalStore.modeDatabase.isClosed() || globalStore.modeDatabasePath !== path) {
+  if (!globalStore.modeDatabase || typeof globalStore.modeDatabase.isClosed !== "function" || globalStore.modeDatabase.isClosed() || globalStore.modeDatabasePath !== path) {
     globalStore.modeDatabase?.close();
     globalStore.modeDatabase = openClubDatabase(path, { now: applicationClock });
     globalStore.modeDatabasePath = path;
