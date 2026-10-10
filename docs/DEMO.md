@@ -42,6 +42,16 @@ node --import tsx --test tests/p0-foundations.test.ts tests/membership-state.reg
 
 See [acceptance evidence](ACCEPTANCE.md) for observed outcomes and the reconciliation repair. These are backend checks; native camera/Expo and the complete semester journey remain separate delivery issues.
 
+## Expo ticket scanner client
+
+The Expo app in `client/` consumes the same MODE API contracts as the web app.
+
+1. Run `npm run dev:lan` at the repository root for a LAN device, or `npm run dev` for local web/simulator use.
+2. In another terminal, set `EXPO_PUBLIC_API_URL=http://<computer-LAN-IP>:3000` for Expo Go (do not use `127.0.0.1` from a phone), then run `npm run start --prefix client`.
+3. Sign in with a synthetic seeded account, such as `lead@example.com` / the development `MODE_DEMO_PASSWORD` (default `mode-demo-2026`). Native sessions are stored only in SecureStore; same-origin web uses the HttpOnly cookie.
+4. Verify Events booking, Member Pass, officer Pending Holds confirmation, and Door scanning. On native the door tab can scan QR codes; web provides the typed credential fallback.
+5. Run `npm run sync-contracts`, `npm run typecheck --prefix client`, `npm run lint --prefix client`, and `npm run export:web --prefix client`.
+
 ## Full MVP acceptance — integration and remaining tickets
 
 - Member joins and pays/records dues; active status and expiry are visible.

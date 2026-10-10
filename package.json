@@ -13,7 +13,9 @@
     "test": "tsx --test tests/*.test.ts",
     "test:foundation": "node scripts/check-foundation.mjs",
     "check:contracts": "tsx scripts/check-contract-docs.ts",
-    "check": "npm run typecheck && npm run check:contracts && npm test && npm run build"
+    "sync-contracts": "tsx scripts/sync-contracts.ts",
+    "check:client-contracts": "tsx scripts/sync-contracts.ts --check",
+    "check": "npm run typecheck && npm run check:contracts && npm run check:client-contracts && npm test && npm run build"
   },
   "dependencies": {
     "next": "16.4.0",
