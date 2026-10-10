@@ -2,14 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { POST as passwordRoute } from "../src/app/api/auth/password/route";
 import { SQLITE_CONSTRAINT_FOREIGNKEY, isConstraintError } from "../src/lib/db/core";
-import { DEFAULT_CLUB_ID } from "../src/lib/db/migrations";
+import { demoPassword } from "../src/lib/db/migrations";
 import { ConflictError, ForbiddenError, TooManyAttemptsError, UnauthorizedError, ValidationError } from "../src/lib/errors";
 import { HOLD_MS, maxPendingGuestHolds } from "../src/lib/modules/events";
 import { LOGIN_LOCKOUT_MS, LOGIN_MAX_FAILURES } from "../src/lib/modules/identity";
 import { MAX_PENDING_UNITS_PER_MEMBER } from "../src/lib/modules/merchandise";
 import { DEMO, FIXED_NOW, actorFor, apiRequest, loginCookie, memoryDatabase, receiptFor, withRouteDatabase } from "./helpers";
 import { getDatabase } from "../src/lib/database";
-import { demoPassword } from "../src/lib/db/migrations";
 
 /** Each test here closes one finding from docs/DB-AUDIT.md; the number is in the title. */
 

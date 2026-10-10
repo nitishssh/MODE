@@ -60,7 +60,7 @@ export default function NotFound() {
               </svg>
             )}
           </button>
-          <Link href="/" className="button primary" style={{ minHeight: "36px", padding: "8px 16px" }}>
+          <Link href="/dashboard" className="button primary" style={{ minHeight: "36px", padding: "8px 16px" }}>
             {t("app.workspace")}
           </Link>
         </div>
@@ -92,19 +92,19 @@ export default function NotFound() {
               {t("notFound.jumpKicker")}
             </span>
             <div className="not-found-shortcut-grid">
-              <Link href="/" className="not-found-shortcut-item">
+              <Link href="/dashboard" className="not-found-shortcut-item">
                 <strong>{t("nav.overview")}</strong>
                 <span>{t("notFound.overviewHint")}</span>
               </Link>
-              <Link href="/#members" className="not-found-shortcut-item">
+              <Link href="/legacy#members" className="not-found-shortcut-item">
                 <strong>{t("nav.members")}</strong>
                 <span>{t("notFound.membersHint")}</span>
               </Link>
-              <Link href="/#events" className="not-found-shortcut-item">
+              <Link href="/legacy#events" className="not-found-shortcut-item">
                 <strong>{t("nav.events")}</strong>
                 <span>{t("notFound.eventsHint")}</span>
               </Link>
-              <Link href="/#treasury" className="not-found-shortcut-item">
+              <Link href="/legacy#treasury" className="not-found-shortcut-item">
                 <strong>{t("nav.treasury")}</strong>
                 <span>{t("notFound.treasuryHint")}</span>
               </Link>

@@ -1,0 +1,19 @@
+name: mode-local
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      MODE_DEMO_PASSWORD: ${MODE_DEMO_PASSWORD:?Set a private password for the synthetic demo accounts}
+    volumes:
+      - mode-data:/data
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  mode-data:

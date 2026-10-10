@@ -4,6 +4,7 @@ import { Platform, Linking } from "react-native";
 import type { EventDetails, Ticket } from "../generated/contracts";
 import { useSession } from "../lib/session";
 import { useResource } from "../lib/use-resource";
+import { useEventSelection } from "../lib/use-event-selection";
 import {
   Action,
   AsOf,
@@ -21,8 +22,8 @@ import { Door } from "./door";
 export default function Events() {
   const { user } = useSession();
   const events = useResource<{ events: EventDetails[] }>("/api/events");
-  const [selected, setSelected] = useState<string | null>(null);
-  const event = events.data?.events.find((e) => e.id === selected);
+  const selection = useEventSelection(events.data?.events);
+  const event = selection.event;
   return (
     <Screen title="Events and tickets">
       {user?.permissions.includes("events:write") && (
@@ -30,6 +31,8 @@ export default function Events() {
       )}
       <AsOf time={events.time} refreshing={events.loading} />
       <ErrorNotice error={events.error} />
+      <ErrorNotice error={selection.error} />
+      {selection.error && <Action onPress={() => selection.select(null)}>Clear event selection</Action>}
       <Action onPress={() => void events.reload()}>Refresh availability</Action>
       {events.loading && !events.data && <LoadingRows />}
       {events.data?.events.length === 0 && (
@@ -49,8 +52,8 @@ export default function Events() {
             {money(item.guestPricePaise)}
           </Copy>
           <Action
-            disabled={selected === item.id}
-            onPress={() => setSelected(item.id)}
+            disabled={selection.id === item.id}
+            onPress={() => selection.select(item.id)}
           >
             Select {item.title}
           </Action>

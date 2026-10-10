@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "MODE Student Organization",
     short_name: "MODE",
     description: "A student organization workspace for members, events, tasks, and treasury.",
-    start_url: "/",
+    start_url: "/dashboard",
     scope: "/",
     display: "standalone",
     background_color: "#fdfaf5",

@@ -174,19 +174,27 @@ test("club boundaries isolate archive, dashboard, idempotency keys, outbox and r
 test("v10 databases receive announcement migration and retain legacy archive/reminder rows", () => {
   const raw = new DatabaseSync(":memory:");
   try {
+    raw.exec("PRAGMA foreign_keys = ON");
+    migrate(raw, FIXED_NOW);
+    // Reconstruct the complete released v10 schema. A partial members(id) stub
+    // cannot exercise later migrations that rely on the v2/v9 club/sort columns.
+    const paginationIndexes = ["members_page_idx", "tasks_page_idx", "tasks_assignee_page_idx", "expenses_page_idx", "expenses_owner_page_idx", "expenses_status_page_idx", "transactions_page_idx"];
+    for (const index of paginationIndexes) raw.exec(`DROP INDEX ${index}`);
+    raw.exec("DROP TABLE legacy_ledger_imports");
+    raw.exec("DROP INDEX announcements_request_idx; DROP INDEX announcements_archive_idx; DROP INDEX notifications_announcement_recipient_idx; DROP INDEX outbox_announcement_recipient_idx;");
+    raw.exec("ALTER TABLE notifications DROP COLUMN announcement_id; ALTER TABLE outbox_messages DROP COLUMN announcement_id;");
+    for (const column of ["club_id", "published_by", "idempotency_key", "recipient_count"]) raw.exec(`ALTER TABLE announcements DROP COLUMN ${column}`);
     raw.exec(`
-      PRAGMA foreign_keys = ON;
-      CREATE TABLE clubs (id TEXT PRIMARY KEY);
-      INSERT INTO clubs VALUES ('${DEFAULT_CLUB_ID}');
-      CREATE TABLE members (id TEXT PRIMARY KEY);
-      CREATE TABLE announcements (id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL, published_at TEXT NOT NULL);
       INSERT INTO announcements VALUES ('legacy', 'Old notice', 'Keep this', '2026-10-09T08:00:00.000Z');
-      CREATE TABLE notifications (id TEXT PRIMARY KEY, member_id TEXT, kind TEXT);
-      INSERT INTO notifications VALUES ('reminder', NULL, 'membership_renewal');
-      CREATE TABLE outbox_messages (id TEXT PRIMARY KEY, member_id TEXT, kind TEXT);
-      INSERT INTO outbox_messages VALUES ('reminder', NULL, 'membership_renewal');
       PRAGMA user_version = 10;
     `);
+    const member = raw.prepare("SELECT id, email FROM members WHERE club_id = ? ORDER BY id LIMIT 1").get(DEFAULT_CLUB_ID)!;
+    raw.prepare("INSERT INTO notifications (id, club_id, member_id, kind, title, body, created_at) VALUES ('reminder', ?, ?, 'membership_renewal', 'Renew membership', 'Keep reminder', ?)")
+      .run(DEFAULT_CLUB_ID, member.id, FIXED_NOW.toISOString());
+    raw.prepare("INSERT INTO outbox_messages (id, club_id, member_id, kind, recipient_email, subject, body, status, created_at) VALUES ('reminder', ?, ?, 'membership_renewal', ?, 'Renew membership', 'Keep reminder', 'simulated', ?)")
+      .run(DEFAULT_CLUB_ID, member.id, member.email, FIXED_NOW.toISOString());
+    const counts = () => ["members", "tasks", "expenses", "transactions"].map(table => raw.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n);
+    const beforeCounts = counts();
     migrate(raw, FIXED_NOW);
     migrate(raw, FIXED_NOW);
     assert.equal(raw.prepare("PRAGMA user_version").get()!.user_version, SCHEMA_VERSION);
@@ -195,7 +203,14 @@ test("v10 databases receive announcement migration and retain legacy archive/rem
     assert.equal(legacy.body, "Keep this");
     assert.equal(legacy.recipient_count, 0);
     for (const table of ["notifications", "outbox_messages"]) {
-      assert.equal(raw.prepare(`SELECT announcement_id FROM ${table} WHERE id = 'reminder'`).get()!.announcement_id, null);
+      const reminder = raw.prepare(`SELECT * FROM ${table} WHERE id = 'reminder'`).get()!;
+      assert.equal(reminder.announcement_id, null);
+      assert.equal(reminder.kind, "membership_renewal");
+      assert.equal(reminder.body, "Keep reminder");
+      assert.equal(reminder.member_id, member.id);
     }
+    assert.deepEqual(counts(), beforeCounts);
+    for (const index of paginationIndexes) assert.ok(raw.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(index));
+    assert.deepEqual(raw.prepare("PRAGMA foreign_key_check").all(), []);
   } finally { raw.close(); }
 });

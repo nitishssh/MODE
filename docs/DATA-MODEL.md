@@ -2,7 +2,7 @@
 
 Source snapshot: `a62c6e27724eccfafe54f3d85c9ddf066fb7c033`, schema **11**, 10 October 2026. The column/DDL appendix below was obtained by opening a new isolated database through this snapshot's `openClubDatabase()`, then reading SQLite PRAGMA metadata. It does not inspect or publish the working demo database or live member records.
 
-The complete current DDL is generated into [schema.sql](schema.sql) by `npm run schema:dump`; `npm run check` fails when it is stale. The same command writes the PostgreSQL translation to [schema.postgres.sql](schema.postgres.sql); see [POSTGRESQL.md](POSTGRESQL.md) for the mapping rules, the export/load tooling and the runtime migration plan, and [DB-AUDIT.md](DB-AUDIT.md) for the audited gaps in this schema.
+The current schema is **14**: migration 13 hardens existing tables and migration 14 adds pagination indexes. The complete current DDL is generated into [schema.sql](schema.sql) by `npm run schema:dump`; `npm run check` and `npm run check:all` fail when either generated schema is stale. The same command writes the PostgreSQL translation to [schema.postgres.sql](schema.postgres.sql); see [POSTGRESQL.md](POSTGRESQL.md) for the mapping rules, the export/load tooling and the runtime migration plan, and [DB-AUDIT.md](DB-AUDIT.md) for the audited gaps in this schema.
 
 See [Architecture](CODEBASE.md), [HTTP API](HTTP-API.md), [code reference](CODE-REFERENCE.md) and [setup/backup instructions](DEVELOPMENT.md).
 

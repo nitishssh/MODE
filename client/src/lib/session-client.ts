@@ -52,6 +52,17 @@ function sessionUser(value: unknown): SessionUser {
   return user;
 }
 
+/** Revalidation of the same login must not discard mounted forms or page data. */
+function revalidatedUser(previous: SessionUser | null, next: SessionUser): SessionUser {
+  if (!previous) return next;
+  const sameFields = previous.id === next.id && previous.clubId === next.clubId &&
+    previous.role === next.role && previous.name === next.name && previous.email === next.email;
+  const oldPermissions = [...previous.permissions].sort();
+  const newPermissions = [...next.permissions].sort();
+  return sameFields && oldPermissions.length === newPermissions.length &&
+    oldPermissions.every((permission, index) => permission === newPermissions[index]) ? previous : next;
+}
+
 /** One session generation owns every request. Old responses cannot revive/clear a new login. */
 export class SessionClient {
   private state: SessionState = {
@@ -241,7 +252,7 @@ export class SessionClient {
       }
       const result = await this.request<MeResponse>("/api/auth/me");
       if (generation === this.generation)
-        this.set({ status: "signedIn", user: sessionUser(result.user), error: null });
+        this.set({ status: "signedIn", user: revalidatedUser(this.state.user, sessionUser(result.user)), error: null });
     } catch (error) {
       if (generation === this.generation)
         this.set(this.state.user
