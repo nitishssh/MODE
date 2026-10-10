@@ -124,6 +124,9 @@ test("v9 upgrade preserves extensionless receipts, IDs, ownership, claims and se
     renameSync(join(receipts, receiptId + ".pdf"), join(receipts, receiptId));
     const raw = new DatabaseSync(path);
     // Reconstruct the released v9 format, without replaying divergent migrations.
+    raw.exec("DROP INDEX announcements_request_idx; DROP INDEX announcements_archive_idx; DROP INDEX notifications_announcement_recipient_idx; DROP INDEX outbox_announcement_recipient_idx;");
+    raw.exec("ALTER TABLE notifications DROP COLUMN announcement_id; ALTER TABLE outbox_messages DROP COLUMN announcement_id;");
+    for (const column of ["club_id", "published_by", "idempotency_key", "recipient_count"]) raw.exec("ALTER TABLE announcements DROP COLUMN " + column);
     raw.exec("ALTER TABLE expense_receipts DROP COLUMN storage_name; ALTER TABLE expense_receipts RENAME TO receipts; PRAGMA user_version=9;");
     raw.prepare("UPDATE expenses SET receipt_id = NULL WHERE id = ?").run(claim.id);
     raw.close();

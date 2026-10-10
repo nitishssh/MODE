@@ -143,6 +143,7 @@ export function createDuesModule(ctx: DbContext, identity: IdentityModule) {
       body: text(row.body),
       createdAt: text(row.created_at),
       readAt: nullableText(row.read_at),
+      announcementId: nullableText(row.announcement_id),
     }));
   }
 

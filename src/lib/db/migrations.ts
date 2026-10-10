@@ -20,13 +20,30 @@ const MIGRATIONS: Migration[] = [
   { version: 3, up: addLedgerSourcesAndMemberPasses },
   { version: 4, up: addMembershipDues },
   { version: 6, up: addEventTickets },
-  // v7 is reserved for Nitish's P5 (#8).
+  // Unused historical versions stay skipped; new migrations must exceed released v9.
   { version: 8, up: addMerchandiseOrders },
   { version: 9, up: addWorkspaceFlows },
   { version: 10, up: addReceiptStorageNames },
+  { version: 11, up: addAnnouncementPublication },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
+
+// P4 (#8): preserve the starter archive and reuse the existing notification/outbox tables.
+function addAnnouncementPublication(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE announcements ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
+    ALTER TABLE announcements ADD COLUMN published_by TEXT REFERENCES members(id);
+    ALTER TABLE announcements ADD COLUMN idempotency_key TEXT;
+    ALTER TABLE announcements ADD COLUMN recipient_count INTEGER NOT NULL DEFAULT 0 CHECK (recipient_count >= 0);
+    CREATE UNIQUE INDEX announcements_request_idx ON announcements (club_id, idempotency_key);
+    CREATE INDEX announcements_archive_idx ON announcements (club_id, published_at DESC, id);
+    ALTER TABLE notifications ADD COLUMN announcement_id TEXT REFERENCES announcements(id);
+    ALTER TABLE outbox_messages ADD COLUMN announcement_id TEXT REFERENCES announcements(id);
+    CREATE UNIQUE INDEX notifications_announcement_recipient_idx ON notifications (announcement_id, member_id);
+    CREATE UNIQUE INDEX outbox_announcement_recipient_idx ON outbox_messages (announcement_id, member_id);
+  `);
+}
 
 /** Preserve released receipt files and claim links without filesystem moves. */
 function addReceiptStorageNames(db: DatabaseSync) {
