@@ -21,6 +21,8 @@ const MIGRATIONS: Migration[] = [
   { version: 4, up: addMembershipDues },
   // v5 is reserved for Nitish's P4 (#7). Gaps are fine: migrate() applies every entry above user_version.
   { version: 6, up: addEventTickets },
+  // v7 is reserved for Nitish's P5 (#8).
+  { version: 8, up: addMerchandiseOrders },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -341,4 +343,54 @@ function addEventTickets(db: DatabaseSync) {
     CREATE UNIQUE INDEX tickets_guest_event_live_idx ON tickets (event_id, guest_email)
       WHERE guest_email IS NOT NULL AND status IN ('pending_payment', 'paid');
   `);
+}
+
+// ---------------------------------------------------------------------------
+// v8 — P3 (#6): size variants with their own stock, member orders with 30-minute holds
+// ---------------------------------------------------------------------------
+function addMerchandiseOrders(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE products ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
+    ALTER TABLE products ADD COLUMN description TEXT NOT NULL DEFAULT '';
+    ALTER TABLE products ADD COLUMN member_price_paise INTEGER CHECK (member_price_paise IS NULL OR member_price_paise >= 0);
+    ALTER TABLE products ADD COLUMN active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1));
+    CREATE TABLE product_variants (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      product_id TEXT NOT NULL REFERENCES products(id),
+      size TEXT NOT NULL,
+      stock INTEGER NOT NULL CHECK (stock >= 0),
+      UNIQUE (product_id, size)
+    );
+    CREATE INDEX product_variants_product_idx ON product_variants (product_id);
+    CREATE TABLE merch_orders (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      member_id TEXT NOT NULL REFERENCES members(id),
+      product_id TEXT NOT NULL REFERENCES products(id),
+      variant_id TEXT NOT NULL REFERENCES product_variants(id),
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      unit_price_paise INTEGER NOT NULL CHECK (unit_price_paise >= 0),
+      total_paise INTEGER NOT NULL CHECK (total_paise >= 0),
+      pricing TEXT NOT NULL CHECK (pricing IN ('member', 'standard')),
+      status TEXT NOT NULL CHECK (status IN ('pending_payment', 'paid', 'fulfilled', 'cancelled', 'expired')),
+      hold_expires_at TEXT,
+      paid_at TEXT,
+      payment_reference TEXT,
+      confirmed_by TEXT REFERENCES members(id),
+      fulfilled_at TEXT,
+      fulfilled_by TEXT REFERENCES members(id),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK (status <> 'pending_payment' OR hold_expires_at IS NOT NULL)
+    );
+    CREATE INDEX merch_orders_status_hold_idx ON merch_orders (status, hold_expires_at);
+    CREATE INDEX merch_orders_variant_status_idx ON merch_orders (variant_id, status, member_id);
+    CREATE INDEX merch_orders_member_idx ON merch_orders (member_id, created_at);
+  `);
+  // The starter products carry one aggregate stock; give each a single "ONE SIZE" variant holding it.
+  const insert = db.prepare("INSERT INTO product_variants (id, club_id, product_id, size, stock) VALUES (?, ?, ?, 'ONE SIZE', ?)");
+  for (const row of db.prepare("SELECT id, club_id, stock FROM products").all() as Array<{ id: string; club_id: string; stock: number }>) {
+    insert.run(`${row.id}-one-size`, row.club_id, row.id, row.stock);
+  }
 }

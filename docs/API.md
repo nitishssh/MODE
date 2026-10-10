@@ -128,6 +128,31 @@ Schema v6 (v5 is reserved for Nitish's P4). `events` gains `clubId`, `status` (`
   Admission depends on the paid ticket, not on membership. Check-in is one conditional `UPDATE … WHERE status = 'paid' AND checked_in_at IS NULL`, so a repeat scan cannot admit twice.
 - **Report**: `{event, tickets:{pendingPayment,paid,cancelled,expired}, ticketsSold, attendance, realizedRevenuePaise}` where revenue is the sum of `ticket` ledger rows for the event. The starter events' seeded `registered` counts are pre-system registrations and are not tickets.
 
+## Merchandise orders, stock holds and fulfilment (#6, P3)
+
+Schema v8 (v7 is reserved for Nitish's P5). `products` gains `clubId`, `description`, nullable `memberPricePaise` and `active`; `product_variants` holds one stock figure per size (the starter products get a single `ONE SIZE` variant with their seeded stock); `merch_orders` holds member orders with a 30-minute hold. `products.stock` is kept equal to the sum of its sizes for the dashboard.
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/products` | public (organizers also see retired) | 200 `{products:ProductDetails[]}` | |
+| POST | `/api/products` `{name,description?,pricePaise,memberPricePaise?,variants:[{size,stock}]}` | `products:write` | 201 `{product}` | 400 (incl. duplicate size); 401; 403 |
+| GET | `/api/products/{id}` | public | 200 `{product}` | 404 |
+| PATCH | `/api/products/{id}` `{active}` | `products:write` | 200 `{product}` | 400; 401; 403; 404 |
+| PATCH | `/api/products/variants/{id}` `{stock}` | `products:write` | 200 `{product}` | 400; 401; 403; 404 |
+| POST | `/api/orders` `{variantId, quantity?=1 (max 2)}` | `orders:create` (signed-in member) | 201 `{order:MerchOrder}` | 400; 401; 403; 404; 409 `out_of_stock` · `pending_limit` · `product_inactive` |
+| GET | `/api/orders/mine` | signed in | 200 `{orders}` | 401 |
+| GET | `/api/orders?status=` | `payments:confirm` or `orders:fulfil` | 200 `{orders}` (`pending_payment` = confirmation desk, soonest expiry first) | 400; 401; 403 |
+| POST | `/api/orders/{id}/confirm` `{reference}` | `payments:confirm` | 201 `{order,created:true}` · 200 `{order,created:false}` already paid or fulfilled | 400; 401; 403; 404; 409 `hold_expired` ("Hold expired, reorder") |
+| POST | `/api/orders/{id}/cancel` | owner of a pending order, or `payments:confirm` | 200 `{order}` (repeat is a no-op) | 401; 403; 404; 409 `hold_expired` · `refunds_out_of_scope` |
+| POST | `/api/orders/{id}/fulfil` | `orders:fulfil` | 200 `{order}` (repeat is a no-op) | 401; 403; 404; 409 `order_not_paid` |
+
+- **Identity**: ordering requires a session; guest orders are out of scope. A member may hold at most **two unpaid units per size** at a time (`pending_limit`); cancelling or paying frees the allowance.
+- **Stock** is reserved with a conditional `UPDATE product_variants SET stock = stock - ? WHERE stock >= ?` inside `BEGIN IMMEDIATE`; zero stock and concurrent overselling both answer `409 out_of_stock`. `ProductVariant.stock` is therefore "available right now", holds already subtracted.
+- **Pricing**: if the product has `memberPricePaise` and the member is `active` by `membershipState` at order time, `pricing:"member"` at that unit price; otherwise `standard`. The price is stored on the order and never recomputed. Zero-total orders are `paid` at creation and post no ledger row.
+- **Holds**: `holdExpiresAt` is 30 minutes after creation. `releaseExpiredHolds()` runs inside the transaction before ordering, confirmation, cancellation, stock edits and every order list; it marks lapsed orders `expired` and returns their units exactly once (index `(status, hold_expires_at)`).
+- **States**: `pending_payment → paid → fulfilled`, or `pending_payment → cancelled`, or `pending_payment → expired` by the clock. Confirmation releases expired holds, then one conditional `UPDATE … WHERE status = 'pending_payment'`, then exactly one `merch_order` income row via `postLedgerEntry` with `recordedBy`. Expired or cancelled orders cannot be revived and never produce income. Paid orders cannot be cancelled (refunds are out of scope).
+- **Reconciliation**: `SOURCE_RESOLVERS.merch_order` resolves paid and fulfilled orders; `tests/ledger-reconciliation.test.ts` covers paid, held, expired and cancelled orders.
+
 ## Starter routes
 
 | Method | Path | Permission | Success | Failure |
