@@ -8,7 +8,7 @@
 4. Read `GET /api/members` with that session, restart the server, and read again: the new unpaid member remains present.
 5. Submit the same email again through the authorized API: expect 409 without adding another record.
 6. Check invalid name/email handling through the authorized API. Navigate all six web areas and confirm unfinished flows are marked as previews.
-7. Visit `/api/health`; it returns 200 and reports SQLite schema version 7.
+7. Visit `/api/health`; it returns 200 and reports SQLite schema version 9.
 8. Run `npm run typecheck`, `npm test`, `npm run build`.
 9. Set `MODE_DEMO_PASSWORD` before seeding a new production database, then run `npm start`. Public reads work; member creation requires an organizer/admin session. Verify missing authentication returns 401, insufficient permissions return 403, and cross-origin cookie writes return 403. Production ignores `MODE_CORS_ORIGINS`.
 
@@ -44,3 +44,12 @@ Target coding completion: 11 October 2026 at 10:00 AM IST. Confirm the organizer
 5. Restart with the same SQLITE_PATH. Confirm members, tasks, receipt bytes and expense states persist. Repeat a payment request with the same reference to confirm no duplicate outflow.
 
 The default development password for these synthetic accounts is mode-demo-2026; use MODE_DEMO_PASSWORD for a private production-mode demo. The local regression suite verifies migration, authorization, persistence and payment retry behavior. A live hosted deployment and physical-device installation still require separate verification.
+
+## Treasury export and event reports
+
+1. Sign in as treasurer@example.com after recording an external reimbursement. Open Treasury and compare the paid expense, payment reference and remaining balance.
+2. Open `/api/ledger/export` in the same authenticated browser. Save the CSV and check that each confirmed payment has one row. Submitted, rejected and approved-but-unpaid expenses must not reduce the ledger balance. Text beginning with spreadsheet formula characters is escaped.
+3. As an organizer or administrator, request `GET /api/events/{id}/report` for an event in the same club. Replace `{id}` with its actual ID. Compare ticket counts and realized revenue with confirmed bookings, and compare the added task counts with the task board. Fundraiser income comes from the same event-attributed ledger.
+4. Repeat the export without signing in and expect 401. A signed-in ordinary member receives 403. Reports for another club are unavailable.
+
+For LAN setup and home-screen limitations, follow [the README](../README.md#lan-and-home-screen-access). This walkthrough describes checks to perform; it is not a claim that hosted or physical-device checks have passed.

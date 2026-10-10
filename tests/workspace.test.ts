@@ -59,6 +59,7 @@ test("tasks enforce club boundaries, assignment permissions and normalized deadl
     assert.equal(db.getLedgerEntries(other).length,0);
     assert.equal(db.getDashboard(other).transactions.length,0);
     assert.equal(db.getDashboard(other).events.length,0);
+    assert.deepEqual(db.getDashboard().tasks, [], "anonymous dashboard must not disclose workspace tasks");
   } finally {db.close();}
 });
 
@@ -113,27 +114,40 @@ test("receipt upload is owned by session and private across accounts",async()=>{
   });
 });
 
-test("schema v6 upgrades preserve members, passes, sessions and opening balances",()=>{
+test("schema v8 upgrades preserve members, passes, sessions, merchandise and opening balances",()=>{
   const directory=mkdtempSync(join(tmpdir(),"mode-migration-"));
   const path=join(directory,"test.sqlite");
+  let db: ReturnType<typeof openClubDatabase> | undefined;
   try{
-    let db=openClubDatabase(path,{now:()=>FIXED_NOW});
+    db=openClubDatabase(path,{now:()=>FIXED_NOW});
     const session=db.login({email:DEMO.admin,password:"mode-demo-2026"});
+    const clubId=db.createClub("Migration club");
+    db.createMemberWithCredentials({name:"Migration lead",email:"migration@example.com",password:"migration-123",role:"admin",clubId});
+    const other=actorFor(db,"migration@example.com","migration-123");
+    const product=db.merchandise.createProduct(other,{name:"Migration cap",pricePaise:2345,variants:[{size:"M",stock:2}]});
+    const order=db.merchandise.createOrder(other,{variantId:product.variants[0].id});
+    db.merchandise.confirmOrder(other,order.id,{reference:"MIGRATED-MERCH"});
     const pass=db.getPass(session.member.id),balance=db.ledger.balance(),count=db.getMembers().length;
     db.close();
-    // Reconstruct the released v6 shape by removing only v7's additive schema.
+    // Reconstruct the released v8 shape by removing only v9's additive schema.
     const raw=new DatabaseSync(path);
     raw.exec("DROP TABLE expenses; DROP TABLE receipts; DROP INDEX tasks_club_idx;");
     for(const column of ["club_id","description","assignee_id","event_id","due_at","created_at"])raw.exec("ALTER TABLE tasks DROP COLUMN "+column);
     for(const column of ["club_id","event_id"])raw.exec("ALTER TABLE transactions DROP COLUMN "+column);
-    raw.exec("ALTER TABLE events DROP COLUMN fundraiser_goal_paise; PRAGMA user_version=6;");raw.close();
+    raw.exec("ALTER TABLE events DROP COLUMN fundraiser_goal_paise; PRAGMA user_version=8;");raw.close();
     db=openClubDatabase(path,{now:()=>FIXED_NOW});
-    assert.equal(db.health().schemaVersion,7);assert.equal(db.getMembers().length,count);
+    assert.equal(db.health().schemaVersion,9);assert.equal(db.getMembers().length,count);
     assert.equal(db.ledger.balance(),balance);assert.deepEqual(db.getPass(session.member.id),pass);
     assert.equal(db.getActor(session.token)?.memberId,session.member.id);
     assert.equal(db.getTasks(db.getActor(session.token)!).length,3);
+    assert.equal(db.merchandise.listProducts(clubId).length,1);
+    assert.equal(db.merchandise.requireOrder(clubId,order.id).status,"paid");
+    assert.equal(db.getLedgerSummary(other).balancePaise,2345);
+    assert.equal(db.getLedgerEntries(other)[0].reference,"MIGRATED-MERCH");
+    assert.equal(db.getLedgerSummary(db.getActor(session.token)!).balancePaise,185000);
+    assert.deepEqual(db.ledger.reconcile().orphans,[]);
     db.close();
-  }finally{rmSync(directory,{recursive:true,force:true});}
+  }finally{db?.close();rmSync(directory,{recursive:true,force:true});}
 });
 
 
@@ -170,6 +184,7 @@ test("expense rejection and CSV export preserve decisions and escape spreadsheet
     const output=await (await csv(apiRequest("/api/ledger/export",{cookie:reviewer}))).text();
     assert.ok(output.includes('"\'=SUM(1,2) ""test"""'));
     assert.ok(output.includes("REF-CSV"));assert.ok(output.includes("-1.75"));
+    assert.ok(output.includes(",REF-CSV,-1.75"), "generated amounts remain numeric CSV cells");
   });
 });
 

@@ -102,7 +102,7 @@ Schema v2 seeds four synthetic officer accounts in the sample club: `lead@exampl
 
 ## Event tickets, holds and the door (#5, P2)
 
-Ticketing was introduced in schema v6; reserved v5 remains skipped and workspace schema v7 follows v6. `events` gains `clubId`, `status` (`draft|published|cancelled`) and `description`; `tickets` holds member and guest bookings with a 30-minute hold, unique QR token and 10-character Crockford short code (same bounded collision retry as member passes, checked against both tables).
+Ticketing was introduced in schema v6; reserved v5 remains skipped and workspace schema v9 follows merchandise v8. `events` gains `clubId`, `status` (`draft|published|cancelled`) and `description`; `tickets` holds member and guest bookings with a 30-minute hold, unique QR token and 10-character Crockford short code (same bounded collision retry as member passes, checked against both tables).
 
 | Method | Path | Permission | Success | Failure |
 |---|---|---|---|---|
@@ -139,6 +139,31 @@ Ticketing was introduced in schema v6; reserved v5 remains skipped and workspace
 
   Admission depends on the paid ticket, not on membership. Check-in is one conditional `UPDATE … WHERE status = 'paid' AND checked_in_at IS NULL`, so a repeat scan cannot admit twice.
 - **Report**: `{event, tickets:{pendingPayment,paid,cancelled,expired}, ticketsSold, attendance, realizedRevenuePaise}` where revenue is the sum of `ticket` ledger rows for the event. The starter events' seeded `registered` counts are pre-system registrations and are not tickets.
+
+## Merchandise orders, stock holds and fulfilment (#6, P3)
+
+Schema v8 (v7 is reserved for Nitish's P5). `products` gains `clubId`, `description`, nullable `memberPricePaise` and `active`; `product_variants` holds one stock figure per size (the starter products get a single `ONE SIZE` variant with their seeded stock); `merch_orders` holds member orders with a 30-minute hold. `products.stock` is kept equal to the sum of its sizes for the dashboard.
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/products` | public (organizers also see retired) | 200 `{products:ProductDetails[]}` | |
+| POST | `/api/products` `{name,description?,pricePaise,memberPricePaise?,variants:[{size,stock}]}` | `products:write` | 201 `{product}` | 400 (incl. duplicate size); 401; 403 |
+| GET | `/api/products/{id}` | public | 200 `{product}` | 404 |
+| PATCH | `/api/products/{id}` `{active}` | `products:write` | 200 `{product}` | 400; 401; 403; 404 |
+| PATCH | `/api/products/variants/{id}` `{stock}` | `products:write` | 200 `{product}` | 400; 401; 403; 404 |
+| POST | `/api/orders` `{variantId, quantity?=1 (max 2)}` | `orders:create` (signed-in member) | 201 `{order:MerchOrder}` | 400; 401; 403; 404; 409 `out_of_stock` · `pending_limit` · `product_inactive` |
+| GET | `/api/orders/mine` | signed in | 200 `{orders}` | 401 |
+| GET | `/api/orders?status=` | `payments:confirm` or `orders:fulfil` | 200 `{orders}` (`pending_payment` = confirmation desk, soonest expiry first) | 400; 401; 403 |
+| POST | `/api/orders/{id}/confirm` `{reference}` | `payments:confirm` | 201 `{order,created:true}` · 200 `{order,created:false}` already paid or fulfilled | 400; 401; 403; 404; 409 `hold_expired` ("Hold expired, reorder") |
+| POST | `/api/orders/{id}/cancel` | owner of a pending order, or `payments:confirm` | 200 `{order}` (repeat is a no-op) | 401; 403; 404; 409 `hold_expired` · `refunds_out_of_scope` |
+| POST | `/api/orders/{id}/fulfil` | `orders:fulfil` | 200 `{order}` (repeat is a no-op) | 401; 403; 404; 409 `order_not_paid` |
+
+- **Identity**: ordering requires a session; guest orders are out of scope. A member may hold at most **two unpaid units per size** at a time (`pending_limit`); cancelling or paying frees the allowance.
+- **Stock** is reserved with a conditional `UPDATE product_variants SET stock = stock - ? WHERE stock >= ?` inside `BEGIN IMMEDIATE`; zero stock and concurrent overselling both answer `409 out_of_stock`. `ProductVariant.stock` is therefore "available right now", holds already subtracted.
+- **Pricing**: if the product has `memberPricePaise` and the member is `active` by `membershipState` at order time, `pricing:"member"` at that unit price; otherwise `standard`. The price is stored on the order and never recomputed. Zero-total orders are `paid` at creation and post no ledger row.
+- **Holds**: `holdExpiresAt` is 30 minutes after creation. `releaseExpiredHolds()` runs inside the transaction before ordering, confirmation, cancellation, stock edits and every order list; it marks lapsed orders `expired` and returns their units exactly once (index `(status, hold_expires_at)`).
+- **States**: `pending_payment → paid → fulfilled`, or `pending_payment → cancelled`, or `pending_payment → expired` by the clock. Confirmation releases expired holds, then one conditional `UPDATE … WHERE status = 'pending_payment'`, then exactly one `merch_order` income row via `postLedgerEntry` with `recordedBy`. Expired or cancelled orders cannot be revived and never produce income. Paid orders cannot be cancelled (refunds are out of scope).
+- **Reconciliation**: `SOURCE_RESOLVERS.merch_order` resolves paid and fulfilled orders; `tests/ledger-reconciliation.test.ts` covers paid, held, expired and cancelled orders.
 
 ## Starter routes
 
@@ -180,7 +205,7 @@ Payment and notification adapters must expose pending, succeeded and failed stat
 
 `MODE_DEMO_NOW=<ISO timestamp>` freezes the server clock so expiry, reminders and deadlines can be demonstrated deterministically. Tests use an injected clock instead of this variable.
 
-## Tasks, expenses and receipts (schema v7)
+## Tasks, expenses and receipts (schema v9)
 
 All endpoints below require a session. Cookie mutations also enforce same-origin requests; valid bearer sessions retain the native authentication contract.
 Identity and club scope come from the session, never from request-body member IDs.
@@ -211,9 +236,9 @@ The existing `transactions` ledger remains the single source of balances, includ
 
 Receipts accept JPEG, PNG, WebP or PDF with checked signatures, at most 2 MiB. Uploads use a multipart field named `file`; oversized files return 413 and unsupported signatures return 415. Files live in the receipts directory beside SQLITE_PATH; failed database inserts remove their new file. Missing files return 404. Back up SQLite and this directory together.
 
-Errors use 400 for invalid bodies, 401 for absent/expired sessions, 403 for role/ownership/origin failures, 404 for missing or foreign-club records, and 409 for invalid transitions. Schema v7 upgrades the released v1–v6 history without replacing existing members, sessions, passes or opening balances. Databases made by the earlier unmerged PR's conflicting schema are not a supported migration source.
+Errors use 400 for invalid bodies, 401 for absent/expired sessions, 403 for role/ownership/origin failures, 404 for missing or foreign-club records, and 409 for invalid transitions. Schema v9 upgrades the released v1–v8 history without replacing existing members, sessions, passes or opening balances. Databases made by the earlier unmerged PR's conflicting schema are not a supported migration source.
 
-The event report preserves ticket counts, attendance and realized revenue, and adds fundraiser progress and task counts. Ticket receipts and dues remain in the same ledger; the new migration backfills their club/event metadata. Reserved schema gaps remain skipped; v7 follows the already released v6.
+The event report preserves ticket counts, attendance and realized revenue, and adds fundraiser progress and task counts. Ticket receipts, dues and merchandise income remain in the same ledger; the new migration backfills their club metadata and ticket event attribution. Treasury entries retain their external payment references. Reserved schema gaps remain skipped; v9 follows the already released v8.
 
 EXPO_PUBLIC_API_URL remains configuration for a future Expo client. Browser sign-in and native bearer authentication exist, but the Expo UI is not included. MODE_CORS_ORIGINS follows the development-only policy above.
 

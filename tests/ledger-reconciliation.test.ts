@@ -3,6 +3,27 @@ import { test } from "node:test";
 import { openClubDatabase } from "../src/lib/database";
 import { ConflictError, ValidationError } from "../src/lib/errors";
 import { SOURCE_RESOLVERS } from "../src/lib/modules/ledger";
+
+test("merchandise income stays in its club ledger with its payment reference", () => {
+  const db = openClubDatabase(":memory:", { now: fixedNow });
+  try {
+    const clubId = db.createClub("Synthetic other club");
+    db.createMemberWithCredentials({ name: "Other lead", email: "ledger-other@example.com", password: "other-test-123", role: "admin", clubId });
+    const actor = db.getActor(db.login({ email: "ledger-other@example.com", password: "other-test-123" }).token)!;
+    const sample = db.getActor(db.login({ email: "lead@example.com", password: "mode-demo-2026" }).token)!;
+    const sampleBalance = db.getLedgerSummary(sample).balancePaise;
+    const product = db.merchandise.createProduct(actor, { name: "Other club cap", pricePaise: 2345, variants: [{ size: "M", stock: 2 }] });
+    const order = db.merchandise.createOrder(actor, { variantId: product.variants[0].id });
+    db.merchandise.confirmOrder(actor, order.id, { reference: "OTHER-MERCH-REF" });
+    const entries = db.getLedgerEntries(actor);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].reference, "OTHER-MERCH-REF");
+    assert.equal(db.getLedgerSummary(actor).balancePaise, 2345);
+    assert.equal(db.getLedgerSummary(sample).balancePaise, sampleBalance);
+    assert.ok(!db.getDashboard(sample).products.some(p => p.id === product.id));
+    assert.deepEqual(db.ledger.reconcile().orphans, []);
+  } finally { db.close(); }
+});
 import { DEMO, actorFor, memoryDatabase } from "./helpers";
 
 const fixedNow = () => new Date("2026-10-10T08:00:00.000Z");
@@ -101,6 +122,37 @@ test("tickets (#5): a confirmed ticket posts one `ticket` income row that reconc
     assert.deepEqual(db.ledger.list().filter((e) => e.sourceType === "ticket").map((e) => e.sourceId), [paid.id]);
     assert.equal(db.events.eventReport(organizer, event.id).realizedRevenuePaise, 5000);
     assert.equal(db.events.myTickets(actorFor(db, "expired@example.com")).find((t) => t.id === held.id)?.status, "expired");
+  } finally {
+    db.close();
+  }
+});
+
+test("merchandise (#6): a confirmed order posts one `merch_order` income row that reconciles; expired and cancelled holds post nothing", () => {
+  const { db, clock } = memoryDatabase();
+  try {
+    const organizer = actorFor(db, DEMO.organizer);
+    const product = db.merchandise.createProduct(organizer, { name: "Reconcile tee", pricePaise: 34900, memberPricePaise: 29900, variants: [{ size: "M", stock: 4 }] });
+    const variantId = product.variants[0].id;
+    const before = db.ledger.reconcile();
+    const paid = db.merchandise.createOrder(actorFor(db, "active@example.com"), { variantId, quantity: 2 });
+    const held = db.merchandise.createOrder(actorFor(db, "expired@example.com"), { variantId });
+    const cancelled = db.merchandise.createOrder(actorFor(db, "treasurer@example.com"), { variantId });
+    db.merchandise.confirmOrder(organizer, paid.id, { reference: "REC-M1" });
+    db.merchandise.confirmOrder(organizer, paid.id, { reference: "REC-M1" });
+    db.merchandise.fulfilOrder(organizer, paid.id);
+    db.merchandise.cancelOrder(organizer, cancelled.id);
+    clock.now = new Date(clock.now.getTime() + 31 * 60_000);
+    db.merchandise.listOrders(organizer, "pending_payment"); // releases `held`
+
+    const after = db.ledger.reconcile();
+    assert.equal(after.entries, before.entries + 1);
+    assert.equal(after.balancePaise, before.balancePaise + 59800);
+    assert.deepEqual(after.orphans, []);
+    assert.deepEqual(after.duplicates, []);
+    assert.equal(after.unsourced, 0);
+    assert.deepEqual(db.ledger.list().filter((e) => e.sourceType === "merch_order").map((e) => e.sourceId), [paid.id]);
+    assert.equal(db.merchandise.requireProduct(organizer.clubId, product.id).stock, 2, "held and cancelled units are back; paid units are gone");
+    assert.equal(db.merchandise.myOrders(actorFor(db, "expired@example.com")).find((o) => o.id === held.id)?.status, "expired");
   } finally {
     db.close();
   }
