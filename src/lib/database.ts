@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { transaction, type DbContext } from "./db/core";
 import { SCHEMA_VERSION, migrate } from "./db/migrations";
+import { createWorkspaceModule } from "./modules/workspace";
 import { createDashboardModule } from "./modules/dashboard";
 import { createDuesModule } from "./modules/dues";
 import { createEventsModule } from "./modules/events";
@@ -14,7 +15,7 @@ export { DuplicateMemberError } from "./errors";
 export { SCHEMA_VERSION };
 
 /** Local store. This file must only be imported by server code. */
-export function openClubDatabase(filename: string, options: { now?: () => Date } = {}) {
+export function openClubDatabase(filename: string, options: { now?: () => Date; receiptsDir?: string } = {}) {
   const now = options.now ?? (() => new Date());
   const path = filename === ":memory:" ? filename : resolve(filename);
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -40,6 +41,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date }
   return {
     ...identity,
     ...dashboard,
+    ...createWorkspaceModule(ctx, identity, options.receiptsDir ?? resolve(dirname(path === ":memory:" ? ".data/mode.sqlite" : path), "receipts")),
     dues,
     events,
     merchandise,

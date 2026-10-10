@@ -259,6 +259,7 @@ export function createMerchandiseModule(ctx: DbContext, identity: IdentityModule
         description: `Merchandise · ${before.productName} (${before.size}) × ${before.quantity} · ${before.memberName}`,
         source: { type: "merch_order", id: orderId },
         recordedBy: actor.memberId,
+        clubId: actor.clubId,
       });
       identity.recordAudit(actor, "order.paid", "merch_order", orderId, { reference: data.reference, amountPaise: before.totalPaise });
       return { order: requireOrder(actor.clubId, orderId), created: true };

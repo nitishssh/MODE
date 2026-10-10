@@ -1,17 +1,8 @@
 import { NextResponse } from "next/server";
+import { isAllowedCorsOrigin as isAllowedOrigin } from "@/lib/cors";
 
 const allowedMethods = ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"];
 const allowedHeaders = ["content-type", "authorization"];
-
-function isAllowedOrigin(origin: string | null): origin is string {
-  if (!origin) return false;
-  // Only serialized HTTP(S) origins are accepted: no wildcards, paths or null.
-  try {
-    const url = new URL(origin);
-    if (!["http:", "https:"].includes(url.protocol) || url.origin !== origin) return false;
-  } catch { return false; }
-  return (process.env.MODE_CORS_ORIGINS ?? "").split(",").some(value => value.trim() === origin);
-}
 
 /** Development browser access only. Authentication and CSRF remain in the routes. */
 export function proxy(request: Request) {

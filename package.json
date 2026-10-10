@@ -5,11 +5,14 @@
   "engines": { "node": ">=22.13.0 <23 || >=24.0.0" },
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
+    "dev:lan": "next dev --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
+    "start:lan": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "check": "npm run typecheck && npm test && npm run build"
+    "check:contracts": "tsx scripts/check-contract-docs.ts",
+    "check": "npm run typecheck && npm run check:contracts && npm test && npm run build"
   },
   "dependencies": {
     "next": "16.4.0",

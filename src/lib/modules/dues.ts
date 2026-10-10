@@ -73,6 +73,7 @@ export function createDuesModule(ctx: DbContext, identity: IdentityModule) {
         description: `Membership dues · ${member.name} · valid to ${newExpiresOn}`,
         source: { type: "dues_payment", id },
         recordedBy: actor.memberId,
+        clubId: actor.clubId,
       });
       identity.recordAudit(actor, "dues.recorded", "dues_payment", id, { memberId: member.id, reference: data.reference, amountPaise, newExpiresOn });
       const payment = mapPayment(db.prepare("SELECT * FROM dues_payments WHERE id = ?").get(id) as Row);

@@ -306,6 +306,8 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
         description: `Ticket · ${event.title} · ${before.holderName}`,
         source: { type: "ticket", id: ticketId },
         recordedBy: actor.memberId,
+        clubId: actor.clubId,
+        eventId: before.eventId,
       });
       identity.recordAudit(actor, "ticket.paid", "ticket", ticketId, { reference: data.reference, amountPaise: before.pricePaise });
       return { ticket: mapTicket(requireTicketRow(actor.clubId, ticketId), { officer: true }), created: true };

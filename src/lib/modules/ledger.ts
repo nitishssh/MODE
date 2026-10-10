@@ -5,6 +5,8 @@ import { SQLITE_CONSTRAINT_UNIQUE, int, isConstraintError, nullableText, text, t
 import { ConflictError, ValidationError } from "../errors";
 
 export interface LedgerEntryInput {
+  clubId?: string;
+  eventId?: string | null;
   kind: "income" | "expense";
   /** Positive integer paise. */
   amountPaise: number;
@@ -42,9 +44,9 @@ export function postLedgerEntry(ctx: DbContext, input: LedgerEntryInput): Ledger
   try {
     ctx.db
       .prepare(
-        "INSERT INTO transactions (id, description, kind, amount_paise, occurred_at, source_type, source_id, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO transactions (id, description, kind, amount_paise, occurred_at, source_type, source_id, recorded_by, club_id, event_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'club-sample'), ?)",
       )
-      .run(id, input.description, input.kind, input.amountPaise, ctx.now().toISOString(), input.source.type, input.source.id, input.recordedBy);
+      .run(id, input.description, input.kind, input.amountPaise, ctx.now().toISOString(), input.source.type, input.source.id, input.recordedBy, input.clubId ?? null, input.eventId ?? null);
   } catch (error) {
     if (isConstraintError(error, SQLITE_CONSTRAINT_UNIQUE)) {
       throw new ConflictError(`${input.source.type} ${input.source.id} has already been posted to the ledger.`, "duplicate_ledger_source");
@@ -69,6 +71,7 @@ export function ledgerBalance(db: DatabaseSync): number {
 export type SourceResolver = (db: DatabaseSync, sourceId: string) => boolean;
 
 export const SOURCE_RESOLVERS: Record<string, SourceResolver> = {
+  expense: (db, id) => db.prepare("SELECT 1 FROM expenses WHERE id = ? AND status = 'paid'").get(id) !== undefined,
   // Opening balances are their own source: the row documents a pre-system fact.
   opening_balance: (db, sourceId) => db.prepare("SELECT 1 FROM transactions WHERE id = ? AND source_type = 'opening_balance'").get(sourceId) !== undefined,
 };
