@@ -101,6 +101,31 @@ Record-dues request:
 
 Outbox statuses are `pending`, `previewed`, `sent`, `failed`. The local transport is `preview` (`MODE_MAIL_TRANSPORT` unset): dispatch marks messages `previewed`, never `sent`. A real transport must be configured before anything is reported as sent; until then dispatch with `MODE_MAIL_TRANSPORT=smtp` answers `501 mail_transport_unavailable`. Recipient addresses are masked in listings and retries can never duplicate a message because each logical send has one row.
 
+## Event booking, member pricing and check-in (#5)
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/events` | public (organizers also see drafts) | 200 `{events:EventDetails[]}` | 500 |
+| POST | `/api/events` | `events:write` | 201 `{event}` | 400; 401; 403 |
+| GET | `/api/events/{id}` | public for published | 200 `{event}` | 404 |
+| PATCH | `/api/events/{id}` | `events:write` | 200 `{event}` | 400 capacity below held seats; 401; 403; 404 |
+| POST | `/api/events/{id}/bookings` | `bookings:create` (any member) | 201 `{booking}` | 401; 404; 409 `sold_out` · `duplicate_booking` · `event_not_open` · `event_started` |
+| GET | `/api/bookings` | signed in | 200 `{bookings:Booking[]}` | 401 |
+| POST | `/api/bookings/{id}/confirm` | `payments:confirm` | 201 ticket issued · 200 same reference replayed `{booking,created}` | 400 wrong amount; 401; 403; 404; 409 `reservation_not_active` · `already_confirmed` · `payment_reference_reused` |
+| POST | `/api/bookings/{id}/cancel` | owner or `events:write` | 200 `{booking}` | 401; 403; 404; 409 expired or already used |
+| POST | `/api/tickets/{code}/check-in` | `tickets:check_in` | 200 `{booking,attendee,checkedInAt}` | 401; 403; 404 unknown code; 409 `ticket_not_valid` · `already_checked_in` |
+| GET | `/api/events/{id}/report` | `events:report` | 200 `{report:EventReport}` | 401; 403; 404 |
+
+Event body: `{title, description?, startsAt (ISO), venue, capacity, memberPricePaise, guestPricePaise, status?}`. Confirm body: `{paymentReference, amountPaise}`.
+
+- **Pricing** is decided by the server at booking time from the shared membership rule: active paid members pay `memberPricePaise`, everyone else (including expired members) pays `guestPricePaise`. The client never sends a price.
+- **Capacity** is reserved transactionally: `UPDATE events SET registered = registered + 1 WHERE registered < capacity` inside an immediate transaction, backed by the `registered <= capacity` CHECK constraint. Concurrent requests for the last seat get exactly one `201` and the rest `409 sold_out`.
+- **Reservation hold**: priced seats are `reserved` for 30 minutes (`reservedUntil`). Lapsed holds become `expired` and free their seat on the next booking, confirmation or report. Free seats are `confirmed` immediately.
+- **Tickets** (`ticketCode`, format `MODE-XXXX-XXXX`) exist only on `confirmed` bookings. A payment screenshot is not verification; an officer with `payments:confirm` records the reference. The reference is unique per club; replaying it returns the same ticket, reusing it on another booking is rejected, and the ledger receives exactly one `ticket` income row per payment, tagged with the event.
+- **Check-in** records one row per booking (primary key), so a second scan is `409 already_checked_in` with the original time. Cancelled, reserved and expired tickets are `409 ticket_not_valid`; unknown codes are `404`. Used tickets cannot be cancelled.
+- **Reports** return held/confirmed/cancelled/expired counts, check-ins, event income from the ledger and the confirmed attendee list with check-in time.
+- Paid cancellations release the seat and are audited as paid; refunds are a treasury decision outside this ticket.
+
 ## Starter routes
 
 | Method | Path | Permission | Success | Failure |
@@ -121,7 +146,7 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 - Sessions store only a SHA-256 hash of the cookie token with `expires_at`/`revoked_at`.
 - `audit_events` records who changed what (`member.created`, `member.role_changed`, `member.password_set`, `membership.recorded`, and future finance decisions).
 - `payments(club_id, reference)` is UNIQUE; `transactions(source_type, source_id)` is UNIQUE so each originating payment can post to the ledger only once.
-- A sample event's `registered` count cannot exceed capacity. The starter has no booking operation yet.
+- `events.registered` counts held seats (reserved + confirmed) and cannot exceed capacity; `check_ins.booking_id` is the primary key so a ticket can be used once.
 - Ledger amounts are positive integer paise; `kind` determines income versus expense. Balance is calculated on the server.
 - Products are aggregate read-only examples until the merchandise ticket introduces size variants.
 
@@ -129,7 +154,6 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 
 These are design constraints for future tickets, not implemented endpoints:
 
-- Ticketing: reserve capacity atomically; issue tickets against confirmed states; reject duplicate check-in in #5.
 - Merchandise: use per-size stock and idempotent order/payment confirmation in #6.
 - Treasury: distinguish requested, approved and paid reimbursements; trace each source transaction once in #7.
 - Announcements: distinguish draft, publication and notification delivery; local outbox is not actual delivery in #8.
