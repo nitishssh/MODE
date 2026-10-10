@@ -48,6 +48,11 @@ test("tasks enforce club boundaries, assignment permissions and normalized deadl
     assert.equal(task.dueAt,"2026-10-10T08:30:00.000Z"); assert.equal(task.overdue,false);
     assert.equal(db.getTasks(volunteer,{mine:true}).some(t=>t.id===task.id),true);
     assert.throws(()=>db.updateTaskStatus(member,task.id,"done"),ForbiddenError);
+    for (const otherTask of [db.createTask(organizer,{title:"Member task",assigneeId:member.memberId}), db.createTask(organizer,{title:"Unassigned task"})]) {
+      assert.throws(()=>db.updateTaskStatus(volunteer,otherTask.id,"done"),ForbiddenError);
+      assert.equal(db.getTaskById(organizer,otherTask.id).status,"todo");
+    }
+    assert.equal(db.getDashboard(volunteer).tasks.find(row=>row.id===task.id)?.assigneeId,volunteer.memberId);
     assert.equal(db.updateTaskStatus(volunteer,task.id,"done").status,"done");
     assert.throws(()=>db.patchTask(volunteer,task.id,{title:"Changed"}),ForbiddenError);
     const clubId=db.createClub("Other club");
@@ -134,6 +139,7 @@ test("schema v8 upgrades preserve members, passes, sessions, merchandise and ope
     raw.exec("DROP INDEX announcements_request_idx; DROP INDEX announcements_archive_idx; DROP INDEX notifications_announcement_recipient_idx; DROP INDEX outbox_announcement_recipient_idx;");
     raw.exec("ALTER TABLE notifications DROP COLUMN announcement_id; ALTER TABLE outbox_messages DROP COLUMN announcement_id;");
     for(const column of ["club_id","published_by","idempotency_key","recipient_count"])raw.exec("ALTER TABLE announcements DROP COLUMN "+column);
+    raw.exec("DROP TABLE legacy_ledger_imports;");
     raw.exec("DROP TABLE expenses; DROP TABLE expense_receipts; DROP INDEX tasks_club_idx;");
     for(const column of ["club_id","description","assignee_id","event_id","due_at","created_at"])raw.exec("ALTER TABLE tasks DROP COLUMN "+column);
     for(const column of ["club_id","event_id"])raw.exec("ALTER TABLE transactions DROP COLUMN "+column);

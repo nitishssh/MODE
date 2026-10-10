@@ -48,6 +48,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
       id: text(row.id),
       title: text(row.title),
       assignee: text(row.assignee),
+      assigneeId: row.assignee_id === null ? null : text(row.assignee_id),
       status: row.status as Task["status"],
     }));
     const transactions: Transaction[] = (

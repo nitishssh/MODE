@@ -25,6 +25,7 @@ const MIGRATIONS: Migration[] = [
   { version: 9, up: addWorkspaceFlows },
   { version: 10, up: addReceiptStorageNames },
   { version: 11, up: addAnnouncementPublication },
+  { version: 12, up: normalizeLegacyWorkspace },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -54,12 +55,65 @@ function addReceiptStorageNames(db: DatabaseSync) {
   `);
 }
 
+function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(entry => entry.name === column);
+}
+
+function hasTable(db: DatabaseSync, table: string): boolean {
+  return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== undefined;
+}
+
+function addColumnIfMissing(db: DatabaseSync, table: string, column: string, definition: string): void {
+  if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+}
+
+/** Preserve workflow-v2 money history without inventing the officer who paid it. */
+function normalizeLegacyWorkspace(db: DatabaseSync) {
+  if (hasTable(db, "tasks")) {
+    addColumnIfMissing(db, "tasks", "assignee", "assignee TEXT NOT NULL DEFAULT 'Unassigned'");
+    db.exec("UPDATE tasks SET assignee = COALESCE((SELECT name FROM members WHERE id = tasks.assignee_id), assignee)");
+  }
+  db.exec(`CREATE TABLE IF NOT EXISTS legacy_ledger_imports (
+    legacy_id TEXT PRIMARY KEY,
+    transaction_id TEXT NOT NULL UNIQUE REFERENCES transactions(id),
+    unknown_payer INTEGER NOT NULL CHECK (unknown_payer IN (0, 1))
+  )`);
+  if (!hasTable(db, "ledger_entries") || !hasTable(db, "transactions") || !hasTable(db, "expenses")) return;
+  const insert = db.prepare(`INSERT INTO transactions
+    (id, description, kind, amount_paise, occurred_at, source_type, source_id, recorded_by, club_id, event_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`);
+  const record = db.prepare("INSERT INTO legacy_ledger_imports VALUES (?, ?, ?)");
+  for (const row of db.prepare("SELECT * FROM ledger_entries ORDER BY id").all()) {
+    const starterId = row.id === "demo-ledger-1" ? "demo-transaction-1" : row.id === "demo-ledger-2" ? "demo-transaction-2" : null;
+    const starter = starterId && db.prepare("SELECT * FROM transactions WHERE id = ? AND kind = 'income' AND amount_paise = ? AND occurred_at = ? AND source_type = 'opening_balance'").get(starterId, row.amount_paise, row.occurred_at);
+    if (starter && row.type === "income") {
+      db.prepare("UPDATE transactions SET event_id = ? WHERE id = ?").run(row.event_id, starterId);
+      record.run(row.id, starterId, 0);
+      continue;
+    }
+    const matches = row.type === "expense_paid" ? db.prepare(`SELECT id, club_id FROM expenses
+      WHERE status = 'paid' AND purpose = ? AND amount_paise = ? AND event_id IS ?
+        AND payment_reference IS ? AND paid_at = ?`).all(row.description, row.amount_paise, row.event_id, row.reference, row.occurred_at) : [];
+    if (matches.length > 1) throw new Error(`Ambiguous historical expense ${row.id}; migration rolled back for reconciliation.`);
+    const expense = matches[0];
+    const id = `legacy-entry-${row.id}`;
+    insert.run(id, row.description, row.type === "income" ? "income" : "expense", row.amount_paise,
+      row.occurred_at, expense ? "expense" : "opening_balance", expense?.id ?? id,
+      expense?.club_id ?? DEFAULT_CLUB_ID, row.event_id);
+    record.run(row.id, id, expense ? 1 : 0);
+  }
+  if (db.prepare("SELECT 1 FROM expenses e WHERE status = 'paid' AND NOT EXISTS (SELECT 1 FROM transactions t WHERE t.source_type = 'expense' AND t.source_id = e.id)").get()) {
+    throw new Error("Historical paid expense has no matching ledger entry; migration rolled back for reconciliation.");
+  }
+}
+
 export function migrate(db: DatabaseSync, now: Date): void {
   // Check inside the write transaction so simultaneous first requests cannot both seed.
   db.exec("BEGIN IMMEDIATE");
   try {
     const current = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
     if (current > SCHEMA_VERSION) throw new Error("Database schema is newer than this application supports.");
+    if (current === 2 && !hasColumn(db, "members", "club_id")) addIdentityAndRoles(db, now);
     for (const migration of MIGRATIONS) {
       if (migration.version <= current) continue;
       migration.up(db, now);
@@ -374,23 +428,17 @@ function addEventTickets(db: DatabaseSync) {
 
 // v9 — tasks, receipts and expenses; follows released merchandise schema v8.
 function addWorkspaceFlows(db: DatabaseSync, now: Date) {
-  db.exec(`
-    ALTER TABLE transactions ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
-    ALTER TABLE transactions ADD COLUMN event_id TEXT REFERENCES events(id);
-    ALTER TABLE events ADD COLUMN fundraiser_goal_paise INTEGER NOT NULL DEFAULT 0
-      CHECK (fundraiser_goal_paise >= 0);
-    ALTER TABLE tasks ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
-    ALTER TABLE tasks ADD COLUMN description TEXT;
-    ALTER TABLE tasks ADD COLUMN assignee_id TEXT REFERENCES members(id) ON DELETE SET NULL;
-    ALTER TABLE tasks ADD COLUMN event_id TEXT REFERENCES events(id) ON DELETE SET NULL;
-    ALTER TABLE tasks ADD COLUMN due_at TEXT;
-    ALTER TABLE tasks ADD COLUMN created_at TEXT;
-    UPDATE tasks
-       SET assignee_id = (SELECT id FROM members WHERE members.name = tasks.assignee LIMIT 1),
-           created_at = NULL;
-    CREATE INDEX tasks_club_idx ON tasks (club_id, created_at);
-
-    CREATE TABLE receipts (
+  addColumnIfMissing(db, "transactions", "club_id", `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`);
+  addColumnIfMissing(db, "transactions", "event_id", "event_id TEXT REFERENCES events(id)");
+  addColumnIfMissing(db, "events", "fundraiser_goal_paise", "fundraiser_goal_paise INTEGER NOT NULL DEFAULT 0 CHECK (fundraiser_goal_paise >= 0)");
+  addColumnIfMissing(db, "tasks", "club_id", `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`);
+  addColumnIfMissing(db, "tasks", "description", "description TEXT");
+  addColumnIfMissing(db, "tasks", "assignee_id", "assignee_id TEXT REFERENCES members(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "event_id", "event_id TEXT REFERENCES events(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "due_at", "due_at TEXT");
+  addColumnIfMissing(db, "tasks", "created_at", "created_at TEXT");
+  if (hasColumn(db, "tasks", "assignee")) db.exec("UPDATE tasks SET assignee_id = COALESCE(assignee_id, (SELECT id FROM members WHERE members.name = tasks.assignee LIMIT 1))");
+  if (!hasTable(db, "receipts")) db.exec(`CREATE TABLE receipts (
       id TEXT PRIMARY KEY,
       club_id TEXT NOT NULL REFERENCES clubs(id),
       uploader_id TEXT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
@@ -398,10 +446,9 @@ function addWorkspaceFlows(db: DatabaseSync, now: Date) {
       mime_type TEXT NOT NULL,
       size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
       uploaded_at TEXT NOT NULL
-    );
-    CREATE INDEX receipts_owner_idx ON receipts (club_id, uploader_id);
-
-    CREATE TABLE expenses (
+    )`);
+  else addColumnIfMissing(db, "receipts", "club_id", `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`);
+  if (!hasTable(db, "expenses")) db.exec(`CREATE TABLE expenses (
       id TEXT PRIMARY KEY,
       club_id TEXT NOT NULL REFERENCES clubs(id),
       submitter_id TEXT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
@@ -418,9 +465,16 @@ function addWorkspaceFlows(db: DatabaseSync, now: Date) {
       submitted_at TEXT NOT NULL,
       reviewed_at TEXT,
       paid_at TEXT
-    );
-    CREATE INDEX expenses_club_status_idx ON expenses (club_id, status, submitted_at);
-    CREATE INDEX expenses_submitter_idx ON expenses (club_id, submitter_id, submitted_at);
+    )`);
+  else {
+    addColumnIfMissing(db, "expenses", "club_id", `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`);
+    addColumnIfMissing(db, "expenses", "reviewer_id", "reviewer_id TEXT REFERENCES members(id)");
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS tasks_club_idx ON tasks (club_id, created_at);
+    CREATE INDEX IF NOT EXISTS receipts_owner_idx ON receipts (club_id, uploader_id);
+    CREATE INDEX IF NOT EXISTS expenses_club_status_idx ON expenses (club_id, status, submitted_at);
+    CREATE INDEX IF NOT EXISTS expenses_submitter_idx ON expenses (club_id, submitter_id, submitted_at);
   `);
   db.prepare("UPDATE tasks SET created_at = ? WHERE created_at IS NULL").run(now.toISOString());
   db.exec(`

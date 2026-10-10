@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { DragEvent, FormEvent, ReactNode } from "react";
 import { WorkspaceMainSkeleton } from "./skeleton";
 import { localDateTimeValue } from "@/lib/local-datetime";
 import { MAX_RECEIPT_SIZE_BYTES } from "@/lib/contracts";
@@ -29,6 +29,8 @@ type Section =
   | "Tasks"
   | "My Expenses"
   | "Treasury";
+
+const dashboardTaskStatuses: TaskDetails["status"][] = ["todo", "in_progress", "done"];
 
 type IconName =
   | "grid"
@@ -1792,7 +1794,13 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
   const [announcementQuery, setAnnouncementQuery] = useState("");
   const [isDark, setIsDark] = useState(false);
   const [isNavOpen, setIsNavOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [savingTaskIds, setSavingTaskIds] = useState<string[]>([]);
+  const pendingTaskIds = useRef(new Set<string>());
+  const [taskErrors, setTaskErrors] = useState<Record<string, string>>({});
   const nameInput = useRef<HTMLInputElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const refreshDashboard = useCallback(async () => {
     setRefreshError("");
@@ -1836,6 +1844,18 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
     document.documentElement.classList.toggle("mode-dark", isDark);
     window.localStorage.setItem("mode-theme", isDark ? "dark" : "light");
   }, [isDark]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    }
+    if (isUserMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isUserMenuOpen]);
 
   useEffect(() => {
     function syncHash() {
@@ -1892,11 +1912,44 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
     }
   }
 
+  async function moveDashboardTask(task: Dashboard["tasks"][number], status: Dashboard["tasks"][number]["status"]) {
+    if (task.status === status || pendingTaskIds.current.has(task.id)) return;
+    if (!user.permissions.includes("tasks:write") && task.assigneeId !== user.id) return;
+    pendingTaskIds.current.add(task.id);
+    setSavingTaskIds([...pendingTaskIds.current]);
+    setTaskErrors(current => ({ ...current, [task.id]: "" }));
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Task could not be saved. Please retry.");
+      setData(current => current ? { ...current, tasks: current.tasks.map(item => item.id === task.id ? { ...item, status: result.status } : item) } : current);
+    } catch (error) {
+      setTaskErrors(current => ({ ...current, [task.id]: error instanceof Error ? error.message : "Task could not be saved. Please retry." }));
+    } finally {
+      pendingTaskIds.current.delete(task.id);
+      setSavingTaskIds([...pendingTaskIds.current]);
+    }
+  }
+  function dropDashboardTask(event: DragEvent<HTMLElement>, status: Dashboard["tasks"][number]["status"]) {
+    event.preventDefault();
+    const taskId = event.dataTransfer.getData("text/plain") || draggedTaskId;
+    const task = data?.tasks.find((item) => item.id === taskId);
+    setDraggedTaskId(null);
+    if (task) moveDashboardTask(task, status);
+  }
+
   const income =
     data?.transactions.filter((item) => item.kind === "income").reduce((sum, item) => sum + item.amountPaise, 0) ?? 0;
   const expenses =
     data?.transactions.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amountPaise, 0) ?? 0;
   const openTasks = data?.tasks.filter((task) => task.status !== "done") ?? [];
+  const totalTasks = data?.tasks.length ?? 0;
+  const completedTasks = data?.tasks.filter((task) => task.status === "done").length ?? 0;
+  const taskProgressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   const clubName = data?.club.name ?? "Skyline Student Association";
   const clubInitials = initials(clubName);
   const visibleAnnouncements = (data?.announcements ?? []).filter((item) => {
@@ -1927,8 +1980,6 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
             <small>Student organization</small>
           </span>
         </div>
-        <p className="nav-caption">{user.name} · {user.role}</p>
-        <button className="button secondary" type="button" onClick={onLogout}>Sign out</button>
         <p className="nav-caption">YOUR WORKSPACE</p>
         <nav aria-label="Main navigation">
           {navigation.filter(item => (item.label !== "Treasury" || user.permissions.includes("ledger:read")) && (item.label !== "Members" || user.permissions.includes("members:read"))).map((item) => (
@@ -2013,9 +2064,71 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
               <span />
               Fictional sample data
             </span>
-            <span className="top-avatar" aria-label="Demo workspace">
-              {clubInitials}
-            </span>
+            <div className="topbar-user-section" ref={userMenuRef}>
+              <div
+                className="topbar-progress-bar"
+                title={`Task progress: ${taskProgressPercent}% (${completedTasks}/${totalTasks} completed)`}
+              >
+                <div
+                  className="topbar-progress-fill"
+                  style={{ width: `${taskProgressPercent}%` }}
+                />
+              </div>
+              <button
+                type="button"
+                className={`topbar-avatar-btn ${isUserMenuOpen ? "active" : ""}`}
+                onClick={() => setIsUserMenuOpen((open) => !open)}
+                aria-label="User account menu"
+                aria-expanded={isUserMenuOpen}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              </button>
+              {isUserMenuOpen && (
+                <div className="topbar-user-dropdown" role="menu">
+                  <div className="dropdown-user-header">
+                    <div className="dropdown-user-avatar">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                        <circle cx="12" cy="7" r="4" />
+                      </svg>
+                    </div>
+                    <div className="dropdown-user-info">
+                      <strong>{user.name}</strong>
+                      <span className="dropdown-role-badge">{user.role}</span>
+                    </div>
+                  </div>
+                  <div className="dropdown-progress-stats">
+                    <div className="dropdown-progress-label">
+                      <span>Tasks completed</span>
+                      <b>{completedTasks}/{totalTasks} ({taskProgressPercent}%)</b>
+                    </div>
+                    <div className="dropdown-progress-bar">
+                      <div className="dropdown-progress-fill" style={{ width: `${taskProgressPercent}%` }} />
+                    </div>
+                  </div>
+                  <div className="dropdown-divider" />
+                  <button
+                    type="button"
+                    className="dropdown-signout-btn"
+                    role="menuitem"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      onLogout();
+                    }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                    <span>Sign out</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
         <main id="main-content" tabIndex={-1}>
@@ -2159,25 +2272,17 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                         action="View all"
                         onClick={() => setSection("Tasks")}
                       />
-                      {openTasks.length ? (
-                        <div className="task-list">
-                          {openTasks.slice(0, 3).map((task) => (
-                            <div className="task-row" key={task.id}>
-                              <span
-                                className={`task-symbol ${task.status === "in_progress" ? "working" : ""}`}
-                                aria-hidden="true"
-                              >
-                                {task.status === "in_progress" ? "•" : ""}
-                              </span>
-                              <div>
-                                <h3>{task.title}</h3>
-                                <p>{task.assignee || "Unassigned"}</p>
+                      {data.tasks.length ? (
+                        <div className="dashboard-kanban" aria-label="Team task board">
+                          {dashboardTaskStatuses.map((status) => {
+                            const tasks = data.tasks.filter((task) => task.status === status);
+                            return <section className={`dashboard-kanban-column ${status} ${draggedTaskId ? "is-drop-target" : ""}`} key={status} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropDashboardTask(event, status)}>
+                              <header><span className={`status-dot ${status}`} aria-hidden="true" /><span>{taskLabel[status]}</span><b>{tasks.length}</b></header>
+                              <div className="dashboard-kanban-cards">
+                                {tasks.length ? tasks.map((task) => <div key={task.id}><button type="button" disabled={savingTaskIds.includes(task.id) || (!user.permissions.includes("tasks:write") && task.assigneeId !== user.id)} draggable={!savingTaskIds.includes(task.id) && (user.permissions.includes("tasks:write") || task.assigneeId === user.id)} className={`dashboard-task-card ${task.status === "done" ? "completed" : ""} ${savingTaskIds.includes(task.id) ? "completing" : ""}`} onClick={() => moveDashboardTask(task, task.status === "done" ? "todo" : "done")} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", task.id); setDraggedTaskId(task.id); }} onDragEnd={() => setDraggedTaskId(null)} title="Drag to a lane, or click to toggle completion"><span className="dashboard-task-title">{task.title}</span><span className="dashboard-task-assignee">{savingTaskIds.includes(task.id) ? "Saving…" : task.assignee || "Unassigned"}</span></button>{taskErrors[task.id] && <p role="alert" className="error-text">{taskErrors[task.id]}</p>}</div>) : <p className="dashboard-kanban-empty">Drop tasks here</p>}
                               </div>
-                              <span className={`badge ${task.status === "in_progress" ? "purple" : "neutral"}`}>
-                                {taskLabel[task.status]}
-                              </span>
-                            </div>
-                          ))}
+                            </section>;
+                          })}
                         </div>
                       ) : (
                         <Empty title="Nothing on the to-do list">Your team is all caught up.</Empty>
@@ -2524,4 +2629,3 @@ export default function Home() {
     </form>
   </section></main>;
 }
-

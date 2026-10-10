@@ -3,6 +3,26 @@ import { test } from "node:test";
 import { openClubDatabase } from "../src/lib/database";
 import { ConflictError, ValidationError } from "../src/lib/errors";
 import { SOURCE_RESOLVERS } from "../src/lib/modules/ledger";
+import { DatabaseSync } from 'node:sqlite';
+import { rmSync } from 'node:fs';
+import { legacyFixture } from './legacy-fixture';
+
+test('legacy payer exception requires its migration evidence; missing and altered payments still fail reconciliation', () => {
+  const fixture = legacyFixture();
+  const db = openClubDatabase(fixture.filename, fixture.options);
+  const raw = new DatabaseSync(fixture.filename);
+  try {
+    const payment = db.ledger.list().find(row => row.sourceId === 'demo-expense-1')!;
+    assert.deepEqual(db.ledger.reconcile().mismatched, []);
+    raw.prepare('UPDATE transactions SET amount_paise = amount_paise + 1 WHERE id = ?').run(payment.id);
+    assert.deepEqual(db.ledger.reconcile().mismatched[0].fields, ['amountPaise']);
+    raw.prepare('UPDATE transactions SET amount_paise = amount_paise - 1 WHERE id = ?').run(payment.id);
+    raw.prepare('DELETE FROM legacy_ledger_imports WHERE transaction_id = ?').run(payment.id);
+    assert.deepEqual(db.ledger.reconcile().mismatched[0].fields, ['recordedBy']);
+    raw.prepare('DELETE FROM transactions WHERE id = ?').run(payment.id);
+    assert.deepEqual(db.ledger.reconcile().missing, [{ sourceType: 'expense', sourceId: 'demo-expense-1' }]);
+  } finally { raw.close(); db.close(); rmSync(fixture.directory, { recursive: true, force: true }); }
+});
 
 test("merchandise income stays in its club ledger with its payment reference", () => {
   const db = openClubDatabase(":memory:", { now: fixedNow });

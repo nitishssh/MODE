@@ -69,6 +69,7 @@ export interface Task {
   id: string;
   title: string;
   assignee: string;
+  assigneeId: string | null;
   status: "todo" | "in_progress" | "done";
 }
 
@@ -255,6 +256,11 @@ export interface AuthResponse {
   user: SessionUser;
   expiresAt: string;
   token: string;
+}
+
+export interface AuthMeResponse {
+  user: SessionUser;
+  pass: MemberPass;
 }
 
 export interface RegisterInput {

@@ -122,3 +122,29 @@ For LAN setup and home-screen limitations, follow [the README](../README.md#lan-
 4. Open Ledger, follow the expense source link and inspect its exact claim ID, purpose, paid status and reference. Download the protected receipt from the source details. Verify the Recorded by column names the paying officer.
 5. Export CSV and compare all seven columns and totals with the register. Sign out and confirm export requires a session; a member account receives 403.
 6. Run `npm run check`. Receipt migration tests preserve released v9 files, ownership, links and historical receiptless claims. The reconciliation harness covers paid reimbursements, failed transactions, retries and officer attribution.
+
+## Expo shell and same-origin web
+
+From the repository root, install both packages and stage the web export:
+
+```sh
+npm ci
+npm ci --prefix client
+npm run check:client-contracts
+npm --prefix client run typecheck
+npm --prefix client run lint
+npm --prefix client test
+npm run build:client
+```
+
+In PowerShell, set `$env:MODE_EXPO_WEB='1'` and `$env:MODE_DEMO_PASSWORD='your-private-demo-password'`, then run `npm run build` and `npm start`. POSIX shells use `export MODE_EXPO_WEB=1` and `export MODE_DEMO_PASSWORD=your-private-demo-password`. Both build and start need the flag. Open `http://127.0.0.1:3000`; `/api` remains on this same origin, `/t/{token}` remains the guest ticket page, and `/legacy` retains the existing workflow UI.
+
+1. Sign in as `lead@example.com`, update a task, refresh and confirm the saved status. Treasury should be visible.
+2. Sign in as `active@example.com`. Treasury must be absent, direct `/treasury` navigation must return to a permitted screen, and unassigned tasks must have no status actions.
+3. Refresh `/tasks` and `/pass` directly. Check phone-width bottom tabs and wide left navigation.
+4. Open `/legacy` and verify the existing workflows remain available.
+5. Run `npm run test:expo-web` after the Expo-enabled build. It checks deep links, assets, guest/API exclusions, PWA icons and cookie login/logout.
+6. For Android/iOS, follow `client/README.md` and verify login, restart, assigned tasks, role navigation, expiry and logout on each real target.
+7. For Windows, serve via HTTPS or localhost, install through Edge/Chrome and verify restart behavior.
+
+Bundle compilation and local browser checks do not establish physical Expo Go or installed Windows PWA acceptance. Keep #10 open until those device checks and the remaining business screens are complete.
