@@ -2,15 +2,16 @@ import { writeFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { migrate, SCHEMA_VERSION } from "../src/lib/db/migrations";
+import { postgresSchema } from "../src/lib/db/postgres";
 
 /**
- * Generate docs/schema.sql from the migrations themselves, so the documented
- * schema can never drift from what the application creates.
+ * Generate docs/schema.sql (SQLite) and docs/schema.postgres.sql (PostgreSQL translation)
+ * from the migrations themselves, so the documented schema can never drift from what the
+ * application creates.
  *
- *   npm run schema:dump    rewrite docs/schema.sql
- *   npm run schema:check   fail if docs/schema.sql is stale (used by `npm run check`)
+ *   npm run schema:dump    rewrite both files
+ *   npm run schema:check   fail if either file is stale (used by `npm run check`)
  */
-const target = resolve("docs/schema.sql");
 const check = process.argv.includes("--check");
 
 process.env.MODE_DEMO_PASSWORD ??= "schema-dump-placeholder";
@@ -22,7 +23,6 @@ type Row = { type: string; name: string; tbl_name: string; sql: string };
 const rows = db
   .prepare("SELECT type, name, tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY tbl_name, type DESC, name")
   .all() as Row[];
-db.close();
 
 const lines = [
   "-- MODE database schema (SQLite)",
@@ -43,17 +43,28 @@ for (const row of rows) {
   }
   lines.push(`${row.sql.trim()};`, "");
 }
-const output = lines.join("\n");
 
-if (check) {
-  let existing = "";
-  try { existing = readFileSync(target, "utf8"); } catch { /* missing counts as stale */ }
-  if (existing.replace(/\r\n/g, "\n") !== output) {
-    console.error("docs/schema.sql is out of date. Run `npm run schema:dump` and commit the result.");
-    process.exit(1);
+const outputs = [
+  { target: resolve("docs/schema.sql"), content: lines.join("\n"), label: "SQLite" },
+  { target: resolve("docs/schema.postgres.sql"), content: postgresSchema(db, SCHEMA_VERSION), label: "PostgreSQL" },
+];
+db.close();
+
+let stale = false;
+for (const { target, content, label } of outputs) {
+  const relative = target.slice(resolve(".").length + 1).replace(/\\/g, "/");
+  if (check) {
+    let existing = "";
+    try { existing = readFileSync(target, "utf8"); } catch { /* missing counts as stale */ }
+    if (existing.replace(/\r\n/g, "\n") !== content) {
+      console.error(`${relative} is out of date. Run \`npm run schema:dump\` and commit the result.`);
+      stale = true;
+    } else {
+      console.log(`${relative} matches migrations (${label}, schema version ${SCHEMA_VERSION}).`);
+    }
+  } else {
+    writeFileSync(target, content);
+    console.log(`Wrote ${relative} (${label}, schema version ${SCHEMA_VERSION}).`);
   }
-  console.log(`docs/schema.sql matches migrations (schema version ${SCHEMA_VERSION}, ${rows.length} objects).`);
-} else {
-  writeFileSync(target, output);
-  console.log(`Wrote docs/schema.sql (schema version ${SCHEMA_VERSION}, ${rows.length} objects).`);
 }
+if (stale) process.exit(1);

@@ -53,7 +53,7 @@ Native API clients can log in without browser Origin headers and use the returne
 
 Physical Android/iOS camera, picker, haptics and sharing, LAN journeys and installed Windows PWA behavior remain tracked in [the MVP tickets](https://github.com/nitishssh/MODE/milestone/1). Selected local browser journeys and automated API/restart checks are recorded in [the demo guide](docs/DEMO.md#interactive-client-journey); they do not complete every native/web acceptance criterion. Payment confirmations record external payments; no gateway transfer or real email is performed.
 
-The starter is a single-club, local development scaffold with synthetic demo accounts. The web and Expo client have sign-in and business screens; physical-device acceptance remains outstanding. Anonymous dashboard responses withhold the member directory and finance data. See [API contracts and demo accounts](docs/API.md) to exercise the authenticated endpoints. Hosted SQLite needs a persistent disk and one writable instance; a serverless ephemeral filesystem is not durable storage.
+The starter is a single-club, local development scaffold with synthetic demo accounts. The web and Expo client have sign-in and business screens; physical-device acceptance remains outstanding. Anonymous dashboard responses withhold the member directory and finance data. See [API contracts and demo accounts](docs/API.md) to exercise the authenticated endpoints. Hosted SQLite needs a persistent disk and one writable instance; a serverless ephemeral filesystem is not durable storage. A PostgreSQL export/load path and the runtime migration plan are documented in [docs/POSTGRESQL.md](docs/POSTGRESQL.md); known schema and workflow gaps are tracked in [docs/DB-AUDIT.md](docs/DB-AUDIT.md).
 
 ## Stack and layout
 
@@ -70,6 +70,7 @@ src/lib/contracts.ts     Shared API types
 src/lib/database.ts      SQLite connection and module composition
 src/lib/db/              Versioned schema migrations and transaction helpers
 docs/schema.sql          Generated DDL for the current schema (`npm run schema:dump`)
+docs/schema.postgres.sql Generated PostgreSQL translation of the same schema (`npm run schema:dump`)
 src/lib/modules/         Identity, dues, events, workspace and ledger persistence
 src/lib/member-validation.ts
 src/lib/mutation-guard.ts
