@@ -105,3 +105,34 @@ test("tickets (#5): a confirmed ticket posts one `ticket` income row that reconc
     db.close();
   }
 });
+
+test("merchandise (#6): a confirmed order posts one `merch_order` income row that reconciles; expired and cancelled holds post nothing", () => {
+  const { db, clock } = memoryDatabase();
+  try {
+    const organizer = actorFor(db, DEMO.organizer);
+    const product = db.merchandise.createProduct(organizer, { name: "Reconcile tee", pricePaise: 34900, memberPricePaise: 29900, variants: [{ size: "M", stock: 4 }] });
+    const variantId = product.variants[0].id;
+    const before = db.ledger.reconcile();
+    const paid = db.merchandise.createOrder(actorFor(db, "active@example.com"), { variantId, quantity: 2 });
+    const held = db.merchandise.createOrder(actorFor(db, "expired@example.com"), { variantId });
+    const cancelled = db.merchandise.createOrder(actorFor(db, "treasurer@example.com"), { variantId });
+    db.merchandise.confirmOrder(organizer, paid.id, { reference: "REC-M1" });
+    db.merchandise.confirmOrder(organizer, paid.id, { reference: "REC-M1" });
+    db.merchandise.fulfilOrder(organizer, paid.id);
+    db.merchandise.cancelOrder(organizer, cancelled.id);
+    clock.now = new Date(clock.now.getTime() + 31 * 60_000);
+    db.merchandise.listOrders(organizer, "pending_payment"); // releases `held`
+
+    const after = db.ledger.reconcile();
+    assert.equal(after.entries, before.entries + 1);
+    assert.equal(after.balancePaise, before.balancePaise + 59800);
+    assert.deepEqual(after.orphans, []);
+    assert.deepEqual(after.duplicates, []);
+    assert.equal(after.unsourced, 0);
+    assert.deepEqual(db.ledger.list().filter((e) => e.sourceType === "merch_order").map((e) => e.sourceId), [paid.id]);
+    assert.equal(db.merchandise.requireProduct(organizer.clubId, product.id).stock, 2, "held and cancelled units are back; paid units are gone");
+    assert.equal(db.merchandise.myOrders(actorFor(db, "expired@example.com")).find((o) => o.id === held.id)?.status, "expired");
+  } finally {
+    db.close();
+  }
+});

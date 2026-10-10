@@ -160,6 +160,47 @@ export interface EventReport {
   realizedRevenuePaise: number;
 }
 
+/** Merchandise (P3, #6) */
+export interface ProductVariant {
+  id: string;
+  size: string;
+  /** Units available to order right now (holds already subtracted). */
+  stock: number;
+}
+
+export interface ProductDetails extends Product {
+  description: string;
+  /** Price for active members; null means no member discount. */
+  memberPricePaise: number | null;
+  active: boolean;
+  variants: ProductVariant[];
+}
+
+export type MerchOrderStatus = "pending_payment" | "paid" | "fulfilled" | "cancelled" | "expired";
+
+export interface MerchOrder {
+  id: string;
+  memberId: string;
+  memberName: string;
+  productId: string;
+  productName: string;
+  variantId: string;
+  size: string;
+  quantity: number;
+  unitPricePaise: number;
+  totalPaise: number;
+  pricing: "member" | "standard";
+  status: MerchOrderStatus;
+  holdExpiresAt: string | null;
+  paidAt: string | null;
+  paymentReference: string | null;
+  confirmedBy: string | null;
+  fulfilledAt: string | null;
+  fulfilledBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** What a member shows at the door: QR payload and typed fallback. */
 export interface MemberPass {
   qrToken: string;
