@@ -20,7 +20,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
     const members = identity.getMembers(clubId);
     const club = db.prepare("SELECT name, description FROM clubs WHERE id = ?").get(clubId) as Row | undefined;
 
-    const events: Event[] = (db.prepare("SELECT * FROM events ORDER BY starts_at, id").all() as Row[]).map((row) => ({
+    const events: Event[] = (db.prepare("SELECT * FROM events WHERE club_id = ? AND status = 'published' ORDER BY starts_at, id").all(clubId) as Row[]).map((row) => ({
       id: text(row.id),
       title: text(row.title),
       startsAt: text(row.starts_at),

@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { DbContext } from "./db/core";
 import { SCHEMA_VERSION, migrate } from "./db/migrations";
 import { createDashboardModule } from "./modules/dashboard";
+import { createEventsModule } from "./modules/events";
 import { createIdentityModule } from "./modules/identity";
 import { createLedgerModule } from "./modules/ledger";
 import { createMembershipModule } from "./modules/membership";
@@ -34,6 +35,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date }
   const ledger = createLedgerModule(ctx);
   const outbox = createOutboxModule(ctx);
   const membership = createMembershipModule(ctx, identity, ledger, outbox);
+  const events = createEventsModule(ctx, identity, membership, ledger);
   let closed = false;
 
   return {
@@ -42,6 +44,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date }
     ledger,
     outbox,
     membership,
+    events,
     health: () => {
       db.prepare("SELECT 1").get();
       return { status: "ok" as const, database: "sqlite" as const, schemaVersion: SCHEMA_VERSION };
