@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent, FormEvent, ReactNode } from "react";
 import { WorkspaceMainSkeleton } from "./skeleton";
+import { LandingPage } from "@/components/landing-page";
 import { localDateTimeValue } from "@/lib/local-datetime";
 import { LanguageSwitcher, useI18n } from "@/i18n/client";
 import type { DictionaryKey } from "@/i18n/dictionaries/en";
@@ -2552,6 +2553,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showSignIn, setShowSignIn] = useState(false);
   useEffect(() => {
     let active = true;
     fetch("/api/auth/me", { cache: "no-store" }).then(async response => {
@@ -2582,8 +2584,10 @@ export default function Home() {
   }
   if (loading) return <main className="loading-state" role="status">{t("auth.loading")}</main>;
   if (user) return <>{error && <p role="alert">{error}</p>}<Workspace key={user.id} user={user} onLogout={() => void signOut()} /></>;
+  if (!showSignIn) return <LandingPage onSignIn={() => setShowSignIn(true)} />;
   return <main className="auth-screen"><section className="auth-card">
     <div className="auth-card-tools"><LanguageSwitcher /></div>
+    <button className="auth-back-button" type="button" onClick={() => { setError(""); setShowSignIn(false); }}>← Back to MODE</button>
     <h1>{t("auth.title")}</h1><p>{t("auth.body")}</p>
     <form onSubmit={signIn}>
       <label htmlFor="email">{t("auth.email")}</label><input id="email" name="email" type="email" autoComplete="username" required />
