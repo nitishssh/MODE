@@ -148,6 +148,30 @@ Product body: `{name, description?, pricePaise, memberPricePaise?|null, variants
 - **Payment** confirmation records the reference once (unique per club), replays safely, and posts exactly one `merchandise` ledger income row per payment.
 - **Cancellation** returns the quantity to the same size, is idempotent, and is audited with whether the order was paid; refunds of paid orders are a treasury action. Fulfilled orders cannot be cancelled.
 
+## Club ledger, receipts and reimbursements (#7)
+
+The ledger is the single `transactions` table. Every realized cash movement is one row that names its originating record once (`sourceType` + `sourceId` are UNIQUE), so membership dues, tickets, merchandise and reimbursement payouts can never post twice. Balance is always computed from the rows, never stored.
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/ledger/summary` | `ledger:read` | 200 `{summary:LedgerSummary}` | 401; 403 |
+| GET | `/api/ledger/entries?category=&eventId=` | `ledger:read` | 200 `{entries:LedgerEntry[]}` | 400; 401; 403 |
+| GET | `/api/ledger/export` | `ledger:read` | 200 `text/csv` attachment | 401; 403 |
+| POST | `/api/receipts` (multipart, field `file`) | `expenses:submit` | 201 `{receipt:Receipt}` | 400 no file; 401; 413 over 2 MB; 415 not JPEG/PNG/WebP/PDF |
+| GET | `/api/receipts/{id}` | uploader or `expenses:review` | 200 file bytes | 401; 403; 404 |
+| GET | `/api/expenses?status=` | signed in (own) · `expenses:review` (all) | 200 `{expenses:ExpenseRequest[]}` | 401 |
+| POST | `/api/expenses` | `expenses:submit` | 201 `{expense}` | 400 non-positive amount / no receipt; 401; 403 receipt not yours; 404 event or receipt; 409 `duplicate_receipt` |
+| POST | `/api/expenses/{id}/approve` · `/reject` | `expenses:review` | 200 `{expense}` | 401; 403 own request; 404; 409 `expense_not_pending` |
+| POST | `/api/expenses/{id}/pay` | `expenses:review` | 201 paid · 200 same reference replayed `{expense,created}` | 400; 401; 403; 404; 409 `expense_not_approved` · `already_paid` · `payment_reference_reused` |
+
+Expense body: `{amountPaise, purpose, receiptId? | receiptReference?, eventId?}`. Decision body: `{note?}`. Payout body: `{paymentReference}`.
+
+- **States are distinct**: `submitted` → `approved` | `rejected`, and `approved` → `paid`. Submission and approval never touch the ledger; only `pay` writes the `reimbursement` expense row. `LedgerSummary.approvedUnpaidPaise` shows committed-but-unrealized cash separately from `balancePaise`.
+- **Separation of duties**: reviewers cannot approve, reject or pay their own requests. Every decision is audited (`expense.submitted/approved/rejected/paid`) with the actor, time and note.
+- **Receipts** are stored outside the web root under the database directory (`.data/receipts/<club>/<uuid>.<ext>`, gitignored), with size ≤ 2 MB, an allow-listed MIME type, a SHA-256 fingerprint and a sanitised display name. They are streamed only to the uploader or a reviewer with `nosniff` and no caching. One receipt can back only one expense request.
+- **Reconciliation**: `summary` returns inflow, outflow, balance, per-category totals and a per-event breakdown (`inflow`, `outflow`, `net`) joining ticket income and event-tagged expenses. The dashboard balance and the ledger summary are computed from the same rows. `export` is a plain CSV of all entries.
+- Approved institution-approved payment channels are just the `paymentReference` string (UPI id, bank reference, cash voucher) and stay configurable by the club.
+
 ## Starter routes
 
 | Method | Path | Permission | Success | Failure |
@@ -169,14 +193,14 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 - `audit_events` records who changed what (`member.created`, `member.role_changed`, `member.password_set`, `membership.recorded`, and future finance decisions).
 - `payments(club_id, reference)` is UNIQUE; `transactions(source_type, source_id)` is UNIQUE so each originating payment can post to the ledger only once.
 - `events.registered` counts held seats (reserved + confirmed) and cannot exceed capacity; `check_ins.booking_id` is the primary key so a ticket can be used once.
-- Ledger amounts are positive integer paise; `kind` determines income versus expense. Balance is calculated on the server.
+- Ledger amounts are positive integer paise; `kind` determines income versus expense; `category` is one of membership, ticket, merchandise, reimbursement, other. Balance is calculated on the server.
+- `expense_requests.receipt_id` is UNIQUE and `(club_id, payment_reference)` is UNIQUE, so a receipt backs one request and a payout reference is used once.
 - `product_variants(product_id, size)` is UNIQUE with `stock >= 0`; `products.stock` mirrors the sum of its variants.
 
 ## Planned conventions
 
 These are design constraints for future tickets, not implemented endpoints:
 
-- Treasury: distinguish requested, approved and paid reimbursements; trace each source transaction once in #7.
 - Announcements: distinguish draft, publication and notification delivery; local outbox is not actual delivery in #8.
 - Volunteers: task owner, deadline and status are separate from service-hour reporting in #9.
 
