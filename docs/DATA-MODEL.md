@@ -2,6 +2,8 @@
 
 Source snapshot: `a62c6e27724eccfafe54f3d85c9ddf066fb7c033`, schema **11**, 10 October 2026. The column/DDL appendix below was obtained by opening a new isolated database through this snapshot's `openClubDatabase()`, then reading SQLite PRAGMA metadata. It does not inspect or publish the working demo database or live member records.
 
+The complete current DDL is generated into [schema.sql](schema.sql) by `npm run schema:dump`; `npm run check` fails when it is stale.
+
 See [Architecture](CODEBASE.md), [HTTP API](HTTP-API.md), [code reference](CODE-REFERENCE.md) and [setup/backup instructions](DEVELOPMENT.md).
 
 ## Connection and storage

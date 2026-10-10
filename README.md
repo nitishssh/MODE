@@ -69,6 +69,7 @@ src/i18n/                 Locale registry, dictionaries (12 languages), formatte
 src/lib/contracts.ts     Shared API types
 src/lib/database.ts      SQLite connection and module composition
 src/lib/db/              Versioned schema migrations and transaction helpers
+docs/schema.sql          Generated DDL for the current schema (`npm run schema:dump`)
 src/lib/modules/         Identity, dues, events, workspace and ledger persistence
 src/lib/member-validation.ts
 src/lib/mutation-guard.ts
