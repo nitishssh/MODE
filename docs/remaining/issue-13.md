@@ -2,29 +2,33 @@
 
 Issue: https://github.com/nitishssh/MODE/issues/13
 
-Status: In progress. This is a draft handoff checklist, not an implementation or acceptance sign-off.
+Status: In progress. This is a handoff checklist, not implementation or final acceptance sign-off. Issue #13 remains open.
 
-Owners: @Azmanshaikh.
+Owner: @Azmanshaikh.
 
-Snapshot: 10 October 2026, main `771ec78d7ecec9e5c0d597951877e5968ead7e84`. Recheck this snapshot when implementation resumes; the linked issue remains the acceptance source of truth.
+Snapshot: 10 October 2026, main `498c4a888dc11acfd748c9bbf67c210b5aa5e93c`. Recheck against the linked issue when work resumes.
 
-## Existing work
+## Delivered foundations
 
-PRs #21 and #25 delivered web task, expense and treasury interfaces, receipt handling, CSV export and mobile navigation. The browser payment prompt was not exercised end to end in the recorded #25 evidence.
+- PR #35 added Expo task rows showing persisted assignee, due date, status and overdue indication. Status actions are limited to the assignee or a `tasks:write` holder, with pending-write protection and row errors.
+- PR #35 added a `ledger:read`-protected Expo treasury screen with API-backed income, expense and balance totals, category summaries, tabular rupees, refresh and cached timestamps. It does not yet display individual ledger rows or source navigation.
+- PR #36 completed the backend and legacy web reimbursement flow: required private receipts, approval/rejection/payment states, officer-attributed ledger entries, source details and canonical CSV export. Its recorded browser walkthrough covers the successful receipt-to-payment flow; this does not establish Expo/native acceptance.
+- PR #35 supplied the shared Expo shell, session handling and client CI checks.
 
-## Dependencies
+Evidence: [Expo implementation review](../reviews/pr35-expo-shell.md), [reimbursement verification](../REIMBURSEMENT-VERIFICATION.md), and [demo steps](../DEMO.md).
 
-#7 finance, #9 tasks and #10 Expo shell. Coordinate source attribution/navigation with #7.
+## Remaining implementation and acceptance
 
-## Completion checklist
+- [ ] Add the agreed on-track task progress calculation, or explicitly record approval for the done/total fallback. Preserve the delivered assignee, due-date and permission-aware status behavior.
+- [ ] Implement Expo expense submission with a required receipt and file/type/size error handling; implement authorized approve/reject/pay actions with distinct submitted, approved, rejected and paid states.
+- [ ] Extend the Expo treasury register with individual ledger rows, officer display attribution and navigation from every non-opening entry to its exact source. Preserve API-backed totals and tabular rupees.
+- [ ] Integrate authorized receipt retrieval and web/PWA CSV download if E3 remains in scope; preserve finance visibility restrictions and enforce permissions through the API.
+- [ ] Verify loading, honest empty states, row errors and retry without losing input, including failed upload/payment/source requests and the complete receipt-to-ledger flow.
+- [ ] Verify native and web against real APIs using synthetic accounts, and record physical-device evidence with the tested commit and environment.
+- [ ] Reconcile all issue #13 acceptance criteria with evidence before closing it. Optional E1 remains optional and is not declared delivered.
 
-- [ ] Build Expo volunteer rows with persisted assignee, due date, permission-aware state updates and the agreed progress calculation.
-- [ ] Implement expense submission with required receipt, distinct submitted/approved/rejected/paid states, upload errors and authorized review/payment actions.
-- [ ] Show API-backed income/expense/balance totals with tabular rupees, officer attribution and navigation from every non-opening ledger entry to its source.
-- [ ] Restrict finance to ledger:read holders and receipt retrieval to authorized users; integrate CSV download if E3 remains in scope.
-- [ ] Verify loading, empty, row-error and retry states without losing input, including the receipt and payment flow end to end.
-- [ ] Verify native and web against real APIs and record device evidence. Optional E1 remains optional and is not included as delivered.
+## Dependencies and verification boundary
 
-## Evidence required before completion
+Backend finance is tracked by #7, tasks by #9, the shell by #10 and platform verification by #14. Full task/finance acceptance remains #13's responsibility.
 
-Link the implementation commits and passing checks; record reproducible demo steps and any required physical-device evidence. Keep unchecked items visible and do not mark the issue complete because this checklist is merged. Payments and outbox delivery remain simulated under the MVP scope. Final acceptance target in the issue: 11 October 2026, 10:00 AM IST.
+This documentation update checks merged source and existing review records; it performs no new application, browser or physical-device tests. Payments and outbox delivery remain simulated. The issue's final acceptance target is 11 October 2026, 10:00 AM IST.
