@@ -58,7 +58,7 @@ Roles: `member`, `volunteer`, `organizer`, `treasurer`, `admin` (club lead). Sel
 | `outbox:manage` | | | ✓ | | ✓ |
 | `tasks:write` | | | ✓ | | ✓ |
 
-Permissions for tickets #4–#9 are reserved here so the UI can be built against the final matrix; the routes behind them land with their tickets.
+Every permission above is enforced by the routes documented in the ticket sections below.
 
 ### Demo accounts
 
@@ -192,6 +192,25 @@ Draft body: `{title, body, audience?}` with `audience` `all` (every club member)
 - **Exactly-once queueing**: each recipient gets one outbox row keyed `announcement:<id>:<memberId>`. Re-publishing queues only members who were not queued before (for example someone who joined later) and reports `alreadyQueued` for the rest. Dispatch retries only `pending`/`failed` rows, so retries cannot duplicate a send.
 - **Honest status**: with the local `preview` transport, dispatch marks rows `previewed`, never `sent`. `DeliverySummary.transport` tells the UI which mode is active so the screen can label the outbox as a preview.
 
+## Volunteer task assignments, deadlines and progress (#9)
+
+The starter `Task` contract (`id`, `title`, `assignee`, `status`) is kept for the dashboard board and extended by `TaskDetails` with `assigneeId`, `eventId`, `dueAt`, `overdue` and audit timestamps. Volunteer hours are not derived from task completion; a task is a responsibility with a status, nothing more.
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/tasks?status=&assigneeId=&eventId=&overdue=true&mine=true` | signed in | 200 `{tasks:TaskDetails[]}` | 400 bad filter; 401 |
+| POST | `/api/tasks` | `tasks:write` | 201 `{task}` | 400; 401; 403; 404 assignee not in club / event not found |
+| GET | `/api/tasks/{id}` | signed in | 200 `{task}` | 401; 404 |
+| PATCH | `/api/tasks/{id}` | `tasks:write` | 200 `{task}` | 400; 401; 403; 404 |
+| POST | `/api/tasks/{id}/status` | assignee or `tasks:write` | 200 `{task}` | 400 unknown status; 401; 403; 404 |
+
+Create body: `{title, description?, assigneeId?|null, eventId?|null, dueAt? (ISO)|null, status?}`. Update body: any subset of `title`, `description`, `assigneeId`, `eventId`, `dueAt`; omitted fields are left unchanged and `null` clears. Status body: `{status: "todo"|"in_progress"|"done"}`.
+
+- **Ownership**: `assigneeId` must be a member of the same club (`404` otherwise); the display name is kept on the task so the board renders without a join. Unassigned tasks have `assignee: ""` and `assigneeId: null`.
+- **Deadlines**: `dueAt` is optional. `overdue` is computed on the server clock for tasks that are not `done`; `?overdue=true` returns exactly those, and `?mine=true` returns the caller's tasks.
+- **Transitions**: the assignee or an officer may move a task between the three statuses; anyone else gets `403`. Reaching `done` stamps `completedAt`; reopening clears it. Every change is audited (`task.created`, `task.updated`, `task.status_changed`).
+- **Event linkage**: `eventId` is validated in the club and `eventTitle` is returned so fundraiser and event boards can group tasks.
+
 ## Starter routes
 
 | Method | Path | Permission | Success | Failure |
@@ -209,6 +228,7 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 
 - Schema changes are versioned migrations in `src/lib/db/migrations.ts`, applied in one write transaction and recorded in `PRAGMA user_version`. `GET /api/health` reports the current version.
 - Member email has a case-insensitive UNIQUE constraint. API validation is also enforced at the store boundary.
+- PATCH bodies never carry defaults: an omitted field leaves the stored value unchanged, `null` clears nullable fields.
 - Sessions store only a SHA-256 hash of the cookie token with `expires_at`/`revoked_at`.
 - `audit_events` records who changed what (`member.created`, `member.role_changed`, `member.password_set`, `membership.recorded`, and future finance decisions).
 - `payments(club_id, reference)` is UNIQUE; `transactions(source_type, source_id)` is UNIQUE so each originating payment can post to the ledger only once.
@@ -217,13 +237,10 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 - `expense_requests.receipt_id` is UNIQUE and `(club_id, payment_reference)` is UNIQUE, so a receipt backs one request and a payout reference is used once.
 - `product_variants(product_id, size)` is UNIQUE with `stock >= 0`; `products.stock` mirrors the sum of its variants.
 
-## Planned conventions
+## Cross-cutting conventions
 
-These are design constraints for future tickets, not implemented endpoints:
 
-- Volunteers: task owner, deadline and status are separate from service-hour reporting in #9.
-
-Payment and notification adapters must expose pending, succeeded and failed states honestly. Secrets and demo credentials live in environment configuration, never in code.
+Payment confirmation is always an officer action against a recorded reference, never a client-side claim. Notification delivery exposes pending, previewed, sent and failed states honestly. Secrets and demo credentials live in environment configuration, never in code.
 
 ## Local demo clock
 
