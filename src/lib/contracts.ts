@@ -215,3 +215,52 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Club ledger, receipts and reimbursements (#7) */
+export interface LedgerEntry extends Transaction {
+  category: "membership" | "ticket" | "merchandise" | "reimbursement" | "other";
+  sourceType: string | null;
+  sourceId: string | null;
+  eventId: string | null;
+  memberId: string | null;
+}
+
+export interface LedgerSummary {
+  inflowPaise: number;
+  outflowPaise: number;
+  balancePaise: number;
+  /** Approved reimbursements not yet paid; committed but not realized cash. */
+  approvedUnpaidPaise: number;
+  byCategory: Array<{ category: LedgerEntry["category"]; inflowPaise: number; outflowPaise: number }>;
+  byEvent: Array<{ eventId: string; title: string; inflowPaise: number; outflowPaise: number; netPaise: number }>;
+}
+
+export interface Receipt {
+  id: string;
+  uploadedBy: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: string;
+}
+
+export interface ExpenseRequest {
+  id: string;
+  requestedBy: string;
+  requesterName: string;
+  amountPaise: number;
+  purpose: string;
+  receiptId: string | null;
+  receiptReference: string | null;
+  eventId: string | null;
+  status: "submitted" | "approved" | "rejected" | "paid";
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  decisionNote: string | null;
+  paidBy: string | null;
+  paidAt: string | null;
+  paymentReference: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

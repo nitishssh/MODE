@@ -18,6 +18,7 @@ const MIGRATIONS: Migration[] = [
   { version: 3, up: addMembershipLifecycle },
   { version: 4, up: addEventTicketing },
   { version: 5, up: addMerchandiseOrders },
+  { version: 6, up: addTreasuryWorkflow },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -343,4 +344,44 @@ function addMerchandiseOrders(db: DatabaseSync) {
   for (const [size, stock] of [["S", 4], ["M", 6], ["L", 5], ["XL", 3]] as const) insert.run(`demo-product-1-${size}`, DEFAULT_CLUB_ID, "demo-product-1", size, stock);
   for (const [size, stock] of [["S", 8], ["M", 12], ["L", 10], ["XL", 5]] as const) insert.run(`demo-product-2-${size}`, DEFAULT_CLUB_ID, "demo-product-2", size, stock);
   db.exec("UPDATE products SET member_price_paise = CASE id WHEN 'demo-product-1' THEN 69900 WHEN 'demo-product-2' THEN 29900 ELSE member_price_paise END");
+}
+
+// ---------------------------------------------------------------------------
+// v6 — receipts and the reimbursement workflow (#7)
+// ---------------------------------------------------------------------------
+function addTreasuryWorkflow(db: DatabaseSync) {
+  db.exec(`
+    CREATE TABLE receipts (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      uploaded_by TEXT NOT NULL REFERENCES members(id),
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+      sha256 TEXT NOT NULL,
+      storage_path TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE expense_requests (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      requested_by TEXT NOT NULL REFERENCES members(id),
+      amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
+      purpose TEXT NOT NULL,
+      receipt_id TEXT UNIQUE REFERENCES receipts(id),
+      receipt_reference TEXT,
+      event_id TEXT REFERENCES events(id),
+      status TEXT NOT NULL CHECK (status IN ('submitted', 'approved', 'rejected', 'paid')),
+      reviewed_by TEXT REFERENCES members(id),
+      reviewed_at TEXT,
+      decision_note TEXT,
+      paid_by TEXT REFERENCES members(id),
+      paid_at TEXT,
+      payment_reference TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX expense_requests_status_idx ON expense_requests (club_id, status);
+    CREATE UNIQUE INDEX expense_requests_payment_idx ON expense_requests (club_id, payment_reference) WHERE payment_reference IS NOT NULL;
+  `);
 }
