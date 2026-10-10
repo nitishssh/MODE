@@ -79,7 +79,7 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
         <small>Not another dashboard—one shared source of truth.</small>
       </div>
 
-      <div className="landing-register" aria-label="A sample MODE workspace preview">
+      <div className="landing-register" aria-label="A sample MODE workspace preview" tabIndex={0}>
         <div className="landing-register-top"><span>MODE / CLUB REGISTER</span><span className="landing-live"><i /> Live workspace</span></div>
         <div className="landing-register-heading"><div><p>THIS WEEK</p><strong>Make the work<br /><em>visible.</em></strong></div><span className="landing-date">OCT<br /><b>10</b></span></div>
         <div className="landing-register-grid">
@@ -88,6 +88,7 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
           <section className="landing-register-feature"><p>ONE THING TO DO</p><strong>Confirm volunteer desk</strong><span>Assigned to Aditi · Today</span><button type="button" onClick={onSignIn}>Review task <span aria-hidden="true">→</span></button></section>
         </div>
         <p className="landing-register-footer"><i /> The register updates as your team does.</p>
+        <span className="landing-register-popover" aria-hidden="true"><i>✓</i><span><b>Volunteer desk confirmed</b><small>Task moved to done · just now</small></span></span>
       </div>
       <p className="landing-caption">MEMBERS · EVENTS · TEAM WORK · TREASURY</p>
     </section>
@@ -96,7 +97,12 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
 
     <section className="landing-capabilities landing-scroll-panel" ref={capabilitiesRef} id="built-for-clubs" aria-labelledby="capabilities-title">
       <div><p className="landing-kicker"><span aria-hidden="true" /> Built around the work, not the paperwork</p><h2 id="capabilities-title">Every club has moving parts.<br /><em>MODE keeps them legible.</em></h2></div>
-      <div className="landing-capability-list">{capabilities.map(([label, copy], index) => <article key={label}><span>0{index + 1}</span><div><p>{label}</p><h3>{copy}</h3></div><b aria-hidden="true">↗</b></article>)}</div>
+      <div className="landing-capability-list">{capabilities.map(([label, copy], index) => <article key={label}><span>0{index + 1}</span><div><p>{label}</p><h3>{copy}</h3></div><b aria-hidden="true">↗</b></article>)}
+        <a className="landing-whatsapp-section" href="https://wa.me/?text=Hi%20MODE%2C%20I%20would%20like%20to%20know%20more%20about%20the%20club%20workspace." target="_blank" rel="noreferrer">
+          <span className="landing-whatsapp-section-copy"><i>◔</i><span><b>Need a hand?</b><small>Talk to the MODE team on WhatsApp.</small></span></span><strong>Chat <em>↗</em></strong>
+          <span className="landing-whatsapp-section-pop" aria-hidden="true"><i>MODE</i><span>Hi! What are you planning next?</span></span>
+        </a>
+      </div>
     </section>
 
     <section className="landing-closing landing-scroll-panel" ref={closingRef} aria-labelledby="closing-title">
