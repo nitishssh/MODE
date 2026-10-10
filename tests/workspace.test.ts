@@ -39,7 +39,6 @@ test("workspace routes require sessions and derive submitter/reviewer identity f
     assert.equal((await submit(apiRequest("/api/expenses",{cookie:member,rawBody:"{"}))).status,400);
   });
 });
-
 test("tasks enforce club boundaries, assignment permissions and normalized deadlines",()=>{
   const {db}=memoryDatabase();
   try{

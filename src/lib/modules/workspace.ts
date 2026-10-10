@@ -218,4 +218,3 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     rejectExpense: (actor: Actor,id:string,note?:string) => reviewExpense(actor,id,"rejected",note),
     payExpense,getLedgerEntries,getLedgerSummary,getEventReport};
 }
-
