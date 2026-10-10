@@ -17,10 +17,11 @@ Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, a
 
 Optional configuration is documented in `.env.example`; copy it to `.env.local` if needed. Never commit `.env.local` or the local database. To try a separate dataset without changing the existing one, set `SQLITE_PATH` to a new filename.
 
+The repository's `.nvmrc` selects Node 24 for version managers that support it. To verify a fresh checkout, follow [the foundation acceptance check](docs/FOUNDATION.md), including the automated server restart test.
+
 ```sh
-npm run typecheck
-npm test
-npm run build
+npm run check
+npm run test:foundation
 npm start
 ```
 
@@ -38,7 +39,7 @@ Native API clients can log in without browser Origin headers and use the returne
 - Create a member through the authorized API with server validation and case-insensitive duplicate prevention.
 - Server-calculated member/event counts and a sample ledger balance in integer paise.
 - Fictional records showing how events, announcements, merchandise, volunteer work and finances will fit together.
-- Tests, TypeScript checks, production build and GitHub Actions configuration.
+- Tests, TypeScript and API contract checks, production build, automated server restart acceptance and GitHub Actions configuration.
 
 ## What the team will implement
 

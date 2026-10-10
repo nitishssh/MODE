@@ -3,6 +3,27 @@ import { test } from "node:test";
 import { openClubDatabase } from "../src/lib/database";
 import { ConflictError, ValidationError } from "../src/lib/errors";
 import { SOURCE_RESOLVERS } from "../src/lib/modules/ledger";
+
+test("merchandise income stays in its club ledger with its payment reference", () => {
+  const db = openClubDatabase(":memory:", { now: fixedNow });
+  try {
+    const clubId = db.createClub("Synthetic other club");
+    db.createMemberWithCredentials({ name: "Other lead", email: "ledger-other@example.com", password: "other-test-123", role: "admin", clubId });
+    const actor = db.getActor(db.login({ email: "ledger-other@example.com", password: "other-test-123" }).token)!;
+    const sample = db.getActor(db.login({ email: "lead@example.com", password: "mode-demo-2026" }).token)!;
+    const sampleBalance = db.getLedgerSummary(sample).balancePaise;
+    const product = db.merchandise.createProduct(actor, { name: "Other club cap", pricePaise: 2345, variants: [{ size: "M", stock: 2 }] });
+    const order = db.merchandise.createOrder(actor, { variantId: product.variants[0].id });
+    db.merchandise.confirmOrder(actor, order.id, { reference: "OTHER-MERCH-REF" });
+    const entries = db.getLedgerEntries(actor);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].reference, "OTHER-MERCH-REF");
+    assert.equal(db.getLedgerSummary(actor).balancePaise, 2345);
+    assert.equal(db.getLedgerSummary(sample).balancePaise, sampleBalance);
+    assert.ok(!db.getDashboard(sample).products.some(p => p.id === product.id));
+    assert.deepEqual(db.ledger.reconcile().orphans, []);
+  } finally { db.close(); }
+});
 import { DEMO, actorFor, memoryDatabase } from "./helpers";
 
 const fixedNow = () => new Date("2026-10-10T08:00:00.000Z");

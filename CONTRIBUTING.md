@@ -15,10 +15,11 @@ Use a branch name appropriate to your issue. Coordinate API changes in `docs/API
 Before opening a PR:
 
 ```sh
-npm run typecheck
-npm test
-npm run build
+npm run check
+npm run test:foundation
 ```
+
+Use Node 24. `check` includes typecheck, API documentation contracts, domain/API tests and the production build. Run it before `test:foundation`, which starts the built server with an isolated temporary database and verifies restart persistence. See [foundation acceptance](docs/FOUNDATION.md) for the browser checks and recorded results.
 
 Use `Closes #<issue>` only when the PR completes that issue. Move the board item to In review and describe the user-visible change, verification and remaining limitations. Nitish coordinates integration and release; every contributor should review and explain their own code.
 

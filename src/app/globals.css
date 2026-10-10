@@ -836,3 +836,10 @@ th{background:#faf7f2;border-color:#eee7df;color:#746c64}td{color:#716a63;border
 .mode-dark .task-bubble.animating {
   border-color: #5a4f46;
 }
+
+/* Keep the drawer above its scrim, including the older narrow-screen layout. */
+@media (max-width: 760px) {
+  .sidebar { position: fixed; inset: 0 auto 0 0; overflow-y: auto; }
+  .sidebar nav { flex-direction: column; }
+  .nav-item { width: 100%; }
+}

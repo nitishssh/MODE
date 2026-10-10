@@ -38,7 +38,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
       body: text(row.body),
       publishedAt: text(row.published_at),
     }));
-    const products: Product[] = (db.prepare("SELECT * FROM products ORDER BY name, id").all() as Row[]).map((row) => ({
+    const products: Product[] = (db.prepare("SELECT * FROM products WHERE club_id = ? ORDER BY name, id").all(clubId) as Row[]).map((row) => ({
       id: text(row.id),
       name: text(row.name),
       pricePaise: int(row.price_paise),
@@ -82,7 +82,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
       events,
       announcements,
       products,
-      tasks,
+      tasks: actor ? tasks : [],
       transactions: canSeeFinance ? transactions : [],
       access: { members: canSeeMembers, finance: canSeeFinance },
     };

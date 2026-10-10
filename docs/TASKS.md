@@ -2,11 +2,11 @@
 
 Project: https://github.com/users/nitishssh/projects/14
 
-The GitHub issues and board were updated and verified against the approved phased plan on 10 October 2026. All 16 active board cards have a Phase, MVP priority P0 and the final target date of 11 October; #2 is In progress and deferred #17 is archived. Linked cards show the revised titles and assignees. Check each linked issue for acceptance criteria and current status.
+The GitHub issues and board follow the approved phased plan. All 16 MVP cards have a Phase, priority P0 and the final target date of 11 October; deferred #17 is archived. Check each linked issue for current status. The backend acceptance evidence for #1, #2, #4, #5 and #6 is recorded in [ACCEPTANCE.md](ACCEPTANCE.md).
 
 | Ticket | Owner | Area | Dependencies |
 |---|---|---|---|
-| [#1 [Foundation] Publish the runnable MODE starter and quality checks](https://github.com/nitishssh/MODE/issues/1) | @nitishssh | platform | None |
+| [#1 Completed foundation starter and quality checks](https://github.com/nitishssh/MODE/issues/1) | @nitishssh | platform | None; [verification evidence](FOUNDATION.md#acceptance-evidence) |
 | [#2 P0 shared membership, ledger and native-auth foundations](https://github.com/nitishssh/MODE/issues/2) | @DIVYANK-BHARDWAJ; @nitishssh integration | foundation | #1, completed #3 |
 | [#3 Completed base authentication and roles](https://github.com/nitishssh/MODE/issues/3) | @DIVYANK-BHARDWAJ | backend | Closed; extensions in #2 |
 | [#4 P1 dues, renewals and reminders](https://github.com/nitishssh/MODE/issues/4) | @DIVYANK-BHARDWAJ | backend | #2, #3 |

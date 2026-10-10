@@ -366,7 +366,7 @@ type TaskFilter = {
   mine: boolean;
 };
 
-function TaskBoard({ members, events, user }: { members: Member[]; events: Event[]; user: SessionUser }) {
+function TaskBoard({ members, events, user, onChanged }: { members: Member[]; events: Event[]; user: SessionUser; onChanged: () => Promise<void> }) {
   const canWrite = user.permissions.includes("tasks:write");
   const [tasks, setTasks] = useState<TaskDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -429,7 +429,7 @@ function TaskBoard({ members, events, user }: { members: Member[]; events: Event
       if (!res.ok) throw new Error(result.error || "Failed to create task.");
       setShowCreate(false);
       form.reset();
-      await load();
+      await Promise.all([load(), onChanged()]);
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : "Failed to create task.");
     } finally {
@@ -449,7 +449,7 @@ function TaskBoard({ members, events, user }: { members: Member[]; events: Event
         const r = await res.json() as { error?: string };
         throw new Error(r.error || "Failed to update status.");
       }
-      await load();
+      await Promise.all([load(), onChanged()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update status.");
     } finally {
@@ -662,7 +662,7 @@ function TaskBoard({ members, events, user }: { members: Member[]; events: Event
                     onStatusChange={handleStatusChange}
                     onEdit={() => setShowEditId(task.id === showEditId ? null : task.id)}
                     showEdit={showEditId === task.id}
-                    onEditDone={() => { setShowEditId(null); void load(); }}
+                    onEditDone={() => { setShowEditId(null); void Promise.all([load(), onChanged()]); }}
                     events={events}
                   />
                 ))}
@@ -1170,7 +1170,7 @@ function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
 
 // ── Treasury ───────────────────────────────────────────────────────────────────
 
-function Treasury() {
+function Treasury({ onChanged }: { onChanged: () => Promise<void> }) {
   const [summary, setSummary] = useState<LedgerSummary | null>(null);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -1256,7 +1256,7 @@ function Treasury() {
       });
       const result = await res.json() as { error?: string };
       if (!res.ok) throw new Error(result.error || `Failed to ${action} expense.`);
-      await load();
+      await Promise.all([load(), onChanged()]);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : `Failed to ${action} expense.`);
     }
@@ -1710,6 +1710,7 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [refreshError, setRefreshError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
@@ -1722,6 +1723,17 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
   const nameInput = useRef<HTMLInputElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  const refreshDashboard = useCallback(async () => {
+    setRefreshError("");
+    try {
+      const response = await fetch("/api/dashboard", { cache: "no-store" });
+      if (!response.ok) throw new Error("Dashboard refresh failed.");
+      setData((await response.json()) as Dashboard);
+    } catch {
+      setRefreshError("Your change was saved, but the overview could not refresh.");
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2117,6 +2129,12 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
               {success}
             </div>
           )}
+          {refreshError && (
+            <div className="error-inline" role="alert">
+              <span>{refreshError}</span>
+              <button className="text-button" type="button" onClick={() => void refreshDashboard()}>Retry refresh</button>
+            </div>
+          )}
           {loading && <WorkspaceMainSkeleton />}
           {!loading && error && (
             <div className="error-state" role="alert">
@@ -2506,13 +2524,13 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
               )}
 
               {/* ── Tasks ────────────────────────────────────────────────── */}
-              {section === "Tasks" && <TaskBoard members={data.members} events={data.events} user={user} />}
+              {section === "Tasks" && <TaskBoard members={data.members} events={data.events} user={user} onChanged={refreshDashboard} />}
 
               {/* ── My Expenses ───────────────────────────────────────────── */}
               {section === "My Expenses" && <MyExpenses user={user} events={data.events} />}
 
               {/* ── Treasury ─────────────────────────────────────────────── */}
-              {section === "Treasury" && user.permissions.includes("ledger:read") && <Treasury />}
+              {section === "Treasury" && user.permissions.includes("ledger:read") && <Treasury onChanged={refreshDashboard} />}
             </>
           )}
 
