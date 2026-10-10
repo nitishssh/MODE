@@ -1,44 +1,96 @@
 # MODE API contracts
 
-The implemented starter types are authoritative in `src/lib/contracts.ts`. The backend owner is Divyank; contract/integration owner is Nitish; Azman consumes these shapes. Changes must update types, this document and related ticket acceptance tests together.
+The implemented types are authoritative in `src/lib/contracts.ts`. The backend owner is Divyank; contract/integration owner is Nitish; Azman consumes these shapes. Changes must update types, this document and related ticket acceptance tests together.
 
-## Implemented routes
+## Conventions
 
-All routes run on Node.js and use dynamic responses backed by SQLite. The development starter has no identity layer; use synthetic data only. Production mutations are disabled unless explicitly enabled for a trusted demo.
+- All routes run on Node.js and read/write SQLite through `src/lib/database.ts`. Responses carry `Cache-Control: no-store`.
+- Money fields ending in `Paise` are integer paise. ISO timestamps are UTC; date-only fields (`expiresOn`) are club calendar days in Asia/Kolkata.
+- Errors are `{error:string, code?:string, details?:[{field,message}]}`. No database paths or stack traces reach the client.
+- `401 unauthenticated` means no valid session cookie. `403 forbidden` means the session exists but the role lacks the permission, or a state-changing request arrived cross-origin.
+- Every state-changing request (POST/PATCH/DELETE) must be same-origin: the `Origin` header has to match the request host and `Sec-Fetch-Site` must not be `cross-site`. Browsers send these automatically for `fetch` calls from the app.
 
-| Method | Path | Success | Failure |
-|---|---|---|---|
-| GET | `/api/health` | 200 `{status:"ok",database:"sqlite",schemaVersion:1}` | 503 `{status:"error",error:string}` |
-| GET | `/api/dashboard` | 200 `Dashboard` directly, without a wrapper | 500 `{error:string}` |
-| GET | `/api/members` | 200 `{members:Member[]}` | 500 `{error:string}` |
-| POST | `/api/members` | 201 `{member:Member}` | 400 invalid/malformed body; 403 blocked demo/cross-origin write; 409 duplicate email; 500 storage error |
+## Identity and roles (#3)
 
-Create-member request:
+Authentication is a server-side session referenced by the `mode_session` cookie (`HttpOnly; SameSite=Lax; Path=/`, `Secure` on HTTPS). Sessions last 7 days, are stored hashed, and can be revoked by logout. Passwords are stored as salted scrypt hashes. Every member belongs to exactly one club; all reads and writes are scoped to the caller's club.
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| POST | `/api/auth/register` | public | 201 `AuthResponse` + cookie | 400 invalid; 403 cross-origin; 409 duplicate email |
+| POST | `/api/auth/login` | public | 200 `AuthResponse` + cookie | 400 invalid; 401 wrong email/password (same message for both); 403 cross-origin |
+| POST | `/api/auth/logout` | public | 200 `{ok:true}` + cleared cookie | 403 cross-origin |
+| GET | `/api/auth/me` | signed in | 200 `{user:SessionUser}` | 401 |
+| PATCH | `/api/members/{id}/role` | `roles:manage` | 200 `{member:Member}` | 400 unknown role; 401; 403; 404 not in this club; 409 changing own role |
+
+Request bodies:
 
 ```json
-{"name":"Demo Student","email":"student@example.com"}
+{"name":"Demo Student","email":"student@example.com","password":"at least 8 characters"}
+{"email":"student@example.com","password":"..."}
+{"role":"treasurer"}
 ```
 
-Only those two fields are accepted. Name is trimmed and must have 2–120 characters. Email is trimmed, validated, lowercased and at most 254 characters. A new member has `duesStatus:"unpaid"` and `expiresOn:null`. Creating a member does not record a payment or activate paid benefits.
+`SessionUser` is `{id,name,email,role,clubId,permissions:string[]}`. The UI should drive navigation from `permissions`, not from role names, so the matrix can evolve without screen changes. `AuthResponse` is `{user:SessionUser, expiresAt}`.
 
-Validation failures may include `details:[{field:string,message:string}]`. Consumers should always handle the top-level `error`. No database paths or stack traces are returned to the client.
+### Role matrix
 
-The `Dashboard` object contains `club`, `metrics`, `members`, `events`, `announcements`, `products`, `tasks` and `transactions`. Money fields ending in `Paise` are integer paise. ISO timestamps are UTC; `expiresOn` is a date-only string. The starter active-member metric currently treats a paid membership as valid through its expiry date using UTC day boundaries. The membership ticket must finalize the club-timezone rule.
+Roles: `member`, `volunteer`, `organizer`, `treasurer`, `admin` (club lead). Self-registration always creates a `member`; admins assign other roles. Role changes are written to the audit trail.
+
+| Permission | member | volunteer | organizer | treasurer | admin |
+|---|:-:|:-:|:-:|:-:|:-:|
+| `roles:manage` | | | | | ✓ |
+| `members:create` | | | ✓ | | ✓ |
+| `members:read` (directory with emails) | | | ✓ | ✓ | ✓ |
+| `membership:record_payment` | | | ✓ | ✓ | ✓ |
+| `membership:reminders` | | | ✓ | | ✓ |
+| `events:write` | | | ✓ | | ✓ |
+| `events:report` | | | ✓ | ✓ | ✓ |
+| `tickets:check_in` | | ✓ | ✓ | | ✓ |
+| `bookings:create` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `payments:confirm` | | | ✓ | ✓ | ✓ |
+| `products:write` | | | ✓ | | ✓ |
+| `orders:create` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `orders:fulfil` | | | ✓ | | ✓ |
+| `ledger:read` | | | | ✓ | ✓ |
+| `expenses:submit` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `expenses:review` | | | | ✓ | ✓ |
+| `announcements:write` | | | ✓ | | ✓ |
+| `outbox:manage` | | | ✓ | | ✓ |
+| `tasks:write` | | | ✓ | | ✓ |
+
+Permissions for tickets #4–#9 are reserved here so the UI can be built against the final matrix; the routes behind them land with their tickets.
+
+### Demo accounts
+
+Schema v2 seeds four synthetic officer accounts in the sample club: `lead@example.com` (admin), `organizer@example.com`, `treasurer@example.com`, `volunteer@example.com`. Their shared password is `MODE_DEMO_PASSWORD` (default `mode-demo-2026`). The three starter members have no password until an admin sets one. No record contains real student information.
+
+## Starter routes
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/health` | public | 200 `{status:"ok",database:"sqlite",schemaVersion:number}` | 503 `{status:"error",error}` |
+| GET | `/api/dashboard` | public, richer when signed in | 200 `Dashboard` | 500 |
+| GET | `/api/members` | `members:read` | 200 `{members:Member[]}` | 401; 403; 500 |
+| POST | `/api/members` | `members:create` | 201 `{member:Member}` | 400 invalid/malformed; 401; 403; 409 duplicate email; 500 |
+
+Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 characters. Email is trimmed, validated, lowercased, at most 254 characters, and unique case-insensitively. A new member has `duesStatus:"unpaid"`, `expiresOn:null` and `role:"member"`; the officer who created it is recorded in the audit trail. Creating a member does not record a payment, activate benefits or grant a login.
+
+`Dashboard` contains `club`, `metrics`, `members`, `events`, `announcements`, `products`, `tasks`, `transactions` and `access:{members:boolean,finance:boolean}`. Anonymous callers and plain members receive `members:[]`, `transactions:[]` and `balancePaise:0`; the `access` flags tell the UI which sections were withheld rather than empty. The starter active-member metric treats a paid membership as valid through its expiry date; the membership ticket (#4) finalizes the club-timezone rule.
 
 ## Data and invariants
 
-- SQLite schema/seed initialization is transactional and versioned with `PRAGMA user_version`.
+- Schema changes are versioned migrations in `src/lib/db/migrations.ts`, applied in one write transaction and recorded in `PRAGMA user_version`. `GET /api/health` reports the current version.
 - Member email has a case-insensitive UNIQUE constraint. API validation is also enforced at the store boundary.
+- Sessions store only a SHA-256 hash of the cookie token with `expires_at`/`revoked_at`.
+- `audit_events` records who changed what (`member.created`, `member.role_changed`, `member.password_set`, and future finance decisions).
 - A sample event's `registered` count cannot exceed capacity. The starter has no booking operation yet.
 - Ledger amounts are positive integer paise; `kind` determines income versus expense. Balance is calculated on the server.
-- Products are aggregate read-only examples. The merchandise ticket introduces size variants and transactional reservations.
-- The six preview tables are not a completed relational domain model. Authentication, club scoping, foreign keys between future orders/tickets/receipts, and audit events belong in the implementation tickets.
+- Products are aggregate read-only examples until the merchandise ticket introduces size variants.
 
 ## Planned conventions
 
 These are design constraints for future tickets, not implemented endpoints:
 
-- Identity: define session/user/club/role shapes and 401/403 behavior in #3 before integration.
 - Membership: define plans, free/paid status, benefit eligibility, renewal and idempotent dues recording in #4.
 - Ticketing: reserve capacity atomically; issue tickets against confirmed states; reject duplicate check-in in #5.
 - Merchandise: use per-size stock and idempotent order/payment confirmation in #6.
@@ -46,4 +98,8 @@ These are design constraints for future tickets, not implemented endpoints:
 - Announcements: distinguish draft, publication and notification delivery; local outbox is not actual delivery in #8.
 - Volunteers: task owner, deadline and status are separate from service-hour reporting in #9.
 
-Payment and notification adapters must expose pending, succeeded and failed states honestly. Production authorization must replace the starter guard before real/shared data use.
+Payment and notification adapters must expose pending, succeeded and failed states honestly. Secrets and demo credentials live in environment configuration, never in code.
+
+## Local demo clock
+
+`MODE_DEMO_NOW=<ISO timestamp>` freezes the server clock so expiry, reminders and deadlines can be demonstrated deterministically. Tests use an injected clock instead of this variable.
