@@ -67,3 +67,4 @@ docs/                    Team, contracts, task map and demo
 | Azman | [@Azmanshaikh](https://github.com/Azmanshaikh) | Frontend, forms, dashboards, API consumption and responsive UX |
 
 The 10 October plan assigns the former platform/release role to Nitish. Use one feature branch and one linked PR per ticket; every contributor should own and explain their work. See [CONTRIBUTING.md](CONTRIBUTING.md).
+-Please check the detail docs (https://github.com/nitishssh/MODE/wiki)
