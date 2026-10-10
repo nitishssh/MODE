@@ -204,6 +204,8 @@ export interface SessionUser {
 export interface AuthResponse {
   user: SessionUser;
   expiresAt: string;
+  /** Native clients store this in secure storage; web clients use the HttpOnly cookie. */
+  token: string;
 }
 
 export interface RegisterInput {

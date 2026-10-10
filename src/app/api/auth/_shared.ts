@@ -17,6 +17,6 @@ export function toSessionUser(source: Actor | (Member & { clubId: string })): Se
 }
 
 export function sessionResponse(request: Request, issued: IssuedSession, clubId: string, status: number): Response {
-  const body: AuthResponse = { user: toSessionUser({ ...issued.member, clubId }), expiresAt: issued.expiresAt };
+  const body: AuthResponse = { user: toSessionUser({ ...issued.member, clubId }), expiresAt: issued.expiresAt, token: issued.token };
   return json(body, { status, headers: { "Set-Cookie": sessionCookie(issued.token, issued.expiresAt, request) } });
 }

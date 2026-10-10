@@ -57,12 +57,14 @@ export interface RequestOptions {
   cookie?: string | null;
   origin?: string | null;
   rawBody?: string;
+  authorization?: string;
 }
 
 export function apiRequest(path: string, options: RequestOptions = {}): Request {
   const headers: Record<string, string> = {};
   if (options.origin !== null) headers.Origin = options.origin ?? ORIGIN;
   if (options.cookie) headers.Cookie = options.cookie;
+  if (options.authorization !== undefined) headers.Authorization = options.authorization;
   const body = options.rawBody ?? (options.body === undefined ? undefined : JSON.stringify(options.body));
   if (body !== undefined) headers["Content-Type"] = "application/json";
   return new Request(`${ORIGIN}${path}`, { method: options.method ?? (body === undefined ? "GET" : "POST"), headers, body });
