@@ -91,6 +91,9 @@ export interface Transaction {
 
 // ── Receipt ──────────────────────────────────────────────────────────────────
 
+/** Decimal MB; shared by web validation and the upload boundary. */
+export const MAX_RECEIPT_SIZE_BYTES = 5_000_000;
+
 export interface Receipt {
   id: string;
   uploaderId: string;
@@ -126,7 +129,7 @@ export interface Expense {
 export interface SubmitExpenseInput {
   amountPaise: number;
   purpose: string;
-  receiptId?: string;
+  receiptId: string;
   receiptReference?: string;
   eventId?: string;
 }
@@ -152,6 +155,20 @@ export interface ExpenseLedgerEntry {
   eventTitle: string | null;
   reference: string | null;
   occurredAt: string;
+  kind: "income" | "expense";
+  sourceType: string;
+  sourceId: string | null;
+  recordedBy: string | null;
+  recordedByName: string | null;
+}
+
+/** Permission-scoped details of the exact record behind a ledger row. */
+export interface LedgerSource {
+  type: string;
+  id: string;
+  title: string;
+  details: Array<{ label: string; value: string }>;
+  receiptId: string | null;
 }
 
 // ── Event report ──────────────────────────────────────────────────────────────
