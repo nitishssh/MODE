@@ -100,6 +100,46 @@ Schema v2 seeds four synthetic officer accounts in the sample club: `lead@exampl
 - The dues row, the member's new expiry and one `dues_payment` income ledger row (with `recordedBy`) commit in one transaction. Replaying a reference returns the same payment with `created:false` and credits nothing; another member's reference is `409`.
 - Reminders: one in-app notification and one `simulated` outbox row per member per expiry date, enforced by `UNIQUE(member_id, expires_on)`; repeat runs report `skipped`. The outbox is explicitly simulated; no email is sent.
 
+## Event tickets, holds and the door (#5, P2)
+
+Schema v6 (v5 is reserved for Nitish's P4). `events` gains `clubId`, `status` (`draft|published|cancelled`) and `description`; `tickets` holds member and guest bookings with a 30-minute hold, unique QR token and 10-character Crockford short code (same bounded collision retry as member passes, checked against both tables).
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/events` | public (organizers also see drafts) | 200 `{events:EventDetails[]}` | |
+| POST | `/api/events` | `events:write` | 201 `{event}` | 400; 401; 403 |
+| GET | `/api/events/{id}` | public (drafts 404 unless `events:write`) | 200 `{event}` | 404 |
+| PATCH | `/api/events/{id}` | `events:write` | 200 `{event}` | 400 (incl. capacity below held seats); 401; 403; 404 |
+| POST | `/api/events/{id}/tickets` | `bookings:create` | 201 `{ticket:Ticket}` with `qrToken` | 401; 403; 404; 409 `duplicate_ticket` · `sold_out` · `event_not_open` · `event_started` |
+| POST | `/api/events/{id}/guest-tickets` `{name,email}` | public, same-origin | 201 `{ticket, url:"/t/{qrToken}"}` | 400; 403 cross-origin; 404; 409 `duplicate_ticket` · `sold_out` · `member_email` (sign in instead) |
+| GET | `/t/{qrToken}` | public, token only | 200 `{ticket:PublicTicket}` | 404 |
+| GET | `/api/tickets/mine` | signed in | 200 `{tickets:Ticket[]}` with `qrToken` | 401 |
+| GET | `/api/events/{id}/holds` | `payments:confirm` | 200 `{holds:Ticket[]}` pending only, soonest expiry first | 401; 403; 404 |
+| GET | `/api/events/{id}/tickets` | `payments:confirm` | 200 `{tickets:Ticket[]}` all statuses, full guest email | 401; 403; 404 |
+| POST | `/api/tickets/{id}/confirm` `{reference}` | `payments:confirm` | 201 `{ticket,created:true}` · 200 `{ticket,created:false}` already paid | 400; 401; 403; 404; 409 `hold_expired` ("Hold expired, rebook") |
+| POST | `/api/tickets/{id}/cancel` | owner of a pending ticket, or `payments:confirm` | 200 `{ticket}` (repeat is a no-op) | 401; 403; 404; 409 `hold_expired` · `refunds_out_of_scope` (paid) |
+| POST | `/api/events/{id}/scan` `{credential}` | `tickets:check_in` | 200 `ScanResult` | 400; 401; 403; 404 event |
+| GET | `/api/events/{id}/report` | `events:report` | 200 `EventReport` | 401; 403; 404 |
+
+- **Pricing** is fixed at booking from `membershipState`: active members pay `memberPricePaise`, everyone else `guestPricePaise`. Guests book by name and email (normalised lower-case); an email that belongs to a club member is refused with `member_email`.
+- **One live ticket** per member or guest email per event (`pending_payment` or `paid`), enforced by partial UNIQUE indexes. Cancelled and expired tickets do not block rebooking.
+- **Seats**: `registered` is incremented with a conditional `UPDATE … WHERE registered < capacity` inside `BEGIN IMMEDIATE`, with no awaits; the last seat can never be sold twice. Zero-price tickets are `paid` at booking and post no ledger row.
+- **Holds**: a pending ticket holds its seat for 30 minutes (`holdExpiresAt`). `releaseExpiredHolds()` runs inside the transaction before booking, confirmation, cancellation, scan, hold lists and the report; it marks lapsed holds `expired` and returns their seats exactly once. Indexes: `(event_id, status, hold_expires_at)`, `(status, hold_expires_at)`.
+- **Confirmation** is the only income path: release expired holds, then one conditional `UPDATE … WHERE status = 'pending_payment'`, then exactly one `ticket` income row via `postLedgerEntry` with `recordedBy`. Expired or cancelled holds answer `409 hold_expired` and write nothing; a second confirmation of a paid ticket returns `200 created:false` and posts nothing. Refunds are out of scope, so paid tickets cannot be cancelled.
+- **Door contract**: the scanner selects the event first, then sends a ticket QR token / short code or a member QR token / short code (never an id). A member resolves to their single live ticket for that event. Outcomes and the fixed messages:
+
+| `outcome` | `message` | When |
+|---|---|---|
+| `admitted` | Admitted | paid, not yet scanned; `attendee:{name, membership}` where membership is `active|expired|none|guest` |
+| `already_checked_in` | Already checked in | repeat scan; `checkedInAt` is the original timestamp |
+| `payment_pending` | Payment pending | ticket still on hold |
+| `not_valid` | Not valid for this event | unknown credential, other event, cancelled or expired ticket |
+| `member_no_ticket` | Member, no ticket | active member pass, no live ticket here |
+| `no_ticket_membership_expired` | No ticket · membership expired | expired or never-paid member pass, no live ticket here |
+
+  Admission depends on the paid ticket, not on membership. Check-in is one conditional `UPDATE … WHERE status = 'paid' AND checked_in_at IS NULL`, so a repeat scan cannot admit twice.
+- **Report**: `{event, tickets:{pendingPayment,paid,cancelled,expired}, ticketsSold, attendance, realizedRevenuePaise}` where revenue is the sum of `ticket` ledger rows for the event. The starter events' seeded `registered` counts are pre-system registrations and are not tickets.
+
 ## Starter routes
 
 | Method | Path | Permission | Success | Failure |

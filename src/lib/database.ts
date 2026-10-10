@@ -5,6 +5,7 @@ import { transaction, type DbContext } from "./db/core";
 import { SCHEMA_VERSION, migrate } from "./db/migrations";
 import { createDashboardModule } from "./modules/dashboard";
 import { createDuesModule } from "./modules/dues";
+import { createEventsModule } from "./modules/events";
 import { createIdentityModule } from "./modules/identity";
 import { ledgerBalance, listLedger, postLedgerEntry, reconcileLedger, type LedgerEntryInput } from "./modules/ledger";
 
@@ -31,12 +32,14 @@ export function openClubDatabase(filename: string, options: { now?: () => Date }
   const identity = createIdentityModule(ctx);
   const dashboard = createDashboardModule(ctx, identity);
   const dues = createDuesModule(ctx, identity);
+  const events = createEventsModule(ctx, identity);
   let closed = false;
 
   return {
     ...identity,
     ...dashboard,
     dues,
+    events,
     ledger: {
       post: (input: LedgerEntryInput) => postLedgerEntry(ctx, input),
       list: () => listLedger(db),
