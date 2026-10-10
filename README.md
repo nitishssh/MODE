@@ -24,7 +24,7 @@ npm run build
 npm start
 ```
 
-The production build defaults to read-only demo behavior: member creation returns 403. `MODE_ENABLE_DEMO_WRITES=true` is an explicit opt-in for a trusted private/local demonstration, not authentication. Both provided server commands bind to loopback by default.
+Writes now require signing in (see [API contracts](docs/API.md) for roles and demo accounts). `npm start` runs in production mode, which refuses to seed a new database with the public default demo password: set `MODE_DEMO_PASSWORD` first (for example `MODE_DEMO_PASSWORD=your-own-secret npm start`). Both provided server commands bind to loopback by default.
 
 ## LAN and PWA delivery
 

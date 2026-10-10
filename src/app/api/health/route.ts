@@ -1,13 +1,14 @@
 import { getDatabase } from "../../../lib/database";
+import { json } from "../../../lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    return Response.json(getDatabase().health(), { headers: { "Cache-Control": "no-store" } });
+    return json(getDatabase().health());
   } catch (error) {
     console.error("MODE database health check failed", error);
-    return Response.json({ status: "error", error: "Database is unavailable." }, { status: 503 });
+    return json({ status: "error", error: "Database is unavailable." }, { status: 503 });
   }
 }
