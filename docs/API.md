@@ -64,6 +64,43 @@ Permissions for tickets #4–#9 are reserved here so the UI can be built against
 
 Schema v2 seeds four synthetic officer accounts in the sample club: `lead@example.com` (admin), `organizer@example.com`, `treasurer@example.com`, `volunteer@example.com`. Their shared password is `MODE_DEMO_PASSWORD` (default `mode-demo-2026`). The three starter members have no password until an admin sets one. No record contains real student information.
 
+## Membership dues, benefits and renewals (#4)
+
+Membership is a dated period on a plan, not a flag. The shared rule used by tickets (#5) and merchandise (#6) is `membership.statusFor(clubId, memberId)`: a member is **active** when the club calendar day (Asia/Kolkata) lies inside a membership period, and gets **member pricing** only when that plan grants it. Expired members fall back to guest pricing automatically.
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/membership/plans` | public | 200 `{plans:MembershipPlan[]}` | 500 |
+| GET | `/api/membership/me` | signed in | 200 `{membership:MembershipStatus}` | 401 |
+| GET | `/api/members/{id}/membership` | `members:read` | 200 `{membership:MembershipStatus}` | 401; 403; 404 |
+| POST | `/api/membership/payments` | `membership:record_payment` | 201 created · 200 replayed `{membership,payment,created,status}` | 400 missing reference / wrong amount; 401; 403; 404 member or plan; 409 reference reused or duplicate free enrolment |
+| POST | `/api/membership/reminders/run` | `membership:reminders` | 200 `{asOf,horizon,candidates,created,skipped}` | 401; 403 |
+
+Record-dues request:
+
+```json
+{"memberId":"…","planId":"plan-annual","paymentReference":"UPI-2026-0001","amountPaise":50000}
+```
+
+- Seeded plans: `plan-associate` (free, 365 days, no member pricing) and `plan-annual` (50000 paise, 365 days, member pricing).
+- `paymentReference` is unique per club. Replaying the same reference for the same member, purpose and amount returns the original membership with `created:false` and credits nothing. Reusing it for anyone else is `409 payment_reference_reused`.
+- `amountPaise` must equal the plan price; the server never trusts a client amount.
+- Renewal is deterministic: when the latest period still runs, the new period starts the day after it ends; otherwise it starts today. `expiresOn = startsOn + durationDays`, valid through that day.
+- Free plans need no payment; enrolling again while that free period is active is `409 duplicate_membership`.
+- Every paid dues record posts exactly one ledger income row referencing the payment. `Member.duesStatus`/`expiresOn` mirror the latest period for the dashboard; `MembershipStatus` is authoritative.
+
+### Renewal reminders and the outbox
+
+`POST /api/membership/reminders/run` with optional `{"daysAhead":14}` queues one `membership_renewal` message per membership ending within the window that has not been renewed. The dedupe key `renewal:<membershipId>` makes repeated runs idempotent. Use `MODE_DEMO_NOW` to move the clock during a demo.
+
+| Method | Path | Permission | Success |
+|---|---|---|---|
+| GET | `/api/outbox?kind=&status=` | `outbox:manage` | 200 `{transport,pending,messages:OutboxMessage[]}` |
+| GET | `/api/outbox/{id}` | `outbox:manage` | 200 `{message}` incl. `body` and `transport` |
+| POST | `/api/outbox/dispatch` | `outbox:manage` | 200 `{transport,previewed,remaining}` |
+
+Outbox statuses are `pending`, `previewed`, `sent`, `failed`. The local transport is `preview` (`MODE_MAIL_TRANSPORT` unset): dispatch marks messages `previewed`, never `sent`. A real transport must be configured before anything is reported as sent; until then dispatch with `MODE_MAIL_TRANSPORT=smtp` answers `501 mail_transport_unavailable`. Recipient addresses are masked in listings and retries can never duplicate a message because each logical send has one row.
+
 ## Starter routes
 
 | Method | Path | Permission | Success | Failure |
@@ -82,7 +119,8 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 - Schema changes are versioned migrations in `src/lib/db/migrations.ts`, applied in one write transaction and recorded in `PRAGMA user_version`. `GET /api/health` reports the current version.
 - Member email has a case-insensitive UNIQUE constraint. API validation is also enforced at the store boundary.
 - Sessions store only a SHA-256 hash of the cookie token with `expires_at`/`revoked_at`.
-- `audit_events` records who changed what (`member.created`, `member.role_changed`, `member.password_set`, and future finance decisions).
+- `audit_events` records who changed what (`member.created`, `member.role_changed`, `member.password_set`, `membership.recorded`, and future finance decisions).
+- `payments(club_id, reference)` is UNIQUE; `transactions(source_type, source_id)` is UNIQUE so each originating payment can post to the ledger only once.
 - A sample event's `registered` count cannot exceed capacity. The starter has no booking operation yet.
 - Ledger amounts are positive integer paise; `kind` determines income versus expense. Balance is calculated on the server.
 - Products are aggregate read-only examples until the merchandise ticket introduces size variants.
@@ -91,7 +129,6 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 
 These are design constraints for future tickets, not implemented endpoints:
 
-- Membership: define plans, free/paid status, benefit eligibility, renewal and idempotent dues recording in #4.
 - Ticketing: reserve capacity atomically; issue tickets against confirmed states; reject duplicate check-in in #5.
 - Merchandise: use per-size stock and idempotent order/payment confirmation in #6.
 - Treasury: distinguish requested, approved and paid reimbursements; trace each source transaction once in #7.
