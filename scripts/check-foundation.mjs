@@ -104,12 +104,34 @@ try {
   assert.equal((await members()).length, before.length + 1, "Rejected submissions must not add rows");
   console.log("PASS: duplicate, invalid and malformed submissions rejected without writes");
 
+  const publicationBody = JSON.stringify({ idempotencyKey: "restart-notice", title: "Synthetic restart notice", body: "This publication must survive a server restart." });
+  const publication = await (await request("/api/announcements", 201, { method: "POST", headers, body: publicationBody })).json();
+  assert.equal(publication.recipientCount, 3);
+  assert.equal(publication.delivery, "simulated");
+  const announcementPath = `/api/announcements/${publication.announcement.id}`;
+  assert.deepEqual(await (await request(announcementPath, 200)).json(), { announcement: publication.announcement });
+  const delivery = await (await request(`${announcementPath}/outbox`, 200, { headers })).json();
+  assert.equal(delivery.messages.length, 3);
+  assert.ok(delivery.messages.every(row => row.status === "simulated"));
+  await request(`${announcementPath}/outbox`, 401);
+  const memberSession = await (await request("/api/auth/login", 200, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "active@example.com", password }),
+  })).json();
+  const inbox = await (await request("/api/notifications", 200, { headers: { Authorization: `Bearer ${memberSession.token}` } })).json();
+  assert.equal(inbox.notifications.filter(row => row.announcementId === publication.announcement.id).length, 1);
+  console.log("PASS: built announcement routes publish, protect simulated outbox and notify active members");
+
   await stopServer();
   await startServer();
   const after = await members();
   assert.equal(after.length, before.length + 1, "Restart must not reseed or lose rows");
   assert.deepEqual(after.find(member => member.id === created.member.id), created.member);
   console.log("PASS: member and authenticated session persist across a real server restart");
+  const replay = await (await request("/api/announcements", 200, { method: "POST", headers, body: publicationBody })).json();
+  assert.deepEqual(replay, { ...publication, created: false });
+  assert.equal((await (await request(`${announcementPath}/outbox`, 200, { headers })).json()).messages.length, 3);
+  console.log("PASS: publication and recipient snapshot persist without duplicates across a real server restart");
 } catch (error) {
   console.error("Foundation check failed:", error.message);
   process.exitCode = 1;

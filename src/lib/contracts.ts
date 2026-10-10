@@ -31,6 +31,32 @@ export interface Announcement {
   publishedAt: string;
 }
 
+/** Publishing is immediate; reuse this key and normalized content when retrying. */
+export interface PublishAnnouncementInput {
+  idempotencyKey: string;
+  title: string;
+  body: string;
+}
+
+export interface AnnouncementPublication {
+  announcement: Announcement;
+  created: boolean;
+  recipientCount: number;
+  delivery: "simulated";
+}
+
+/** Private delivery inspection, restricted to outbox:manage holders. */
+export interface AnnouncementOutboxMessage {
+  id: string;
+  announcementId: string;
+  memberId: string;
+  recipientEmail: string;
+  subject: string;
+  body: string;
+  status: "simulated";
+  createdAt: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -258,6 +284,7 @@ export interface Notification {
   body: string;
   createdAt: string;
   readAt: string | null;
+  announcementId: string | null;
 }
 
 /** Event tickets (P2, #5) */

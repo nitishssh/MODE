@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openClubDatabase, getDatabase } from "../src/lib/database";
+import { SCHEMA_VERSION } from "../src/lib/db/migrations";
 import { ForbiddenError, NotFoundError, ConflictError } from "../src/lib/errors";
 import { actorFor, DEMO, FIXED_NOW, memoryDatabase, withRouteDatabase, loginCookie, apiRequest, routeParams } from "./helpers";
 import { GET as tasks, POST as createTask } from "../src/app/api/tasks/route";
@@ -129,14 +130,17 @@ test("schema v8 upgrades preserve members, passes, sessions, merchandise and ope
     db.merchandise.confirmOrder(other,order.id,{reference:"MIGRATED-MERCH"});
     const pass=db.getPass(session.member.id),balance=db.ledger.balance(),count=db.getMembers().length;
     db.close();
-    // Reconstruct the released v8 shape by removing only v9's additive schema.
+    // Reconstruct the released v8 shape by removing later additive migrations.
     const raw=new DatabaseSync(path);
+    raw.exec("DROP INDEX announcements_request_idx; DROP INDEX announcements_archive_idx; DROP INDEX notifications_announcement_recipient_idx; DROP INDEX outbox_announcement_recipient_idx;");
+    raw.exec("ALTER TABLE notifications DROP COLUMN announcement_id; ALTER TABLE outbox_messages DROP COLUMN announcement_id;");
+    for(const column of ["club_id","published_by","idempotency_key","recipient_count"])raw.exec("ALTER TABLE announcements DROP COLUMN "+column);
     raw.exec("DROP TABLE expenses; DROP TABLE receipts; DROP INDEX tasks_club_idx;");
     for(const column of ["club_id","description","assignee_id","event_id","due_at","created_at"])raw.exec("ALTER TABLE tasks DROP COLUMN "+column);
     for(const column of ["club_id","event_id"])raw.exec("ALTER TABLE transactions DROP COLUMN "+column);
     raw.exec("ALTER TABLE events DROP COLUMN fundraiser_goal_paise; PRAGMA user_version=8;");raw.close();
     db=openClubDatabase(path,{now:()=>FIXED_NOW});
-    assert.equal(db.health().schemaVersion,9);assert.equal(db.getMembers().length,count);
+    assert.equal(db.health().schemaVersion,SCHEMA_VERSION);assert.equal(db.getMembers().length,count);
     assert.equal(db.ledger.balance(),balance);assert.deepEqual(db.getPass(session.member.id),pass);
     assert.equal(db.getActor(session.token)?.memberId,session.member.id);
     assert.equal(db.getTasks(db.getActor(session.token)!).length,3);

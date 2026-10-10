@@ -10,7 +10,7 @@ Foundation acceptance was verified in [merged PR #26](https://github.com/nitishs
 4. Read `GET /api/members` with that session, restart the server, and read again: the new unpaid member remains present.
 5. Submit the same email again through the authorized API: expect 409 without adding another record.
 6. Check invalid name/email handling through the authorized API. Navigate all six web areas and confirm unfinished flows are marked as previews.
-7. Visit `/api/health`; it returns 200 and reports SQLite schema version 9.
+7. Visit `/api/health`; it returns 200 and reports SQLite schema version 10.
 8. Run `npm run check`, then `npm run test:foundation`. The first command includes typecheck, API documentation contracts, domain/API tests and the build; the second checks HTTP member/session persistence across a server restart using a temporary database.
 9. Set `MODE_DEMO_PASSWORD` before seeding a new production database, then run `npm start`. Public reads work; member creation requires an organizer/admin session. Verify missing authentication returns 401, insufficient permissions return 403, and cross-origin cookie writes return 403. Production ignores `MODE_CORS_ORIGINS`.
 
@@ -41,6 +41,36 @@ node --import tsx --test tests/p0-foundations.test.ts tests/membership-state.reg
 ```
 
 See [acceptance evidence](ACCEPTANCE.md) for observed outcomes and the reconciliation repair. These are backend checks; native camera/Expo and the complete semester journey remain separate delivery issues.
+
+## Announcement publication (#8)
+
+Start the server with a fresh synthetic database and the frozen clock shown above. Run this in a second PowerShell terminal. Session tokens stay in memory.
+
+```powershell
+$apiBase = 'http://127.0.0.1:3000'
+$demoPassword = if ($env:MODE_DEMO_PASSWORD) { $env:MODE_DEMO_PASSWORD } else { 'mode-demo-2026' }
+$officerSession = Invoke-RestMethod "$apiBase/api/auth/login" -Method Post -ContentType 'application/json' -Body (@{email='organizer@example.com';password=$demoPassword} | ConvertTo-Json)
+$officerHeaders = @{Authorization="Bearer $($officerSession.token)"}
+$publicationBody = @{idempotencyKey='DEMO-ANNOUNCEMENT-1';title='Synthetic welcome notice';body='Meet at the fictional welcome desk.'} | ConvertTo-Json
+$publication = Invoke-RestMethod "$apiBase/api/announcements" -Method Post -Headers $officerHeaders -ContentType 'application/json' -Body $publicationBody
+$publication
+Invoke-RestMethod "$apiBase/api/announcements"
+Invoke-RestMethod "$apiBase/api/announcements/$($publication.announcement.id)"
+Invoke-RestMethod "$apiBase/api/announcements/$($publication.announcement.id)/outbox" -Headers $officerHeaders
+Invoke-RestMethod "$apiBase/api/announcements" -Method Post -Headers $officerHeaders -ContentType 'application/json' -Body $publicationBody
+foreach ($email in @('active@example.com','expired@example.com','organizer@example.com')) {
+  $memberSession = Invoke-RestMethod "$apiBase/api/auth/login" -Method Post -ContentType 'application/json' -Body (@{email=$email;password=$demoPassword} | ConvertTo-Json)
+  $memberHeaders = @{Authorization="Bearer $($memberSession.token)"}
+  $inbox = Invoke-RestMethod "$apiBase/api/notifications" -Headers $memberHeaders
+  [pscustomobject]@{Account=$email;Announcements=@($inbox.notifications | Where-Object kind -eq 'announcement').Count}
+}
+```
+
+On a fresh database the first publication returns `created:true`, `recipientCount:3` and `delivery:simulated`. The archive/detail contain only public content and the publication date. The outbox contains three rows labeled `simulated`. The repeat returns the same ID/date/count with `created:false`. The active account has one announcement notification; the expired and unpaid organizer accounts have none. Open the website's Announcements section to view the published notice and its detail.
+
+Repeat after restarting with the same database: the saved key still returns the original publication. Changing the body while keeping the key returns 409. Publishing as a member, volunteer or treasurer returns 403; anonymous publishing or outbox inspection returns 401. No real email or WhatsApp is sent.
+
+Run `node --import tsx --test tests/announcements.test.ts` for reproducible validation, role checks, IST expiry boundaries, database uniqueness, injected delivery/audit failure rollback, retry persistence, notification isolation and v9 migration coverage. After `npm run build`, `npm run test:foundation` also checks publication, protected outbox, member notifications and replay through the built HTTP server across a real restart. The publishing/inbox/outbox UI remains the separate #12 frontend task.
 
 ## Full MVP acceptance — integration and remaining tickets
 

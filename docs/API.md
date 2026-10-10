@@ -83,7 +83,7 @@ Schema v2 seeds four synthetic officer accounts in the sample club: `lead@exampl
 - **Member pass**: every member has a unique 128-bit base64url `qrToken` and a unique 10-character Crockford base32 `shortCode` (bounded collision retry, max 5). `GET /api/auth/me` returns `pass:{qrToken,shortCode,membership,expiresOn}` to the member themselves; `Member` exposes `shortCode` only. Door scanning resolves a pass by token or code, never by sequential id (`findMemberByPass`).
 - **Ledger**: `transactions` gains `sourceType`, `sourceId`, `recordedBy` with a UNIQUE index on the source pair. The three starter rows are backfilled as `opening_balance` entries with "Opening balance (pre-system): …" descriptions. Financial modules call `postLedgerEntry()` inside the same transaction as the source transition; it rejects non-positive or non-integer paise and a second post for the same source.
 - **Reconciliation**: `reconcileLedger(db)` reports balance, opening balances, duplicates, unsourced rows and orphans (rows whose source no longer resolves). It also walks dues, paid tickets, paid/fulfilled merchandise and paid expenses: `missing` identifies money sources without a ledger row; `mismatched` identifies inconsistent amount, direction, club or officer attribution. Free tickets/orders and unpaid sources require no entry. Expenses retain their paying officer in the ledger; the claim's reviewer may be different. A clean report requires every anomaly array to be empty and `unsourced` to be zero. New financial modules must extend both `SOURCE_RESOLVERS` and the source enumeration in `reconcileLedger`, with missing/mismatched-source coverage.
-- **Demo accounts**: `active@example.com` (membership active, expires in 300 days) and `expired@example.com` (expired 10 days ago), password `MODE_DEMO_PASSWORD`, join the four officer accounts. The current schema version is 9.
+- **Demo accounts**: `active@example.com` (membership active, expires in 300 days) and `expired@example.com` (expired 10 days ago), password `MODE_DEMO_PASSWORD`, join the four officer accounts. The current schema version is 10.
 
 ## Membership dues, renewals and reminders (#4, P1)
 
@@ -190,13 +190,13 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 
 ## Planned conventions
 
-These are the ticket design constraints. The membership, ticket, merchandise, task and reimbursement endpoints above and below implement the corresponding parts; announcement publishing remains future work:
+These are the ticket design constraints. The membership, ticket, merchandise, task, reimbursement and announcement endpoints implement the corresponding parts:
 
 - Membership: define plans, free/paid status, benefit eligibility, renewal and idempotent dues recording in #4.
 - Ticketing: reserve capacity atomically; issue tickets against confirmed states; reject duplicate check-in in #5.
 - Merchandise: use per-size stock and idempotent order/payment confirmation in #6.
 - Treasury: distinguish requested, approved and paid reimbursements; trace each source transaction once in #7.
-- Announcements: distinguish draft, publication and notification delivery; local outbox is not actual delivery in #8.
+- Announcements: submission publishes immediately; composing drafts is a client concern. Publication creates notifications and a simulated outbox atomically; it does not send email or WhatsApp.
 - Volunteers: task owner, deadline and status are separate from service-hour reporting in #9.
 
 Payment and notification adapters must expose pending, succeeded and failed states honestly. Secrets and demo credentials live in environment configuration, never in code.
@@ -241,6 +241,30 @@ Errors use 400 for invalid bodies, 401 for absent/expired sessions, 403 for role
 The event report preserves ticket counts, attendance and realized revenue, and adds fundraiser progress and task counts. Ticket receipts, dues and merchandise income remain in the same ledger; the new migration backfills their club metadata and ticket event attribution. Treasury entries retain their external payment references. Reserved schema gaps remain skipped; v9 follows the already released v8.
 
 EXPO_PUBLIC_API_URL remains configuration for a future Expo client. Browser sign-in and native bearer authentication exist, but the Expo UI is not included. MODE_CORS_ORIGINS follows the development-only policy above.
+
+## Announcements and simulated delivery (schema v10, #8)
+
+| Method | Path | Access | Response |
+|---|---|---|---|
+| GET | `/api/announcements` | public | `{announcements: Announcement[]}`, newest publication first |
+| POST | `/api/announcements` | `announcements:write` (organizer/admin) | 201 `AnnouncementPublication`; 200 on an identical retry |
+| GET | `/api/announcements/{id}` | public | `{announcement: Announcement}`; 404 if missing or outside the selected club |
+| GET | `/api/announcements/{id}/outbox` | `outbox:manage` (organizer/admin), own club | `{delivery:"simulated",messages:AnnouncementOutboxMessage[]}` |
+| GET | `/api/notifications` | signed in | `{notifications:Notification[]}`, only the session recipient's rows |
+
+`PublishAnnouncementInput` is `{idempotencyKey,title,body}`. The server trims each string; key length is 1–120, title 3–160 and body 1–10000 characters. Unknown fields, including audience, recipient IDs, author IDs and publication timestamps, return 400. Content is plain text; clients must render it as text. Successful submission publishes immediately. Draft editing and the publishing form belong to the client work in #12.
+
+`Announcement` is `{id,title,body,publishedAt}`; `publishedAt` is the server's UTC ISO timestamp. Public responses omit recipient addresses, member IDs, publisher IDs, idempotency keys and delivery counts. Anonymous reads select the default club; authenticated reads select the session's club. The existing dashboard also shows this dated archive within that club.
+
+`AnnouncementPublication` is `{announcement,created,recipientCount,delivery:"simulated"}`. Clients generate and retain one key per intended publication. The same key and normalized title/body in the same club returns the original publication and count with `created:false`. Reusing the key with different content returns 409 (`announcement_key_reused`). Using a new key intentionally creates another publication. Keys remain durable across server restarts and are scoped to a club.
+
+Publication takes a SQLite write lock and selects recipients using the shared P0 active-membership SQL predicate and one Asia/Kolkata calendar date: an expiry today is active; yesterday and null are excluded, regardless of `duesStatus` or role. It inserts the announcement, one in-app notification and one outbox row per active member, and the audit event in the same transaction. Any insert failure rolls everything back. Empty audiences are valid. Retries keep the original recipient snapshot, including after renewals or expiry; unique `(announcement_id,member_id)` indexes also prevent duplicate recipient rows.
+
+`AnnouncementOutboxMessage` is `{id,announcementId,memberId,recipientEmail,subject,body,status:"simulated",createdAt}`. This private endpoint shows the saved recipient address at publication. **Simulated delivery only: no email or WhatsApp is sent, and there is no dispatch endpoint.** A stored row does not prove external delivery. Real dispatch is deferred in [TODOS.md](../TODOS.md).
+
+`Notification` is `{id,kind,title,body,createdAt,readAt,announcementId}`. Announcement rows use `kind:"announcement"`; existing dues notifications have `announcementId:null`. Query parameters cannot change the recipient. All these responses use `Cache-Control: no-store`. Missing sessions return 401 on protected endpoints, insufficient roles and cross-origin cookie writes return 403, malformed input returns 400, and missing/foreign-club details return 404. Valid bearer mutations retain the existing native-client behavior.
+
+Schema v10 follows v9 (rather than filling a skipped version), keeps starter announcements as default-club archive entries without retroactive delivery, and adds nullable announcement links to existing notification/outbox rows. Legacy dues reminders remain intact. Published content has no update/delete API; publish a correction with a fresh key.
 
 ### Authentication status
 
