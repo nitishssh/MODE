@@ -1,11 +1,16 @@
 "use client";
 
+import { useLayoutEffect, useRef } from "react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { LanguageSwitcher } from "@/i18n/client";
 import { LandingTimeline } from "@/components/landing-timeline";
 
 type LandingPageProps = {
   onSignIn: () => void;
 };
+
+if (typeof window !== "undefined") gsap.registerPlugin(ScrollTrigger);
 
 const capabilities = [
   ["MEMBERSHIP", "A member pass, dues status and club identity in one place."],
@@ -15,6 +20,30 @@ const capabilities = [
 ];
 
 export function LandingPage({ onSignIn }: LandingPageProps) {
+  const capabilitiesRef = useRef<HTMLElement>(null);
+  const closingRef = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const context = gsap.context(() => {
+      [capabilitiesRef.current, closingRef.current].forEach((panel) => {
+        if (!panel) return;
+        gsap.fromTo(panel, { xPercent: 100, autoAlpha: 0.65 }, {
+          xPercent: 0,
+          autoAlpha: 1,
+          ease: "none",
+          scrollTrigger: {
+            trigger: panel,
+            start: "top bottom",
+            end: "top 12%",
+            scrub: 0.7,
+          },
+        });
+      });
+    });
+    return () => context.revert();
+  }, []);
+
   return <main className="landing-page">
     <a className="skip-link" href="#landing-main">Skip to main content</a>
     <header className="landing-header">
@@ -58,12 +87,12 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
 
     <LandingTimeline />
 
-    <section className="landing-capabilities" id="built-for-clubs" aria-labelledby="capabilities-title">
+    <section className="landing-capabilities landing-scroll-panel" ref={capabilitiesRef} id="built-for-clubs" aria-labelledby="capabilities-title">
       <div><p className="landing-kicker"><span aria-hidden="true" /> Built around the work, not the paperwork</p><h2 id="capabilities-title">Every club has moving parts.<br /><em>MODE keeps them legible.</em></h2></div>
       <div className="landing-capability-list">{capabilities.map(([label, copy], index) => <article key={label}><span>0{index + 1}</span><div><p>{label}</p><h3>{copy}</h3></div><b aria-hidden="true">↗</b></article>)}</div>
     </section>
 
-    <section className="landing-closing" aria-labelledby="closing-title">
+    <section className="landing-closing landing-scroll-panel" ref={closingRef} aria-labelledby="closing-title">
       <p>READY WHEN YOUR TEAM IS</p><h2 id="closing-title">Bring the club<br />into <em>focus.</em></h2><button className="landing-primary" type="button" onClick={onSignIn}>Go to sign in <span aria-hidden="true">→</span></button>
     </section>
 
