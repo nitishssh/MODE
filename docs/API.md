@@ -71,7 +71,7 @@ Roles: `member`, `volunteer`, `organizer`, `treasurer`, `admin` (club lead). Sel
 | `outbox:manage` | | | ✓ | | ✓ |
 | `tasks:write` | | | ✓ | | ✓ |
 
-Permissions for unfinished merchandise and announcement workflows remain reserved. Implemented membership, ticket, task and reimbursement routes are documented below.
+Announcement permissions remain reserved for the unfinished publishing workflow. Implemented membership, ticket, merchandise, task and reimbursement routes are documented below.
 
 ### Demo accounts
 
@@ -190,7 +190,7 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 
 ## Planned conventions
 
-These are the ticket design constraints. The membership, ticket, task and reimbursement endpoints above and below implement the corresponding parts; merchandise and announcement workflows remain future work:
+These are the ticket design constraints. The membership, ticket, merchandise, task and reimbursement endpoints above and below implement the corresponding parts; announcement publishing remains future work:
 
 - Membership: define plans, free/paid status, benefit eligibility, renewal and idempotent dues recording in #4.
 - Ticketing: reserve capacity atomically; issue tickets against confirmed states; reject duplicate check-in in #5.
