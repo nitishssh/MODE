@@ -13,7 +13,7 @@ npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 9 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
+Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 10 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
 
 Optional configuration is documented in `.env.example`; copy it to `.env.local` if needed. Never commit `.env.local` or the local database. To try a separate dataset without changing the existing one, set `SQLITE_PATH` to a new filename.
 
@@ -87,4 +87,4 @@ The web manifest provides the MODE icon and standalone display metadata. On a su
 
 ### Authenticated tasks and reimbursements
 
-The web workspace now has sign-in, a task board, personal expense submissions and treasury review. Task assignment and status changes respect the signed-in member’s permissions. Receipts are private to their uploader and club finance reviewers. Reimbursements post exactly once to the shared ledger, alongside dues and ticket income. Schema v9 preserves the existing dues and ticket data. See [API](docs/API.md) and [demo walkthrough](docs/DEMO.md).
+The web workspace now has sign-in, a task board, personal expense submissions and treasury review. Task assignment and status changes respect the signed-in member’s permissions. New claims require a JPG, PNG or PDF receipt up to 5 MB, private to their uploader and club finance reviewers. Reimbursements post exactly once to the shared ledger, alongside dues and ticket income. The register links to exact source records and shows the paying officer; its CSV export matches the register totals. Schema v10 preserves existing data and legacy receipt files. See [API](docs/API.md), [demo walkthrough](docs/DEMO.md) and [local reimbursement verification](docs/REIMBURSEMENT-VERIFICATION.md).

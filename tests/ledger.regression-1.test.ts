@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { openClubDatabase } from "../src/lib/database";
-import { DEMO, FIXED_NOW, actorFor } from "./helpers";
+import { DEMO, FIXED_NOW, actorFor, receiptFor } from "./helpers";
 
 // Regression: ISSUE-001 — paid sources must not disappear from reconciliation.
 // Found by /qa on 2026-10-10. Report: docs/ACCEPTANCE.md
@@ -26,7 +26,8 @@ test("reconciliation detects missing and mismatched entries for every money-movi
     const order = db.merchandise.createOrder(member, { variantId: product.variants[0].id });
     db.merchandise.confirmOrder(admin, order.id, { reference: "RECON-ORDER" });
     db.merchandise.fulfilOrder(admin, order.id);
-    const expense = db.submitExpense(member, { amountPaise: 500, purpose: "Reconcile expense" });
+    const receiptId = receiptFor(db, member);
+    const expense = db.submitExpense(member, { amountPaise: 500, purpose: "Reconcile expense", receiptId });
     db.approveExpense(admin, expense.id); db.payExpense(admin, expense.id, "RECON-EXPENSE");
     const sources = [["dues_payment", dues.payment.id], ["ticket", ticket.id], ["merch_order", order.id], ["expense", expense.id]];
     const clean = db.ledger.reconcile();
@@ -56,7 +57,7 @@ test("reconciliation detects missing and mismatched entries for every money-movi
     db.merchandise.createOrder(member, { variantId: gift.variants[0].id });
     db.events.bookGuestTicket(admin.clubId, event.id, { name: "Pending guest", email: "pending@example.com" });
     db.merchandise.createOrder(member, { variantId: product.variants[0].id });
-    db.submitExpense(member, { amountPaise: 200, purpose: "Unpaid expense" });
+    db.submitExpense(member, { amountPaise: 200, purpose: "Unpaid expense", receiptId });
     assert.deepEqual(db.ledger.reconcile(), clean, "free and unpaid sources require no income/expense row");
   } finally { raw.close(); db.close(); rmSync(directory, { recursive: true, force: true }); }
 });

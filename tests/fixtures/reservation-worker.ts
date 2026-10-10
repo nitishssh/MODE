@@ -7,7 +7,8 @@ const actor = actorFor(db, email);
 process.once("message", () => {
   let result: { status: string; code?: string };
   try {
-    if (kind === "ticket") db.events.bookTicket(actor, id);
+    if (kind === "expense") db.payExpense(actor, id, "SIMULTANEOUS-PAYMENT");
+    else if (kind === "ticket") db.events.bookTicket(actor, id);
     else db.merchandise.createOrder(actor, { variantId: id });
     result = { status: "reserved" };
   } catch (error) {

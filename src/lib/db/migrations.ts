@@ -23,9 +23,19 @@ const MIGRATIONS: Migration[] = [
   // v7 is reserved for Nitish's P5 (#8).
   { version: 8, up: addMerchandiseOrders },
   { version: 9, up: addWorkspaceFlows },
+  { version: 10, up: addReceiptStorageNames },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
+
+/** Preserve released receipt files and claim links without filesystem moves. */
+function addReceiptStorageNames(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE receipts RENAME TO expense_receipts;
+    ALTER TABLE expense_receipts ADD COLUMN storage_name TEXT;
+    UPDATE expense_receipts SET storage_name = id;
+  `);
+}
 
 export function migrate(db: DatabaseSync, now: Date): void {
   // Check inside the write transaction so simultaneous first requests cannot both seed.
