@@ -1,8 +1,11 @@
-const expoConfig = require("eslint-config-expo/flat");
-const { defineConfig } = require("eslint/config");
-module.exports = defineConfig([expoConfig, {
+const { defineConfig } = require('eslint/config');
+const expo = require('eslint-config-expo/flat');
+module.exports = defineConfig([expo, {
+  ignores: ['dist/**', 'src/generated/**'],
   rules: {
     // Network hydration intentionally updates state after an async response.
-    "react-hooks/set-state-in-effect": "off"
-  }
+    'react-hooks/set-state-in-effect': 'off',
+    // Expo Google Fonts exposes font-weight subpaths that this resolver cannot discover.
+    'import/no-unresolved': ['error', { ignore: ['^@expo-google-fonts/'] }],
+  },
 }]);

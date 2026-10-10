@@ -9,6 +9,8 @@
     "platforms": ["ios", "android", "web"],
     "web": { "bundler": "metro", "output": "single" },
     "plugins": ["expo-router", "expo-secure-store", "expo-camera"],
-    "experiments": { "typedRoutes": true }
+    "experiments": { "typedRoutes": true },
+    "ios": { "supportsTablet": true },
+    "android": { "allowBackup": false }
   }
 }

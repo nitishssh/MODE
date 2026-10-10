@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
+import { I18nProvider } from "@/i18n/client";
+import { requestI18n } from "@/i18n/server";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "MODE — Your club, in sync",
-  description: "A runnable student organization workspace starter for memberships, events, volunteers, and finances.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { dict } = await requestI18n();
+  return { title: dict["app.title"], description: dict["app.description"] };
+}
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const { locale, info, dict } = await requestI18n();
   return (
-    <html lang="en">
+    <html lang={locale} dir={info.dir}>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -17,7 +20,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <I18nProvider locale={locale} dict={dict}>
+          {children}
+        </I18nProvider>
+      </body>
     </html>
   );
 }

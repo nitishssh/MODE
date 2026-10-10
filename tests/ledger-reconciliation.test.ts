@@ -3,6 +3,26 @@ import { test } from "node:test";
 import { openClubDatabase } from "../src/lib/database";
 import { ConflictError, ValidationError } from "../src/lib/errors";
 import { SOURCE_RESOLVERS } from "../src/lib/modules/ledger";
+import { DatabaseSync } from 'node:sqlite';
+import { rmSync } from 'node:fs';
+import { legacyFixture } from './legacy-fixture';
+
+test('legacy payer exception requires its migration evidence; missing and altered payments still fail reconciliation', () => {
+  const fixture = legacyFixture();
+  const db = openClubDatabase(fixture.filename, fixture.options);
+  const raw = new DatabaseSync(fixture.filename);
+  try {
+    const payment = db.ledger.list().find(row => row.sourceId === 'demo-expense-1')!;
+    assert.deepEqual(db.ledger.reconcile().mismatched, []);
+    raw.prepare('UPDATE transactions SET amount_paise = amount_paise + 1 WHERE id = ?').run(payment.id);
+    assert.deepEqual(db.ledger.reconcile().mismatched[0].fields, ['amountPaise']);
+    raw.prepare('UPDATE transactions SET amount_paise = amount_paise - 1 WHERE id = ?').run(payment.id);
+    raw.prepare('DELETE FROM legacy_ledger_imports WHERE transaction_id = ?').run(payment.id);
+    assert.deepEqual(db.ledger.reconcile().mismatched[0].fields, ['recordedBy']);
+    raw.prepare('DELETE FROM transactions WHERE id = ?').run(payment.id);
+    assert.deepEqual(db.ledger.reconcile().missing, [{ sourceType: 'expense', sourceId: 'demo-expense-1' }]);
+  } finally { raw.close(); db.close(); rmSync(fixture.directory, { recursive: true, force: true }); }
+});
 
 test("merchandise income stays in its club ledger with its payment reference", () => {
   const db = openClubDatabase(":memory:", { now: fixedNow });
@@ -24,7 +44,37 @@ test("merchandise income stays in its club ledger with its payment reference", (
     assert.deepEqual(db.ledger.reconcile().orphans, []);
   } finally { db.close(); }
 });
-import { DEMO, actorFor, memoryDatabase } from "./helpers";
+import { DEMO, actorFor, memoryDatabase, receiptFor } from "./helpers";
+
+test("reimbursements (#7): only payment changes balance, with one source and the paying officer", () => {
+  const { db } = memoryDatabase();
+  try {
+    const submitter = actorFor(db, "active@example.com"), reviewer = actorFor(db, DEMO.treasurer), payer = actorFor(db, DEMO.admin);
+    const before = db.ledger.reconcile();
+    const receiptId = receiptFor(db, submitter);
+    const expense = db.submitExpense(submitter, { amountPaise: 12345, purpose: "Synthetic transport", receiptId });
+    const rejected = db.submitExpense(submitter, { amountPaise: 500, purpose: "Duplicate claim", receiptId });
+    db.rejectExpense(reviewer, rejected.id, "Duplicate");
+    db.approveExpense(reviewer, expense.id);
+    assert.deepEqual(db.ledger.reconcile(), before);
+    assert.throws(() => db.transaction(() => { db.payExpense(payer, expense.id, "ROLLBACK"); throw new Error("abort"); }));
+    assert.deepEqual(db.ledger.reconcile(), before);
+    db.payExpense(payer, expense.id, "SYNTHETIC-PAID");
+    db.payExpense(payer, expense.id, "SYNTHETIC-PAID");
+    assert.throws(() => db.payExpense(payer, expense.id, "DIFFERENT"), ConflictError);
+    const entries = db.getLedgerEntries(payer).filter(e => e.sourceId === expense.id);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].recordedBy, payer.memberId);
+    assert.equal(entries[0].recordedByName, db.getMembers().find(m => m.id === payer.memberId)!.name);
+    assert.equal(entries[0].kind, "expense");
+    assert.equal(db.getLedgerSource(payer, entries[0].id).receiptId, receiptId);
+    const report = db.ledger.reconcile();
+    assert.deepEqual([report.orphans, report.duplicates, report.missing, report.mismatched], [[], [], [], []]);
+    assert.equal(report.unsourced, 0);
+    assert.equal(report.balancePaise, before.balancePaise - 12345);
+    assert.equal(db.getLedgerSummary(payer).balancePaise, report.balancePaise);
+  } finally { db.close(); }
+});
 
 const fixedNow = () => new Date("2026-10-10T08:00:00.000Z");
 

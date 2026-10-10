@@ -13,9 +13,11 @@
     "test": "tsx --test tests/*.test.ts",
     "test:foundation": "node scripts/check-foundation.mjs",
     "check:contracts": "tsx scripts/check-contract-docs.ts",
-    "sync-contracts": "tsx scripts/sync-contracts.ts",
-    "check:client-contracts": "tsx scripts/sync-contracts.ts --check",
-    "check": "npm run typecheck && npm run check:contracts && npm run check:client-contracts && npm test && npm run build"
+    "sync:contracts": "node scripts/sync-contracts.mjs",
+    "check:client-contracts": "node scripts/sync-contracts.mjs --check",
+    "build:client": "npm run check:client-contracts && npm --prefix client run export:web && node scripts/stage-expo-web.mjs",
+    "test:expo-web": "node scripts/check-expo-web.mjs",
+    "check": "npm run typecheck && npm run check:contracts && npm test && npm run build"
   },
   "dependencies": {
     "next": "16.4.0",
