@@ -19,6 +19,8 @@ const MIGRATIONS: Migration[] = [
   { version: 2, up: addIdentityAndRoles },
   { version: 3, up: addLedgerSourcesAndMemberPasses },
   { version: 4, up: addMembershipDues },
+  // v5 is reserved for Nitish's P4 (#7). Gaps are fine: migrate() applies every entry above user_version.
+  { version: 6, up: addEventTickets },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -296,5 +298,47 @@ function addMembershipDues(db: DatabaseSync) {
       created_at TEXT NOT NULL
     );
     CREATE INDEX membership_expiry_idx ON members (club_id, expires_on);
+  `);
+}
+
+// ---------------------------------------------------------------------------
+// v6 — P2 (#5): event status/club scope, tickets with 30-minute holds, door check-in
+// ---------------------------------------------------------------------------
+function addEventTickets(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE events ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
+    ALTER TABLE events ADD COLUMN status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('draft', 'published', 'cancelled'));
+    ALTER TABLE events ADD COLUMN description TEXT NOT NULL DEFAULT '';
+    CREATE INDEX events_club_idx ON events (club_id, starts_at);
+    CREATE TABLE tickets (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      event_id TEXT NOT NULL REFERENCES events(id),
+      member_id TEXT REFERENCES members(id),
+      guest_name TEXT,
+      guest_email TEXT,
+      pricing TEXT NOT NULL CHECK (pricing IN ('member', 'guest')),
+      price_paise INTEGER NOT NULL CHECK (price_paise >= 0),
+      status TEXT NOT NULL CHECK (status IN ('pending_payment', 'paid', 'cancelled', 'expired')),
+      hold_expires_at TEXT,
+      paid_at TEXT,
+      payment_reference TEXT,
+      confirmed_by TEXT REFERENCES members(id),
+      qr_token TEXT NOT NULL UNIQUE,
+      short_code TEXT NOT NULL UNIQUE,
+      checked_in_at TEXT,
+      checked_in_by TEXT REFERENCES members(id),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK ((member_id IS NULL) + (guest_email IS NULL) = 1),
+      CHECK (status <> 'pending_payment' OR hold_expires_at IS NOT NULL)
+    );
+    CREATE INDEX tickets_event_status_hold_idx ON tickets (event_id, status, hold_expires_at);
+    CREATE INDEX tickets_status_hold_idx ON tickets (status, hold_expires_at);
+    CREATE INDEX tickets_member_idx ON tickets (member_id, created_at);
+    CREATE UNIQUE INDEX tickets_member_event_live_idx ON tickets (event_id, member_id)
+      WHERE member_id IS NOT NULL AND status IN ('pending_payment', 'paid');
+    CREATE UNIQUE INDEX tickets_guest_event_live_idx ON tickets (event_id, guest_email)
+      WHERE guest_email IS NOT NULL AND status IN ('pending_payment', 'paid');
   `);
 }

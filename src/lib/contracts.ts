@@ -91,6 +91,75 @@ export interface Notification {
   readAt: string | null;
 }
 
+/** Event tickets (P2, #5) */
+export type EventStatus = "draft" | "published" | "cancelled";
+
+export interface EventDetails extends Event {
+  description: string;
+  status: EventStatus;
+  /** Seats not held or sold: capacity minus registered. */
+  available: number;
+}
+
+export type TicketStatus = "pending_payment" | "paid" | "cancelled" | "expired";
+
+export interface Ticket {
+  id: string;
+  eventId: string;
+  memberId: string | null;
+  guestName: string | null;
+  /** Masked unless the viewer is an officer. */
+  guestEmail: string | null;
+  holderName: string;
+  pricing: "member" | "guest";
+  pricePaise: number;
+  status: TicketStatus;
+  holdExpiresAt: string | null;
+  paidAt: string | null;
+  paymentReference: string | null;
+  confirmedBy: string | null;
+  /** 10-character Crockford code typed at the door. */
+  shortCode: string;
+  /** Only returned to the holder (member booking response, own list, /t/{token}). */
+  qrToken?: string;
+  checkedInAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** What a guest sees at /t/{qr_token}. */
+export interface PublicTicket {
+  id: string;
+  event: { id: string; title: string; startsAt: string; venue: string };
+  holderName: string;
+  status: TicketStatus;
+  pricePaise: number;
+  shortCode: string;
+  holdExpiresAt: string | null;
+  checkedInAt: string | null;
+}
+
+export type ScanOutcome = "admitted" | "already_checked_in" | "payment_pending" | "not_valid" | "member_no_ticket" | "no_ticket_membership_expired";
+
+/** Fixed door contract (#5). `message` is what the volunteer reads out. */
+export interface ScanResult {
+  outcome: ScanOutcome;
+  message: string;
+  admitted: boolean;
+  attendee?: { name: string; membership: "active" | "expired" | "none" | "guest" };
+  ticketId?: string;
+  checkedInAt?: string | null;
+}
+
+export interface EventReport {
+  event: EventDetails;
+  tickets: { pendingPayment: number; paid: number; cancelled: number; expired: number };
+  ticketsSold: number;
+  attendance: number;
+  /** Sum of `ticket` income rows in the ledger for this event. */
+  realizedRevenuePaise: number;
+}
+
 /** What a member shows at the door: QR payload and typed fallback. */
 export interface MemberPass {
   qrToken: string;
