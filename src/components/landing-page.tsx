@@ -53,8 +53,8 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
         MODE<span>.</span>
       </a>
       <nav className="landing-nav" aria-label="Landing navigation">
-        <a href="#how-it-works">How it works</a>
-        <a href="#built-for-clubs">Built for clubs</a>
+        <a href="#how-it-works">The rhythm</a>
+        <a href="#built-for-clubs">What MODE holds</a>
       </nav>
       <div className="landing-actions">
         <LanguageSwitcher />
@@ -64,14 +64,19 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
 
     <section className="landing-hero" id="top" aria-labelledby="landing-title">
       <div className="landing-hero-copy">
-        <p className="landing-kicker"><span aria-hidden="true" /> Student organizations, in sync</p>
-        <h1 id="landing-title">The quiet system behind a <em>well-run</em> club.</h1>
-        <p className="landing-intro">MODE gives student teams one calm place to coordinate members, events, tasks and money—without losing the human side of club work.</p>
+        <p className="landing-kicker"><span aria-hidden="true" /> A shared operating rhythm for clubs</p>
+        <h1 id="landing-title">The club moves<br />when the work is <em>clear.</em></h1>
+        <p className="landing-intro">MODE gives student teams one deliberate place for people, events, tasks and money—so each person knows what happens next.</p>
         <div className="landing-hero-actions">
-          <button className="landing-primary" type="button" onClick={onSignIn}>Open your workspace <span aria-hidden="true">→</span></button>
-          <a className="landing-secondary" href="#how-it-works">See the flow <span aria-hidden="true">↓</span></a>
+          <button className="landing-primary" type="button" onClick={onSignIn}>Enter MODE <span aria-hidden="true">→</span></button>
+          <a className="landing-secondary" href="#how-it-works">Explore the rhythm <span aria-hidden="true">↓</span></a>
         </div>
-        <p className="landing-caption">Built for real student teams · Clear by design · No guesswork</p>
+      </div>
+
+      <div className="landing-hero-note" aria-label="How MODE supports a student club">
+        <span>01</span>
+        <p>For the people<br />doing the work.</p>
+        <small>Not another dashboard—one shared source of truth.</small>
       </div>
 
       <div className="landing-register" aria-label="A sample MODE workspace preview">
@@ -84,6 +89,7 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
         </div>
         <p className="landing-register-footer"><i /> The register updates as your team does.</p>
       </div>
+      <p className="landing-caption">MEMBERS · EVENTS · TEAM WORK · TREASURY</p>
     </section>
 
     <LandingTimeline />
