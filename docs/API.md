@@ -126,6 +126,28 @@ Event body: `{title, description?, startsAt (ISO), venue, capacity, memberPriceP
 - **Reports** return held/confirmed/cancelled/expired counts, check-ins, event income from the ledger and the confirmed attendee list with check-in time.
 - Paid cancellations release the seat and are audited as paid; refunds are a treasury decision outside this ticket.
 
+## Merchandise variants, orders and stock-safe checkout (#6)
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/products` | public (organizers also see inactive) | 200 `{products:ProductDetails[]}` | 500 |
+| POST | `/api/products` | `products:write` | 201 `{product}` | 400 duplicate size; 401; 403 |
+| PATCH | `/api/products/variants/{id}` | `products:write` | 200 `{product}` | 400; 401; 403; 404 |
+| GET | `/api/orders` · `?scope=club` | signed in · `orders:fulfil` | 200 `{orders:Order[]}` | 401; 403 |
+| POST | `/api/orders` | `orders:create` (any member) | 201 `{order}` | 400; 401; 404 size; 409 `out_of_stock` · `product_inactive` |
+| POST | `/api/orders/{id}/confirm` | `payments:confirm` | 201 paid · 200 same reference replayed `{order,created}` | 400 wrong amount; 401; 403; 404; 409 `already_paid` · `order_cancelled` · `payment_reference_reused` |
+| POST | `/api/orders/{id}/cancel` | owner (unpaid) or `products:write` | 200 `{order}` | 401; 403 paid order by member; 404; 409 `order_fulfilled` |
+| POST | `/api/orders/{id}/fulfil` | `orders:fulfil` | 200 `{order}` | 401; 403; 404; 409 `order_not_paid` |
+
+Product body: `{name, description?, pricePaise, memberPricePaise?|null, variants:[{size, stock}]}`. Order body: `{variantId, quantity?}` (1–20). Confirm body: `{paymentReference, amountPaise}`.
+
+- **Variants** carry the stock; `Product.stock` is kept equal to the sum of its sizes so the starter dashboard keeps working. Starter products were split into S/M/L/XL with the same totals.
+- **Reservation** is `UPDATE product_variants SET stock = stock - q WHERE id = ? AND stock >= q` inside an immediate transaction, backed by the `stock >= 0` CHECK. Concurrent orders for the last unit get exactly one `201`; the rest are `409 out_of_stock`. Other sizes are unaffected.
+- **Pricing** uses the shared membership rule: active paid members pay `memberPricePaise` when the product defines one, otherwise `pricePaise`. The server fixes `unitPricePaise` and `totalPaise` at order time.
+- **States** are explicit: `status` is `pending_payment` → `paid` → (`cancelled`), `fulfilment` is `unfulfilled` → `fulfilled`. Zero-total orders are `paid` immediately.
+- **Payment** confirmation records the reference once (unique per club), replays safely, and posts exactly one `merchandise` ledger income row per payment.
+- **Cancellation** returns the quantity to the same size, is idempotent, and is audited with whether the order was paid; refunds of paid orders are a treasury action. Fulfilled orders cannot be cancelled.
+
 ## Starter routes
 
 | Method | Path | Permission | Success | Failure |
@@ -148,13 +170,12 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 - `payments(club_id, reference)` is UNIQUE; `transactions(source_type, source_id)` is UNIQUE so each originating payment can post to the ledger only once.
 - `events.registered` counts held seats (reserved + confirmed) and cannot exceed capacity; `check_ins.booking_id` is the primary key so a ticket can be used once.
 - Ledger amounts are positive integer paise; `kind` determines income versus expense. Balance is calculated on the server.
-- Products are aggregate read-only examples until the merchandise ticket introduces size variants.
+- `product_variants(product_id, size)` is UNIQUE with `stock >= 0`; `products.stock` mirrors the sum of its variants.
 
 ## Planned conventions
 
 These are design constraints for future tickets, not implemented endpoints:
 
-- Merchandise: use per-size stock and idempotent order/payment confirmation in #6.
 - Treasury: distinguish requested, approved and paid reimbursements; trace each source transaction once in #7.
 - Announcements: distinguish draft, publication and notification delivery; local outbox is not actual delivery in #8.
 - Volunteers: task owner, deadline and status are separate from service-hour reporting in #9.
