@@ -112,7 +112,7 @@ test("role changes are admin-only, audited, scoped to the club and never self-ap
     assert.equal(db.getMembers(otherClub).length, 1);
     assert.throws(() => db.setRole(otherAdmin, target.id, "member"), NotFoundError);
     assert.equal(db.getDashboard(otherAdmin).members.length, 1);
-    assert.equal(db.getMembers().length, 7, "default club unchanged");
+    assert.equal(db.getMembers().length, 9, "default club unchanged");
   } finally {
     db.close();
   }

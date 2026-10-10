@@ -1,5 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { hashPassword } from "../auth/password";
+import { allocateUniqueTokens } from "../auth/tokens";
+import { clubDate, addDays } from "./core";
 
 export const DEFAULT_CLUB_ID = "club-sample";
 
@@ -15,6 +17,7 @@ interface Migration {
 const MIGRATIONS: Migration[] = [
   { version: 1, up: createStarterSchema },
   { version: 2, up: addIdentityAndRoles },
+  { version: 3, up: addLedgerSourcesAndMemberPasses },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -192,4 +195,51 @@ function addIdentityAndRoles(db: DatabaseSync, now: Date) {
   for (const officer of DEMO_OFFICERS) {
     insertOfficer.run(officer.id, officer.name, officer.email, now.toISOString(), DEFAULT_CLUB_ID, officer.role, passwordHash);
   }
+}
+
+// ---------------------------------------------------------------------------
+// v3 — P0 foundations (#2): ledger sources, opening balances, member passes, demo members
+// ---------------------------------------------------------------------------
+export const DEMO_MEMBERS = [
+  { id: "demo-member-active", name: "Active Member Demo", email: "active@example.com", expiresInDays: 300 },
+  { id: "demo-member-expired", name: "Expired Member Demo", email: "expired@example.com", expiresInDays: -10 },
+] as const;
+
+function addLedgerSourcesAndMemberPasses(db: DatabaseSync, now: Date) {
+  db.exec(`
+    ALTER TABLE transactions ADD COLUMN source_type TEXT;
+    ALTER TABLE transactions ADD COLUMN source_id TEXT;
+    ALTER TABLE transactions ADD COLUMN recorded_by TEXT REFERENCES members(id);
+    ALTER TABLE members ADD COLUMN qr_token TEXT;
+    ALTER TABLE members ADD COLUMN short_code TEXT;
+  `);
+  // The three starter rows predate the system: keep them, but say so honestly.
+  db.exec(`
+    UPDATE transactions
+       SET source_type = 'opening_balance', source_id = id,
+           description = 'Opening balance (pre-system): ' || description
+     WHERE source_type IS NULL;
+  `);
+  db.exec(`
+    CREATE UNIQUE INDEX transactions_source_idx ON transactions (source_type, source_id);
+  `);
+  const today = clubDate(now);
+  const passwordHash = hashPassword(demoPassword());
+  const insert = db.prepare(
+    "INSERT OR IGNORE INTO members (id, name, email, joined_at, expires_on, dues_status, club_id, role, password_hash) VALUES (?, ?, ?, ?, ?, 'paid', ?, 'member', ?)",
+  );
+  for (const demo of DEMO_MEMBERS) {
+    insert.run(demo.id, demo.name, demo.email, now.toISOString(), addDays(today, demo.expiresInDays), DEFAULT_CLUB_ID, passwordHash);
+  }
+  // Every member, old or new, gets a unique pass: QR token + short code.
+  const exists = db.prepare("SELECT 1 FROM members WHERE qr_token = ? OR short_code = ?");
+  const assign = db.prepare("UPDATE members SET qr_token = ?, short_code = ? WHERE id = ?");
+  for (const row of db.prepare("SELECT id FROM members WHERE qr_token IS NULL OR short_code IS NULL").all()) {
+    const tokens = allocateUniqueTokens((candidate) => exists.get(candidate.qrToken, candidate.shortCode) !== undefined);
+    assign.run(tokens.qrToken, tokens.shortCode, String(row.id));
+  }
+  db.exec(`
+    CREATE UNIQUE INDEX members_qr_token_idx ON members (qr_token);
+    CREATE UNIQUE INDEX members_short_code_idx ON members (short_code);
+  `);
 }

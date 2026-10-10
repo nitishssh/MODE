@@ -8,7 +8,7 @@ import { DEMO, actorFor } from "./helpers";
 
 const fixedNow = () => new Date("2026-10-10T08:00:00.000Z");
 // 3 starter members + 4 seeded demo officers.
-const SEEDED_MEMBERS = 7;
+const SEEDED_MEMBERS = 9; // 3 starter + 4 officers + active/expired demo members (P0)
 
 test("member creation normalizes input, starts unpaid and rejects case-insensitive duplicates", () => {
   const db = openClubDatabase(":memory:", { now: fixedNow });
@@ -21,7 +21,7 @@ test("member creation normalizes input, starts unpaid and rejects case-insensiti
     assert.equal(member.role, "member");
     assert.throws(() => db.createMember({ name: "Another Student", email: "Student@example.com" }), DuplicateMemberError);
     assert.equal(db.getMembers().length, SEEDED_MEMBERS + 1);
-    assert.equal(db.getDashboard().metrics.activeMembers, 2);
+    assert.equal(db.getDashboard().metrics.activeMembers, 3);
   } finally {
     db.close();
   }
@@ -74,7 +74,7 @@ test("dashboard subtracts expenses in integer paise and excludes expired members
       current.metrics.balancePaise,
       current.transactions.reduce((balance, entry) => balance + (entry.kind === "income" ? entry.amountPaise : -entry.amountPaise), 0),
     );
-    assert.equal(current.metrics.activeMembers, 2);
+    assert.equal(current.metrics.activeMembers, 3);
     assert.equal(current.metrics.upcomingEvents, 2);
     date = new Date("2028-01-01T00:00:00.000Z");
     assert.equal(db.getDashboard().metrics.activeMembers, 0);

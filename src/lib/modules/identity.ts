@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { hashPassword, verifyPassword } from "../auth/password";
+import { allocateUniqueTokens, normalizeShortCode } from "../auth/tokens";
+import { membershipState } from "./membership-state";
+import { clubDate } from "../db/core";
 import { ROLES, hasPermission, type Permission, type Role } from "../auth/permissions";
 import { SESSION_TTL_MS, generateSessionToken, hashSessionToken } from "../auth/session";
 import type { CreateMemberInput, Member } from "../contracts";
@@ -53,8 +56,11 @@ export const loginSchema = z
   .strict();
 export const roleSchema = z.object({ role: z.enum(ROLES) }).strict();
 
-export function mapMember(row: Row): Member {
+export function mapMember(row: Row, date: string = clubDate(new Date())): Member {
+  const expiresOn = nullableText(row.expires_on);
   return {
+    membership: membershipState({ expiresOn }, date),
+    shortCode: text(row.short_code),
     id: text(row.id),
     name: text(row.name),
     email: text(row.email),
@@ -76,12 +82,12 @@ export function createIdentityModule(ctx: DbContext) {
     return db
       .prepare("SELECT * FROM members WHERE club_id = ? ORDER BY joined_at DESC, name COLLATE NOCASE, id")
       .all(clubId)
-      .map(mapMember);
+      .map((row) => mapMember(row as Row, clubDate(ctx.now())));
   }
 
   function findMember(clubId: string, memberId: string): Member | null {
     const row = db.prepare("SELECT * FROM members WHERE club_id = ? AND id = ?").get(clubId, memberId) as Row | undefined;
-    return row ? mapMember(row) : null;
+    return row ? mapMember(row, clubDate(ctx.now())) : null;
   }
 
   function requireMember(clubId: string, memberId: string): Member {
@@ -103,10 +109,14 @@ export function createIdentityModule(ctx: DbContext) {
       expiresOn: null,
       duesStatus: "unpaid",
       role: input.role ?? "member",
+      membership: "none",
+      shortCode: "",
     };
+    const tokens = allocateUniqueTokens((candidate) => tokenExists.get(candidate.qrToken, candidate.shortCode) !== undefined);
+    member.shortCode = tokens.shortCode;
     try {
       db.prepare(
-        "INSERT INTO members (id, name, email, joined_at, expires_on, dues_status, club_id, role, password_hash) VALUES (?, ?, ?, ?, NULL, 'unpaid', ?, ?, ?)",
+        "INSERT INTO members (id, name, email, joined_at, expires_on, dues_status, club_id, role, password_hash, qr_token, short_code) VALUES (?, ?, ?, ?, NULL, 'unpaid', ?, ?, ?, ?, ?)",
       ).run(
         member.id,
         member.name,
@@ -115,6 +125,8 @@ export function createIdentityModule(ctx: DbContext) {
         input.clubId ?? DEFAULT_CLUB_ID,
         member.role,
         input.password ? hashPassword(input.password) : null,
+        tokens.qrToken,
+        tokens.shortCode,
       );
     } catch (error) {
       // The UNIQUE constraint provides the concurrency guarantee, including mixed-case email.
@@ -122,6 +134,25 @@ export function createIdentityModule(ctx: DbContext) {
       throw error;
     }
     return member;
+  }
+
+  const tokenExists = db.prepare("SELECT 1 FROM members WHERE qr_token = ? OR short_code = ?");
+
+  /** The member's own pass: QR token plus typed fallback and today's membership state. */
+  function getPass(memberId: string) {
+    const row = db.prepare("SELECT qr_token, short_code, expires_on FROM members WHERE id = ?").get(memberId) as Row | undefined;
+    if (!row) throw new NotFoundError("Member not found.");
+    const expiresOn = nullableText(row.expires_on);
+    return { qrToken: text(row.qr_token), shortCode: text(row.short_code), membership: membershipState({ expiresOn }, clubDate(ctx.now())), expiresOn };
+  }
+
+  /** Door resolution by QR token or typed short code; never by sequential id. */
+  function findMemberByPass(clubId: string, credential: string): Member | null {
+    const trimmed = credential.trim();
+    const row = db
+      .prepare("SELECT * FROM members WHERE club_id = ? AND (qr_token = ? OR short_code = ?)")
+      .get(clubId, trimmed, normalizeShortCode(trimmed)) as Row | undefined;
+    return row ? mapMember(row, clubDate(ctx.now())) : null;
   }
 
   /** Officer-created member record without login credentials. */
@@ -277,6 +308,8 @@ export function createIdentityModule(ctx: DbContext) {
   }
 
   return {
+    getPass,
+    findMemberByPass,
     getMembers,
     findMember,
     requireMember,
