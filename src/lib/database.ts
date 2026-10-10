@@ -8,6 +8,7 @@ import { createEventsModule } from "./modules/events";
 import { createIdentityModule } from "./modules/identity";
 import { createLedgerModule } from "./modules/ledger";
 import { createMembershipModule } from "./modules/membership";
+import { createMerchandiseModule } from "./modules/merchandise";
 import { createOutboxModule } from "./modules/outbox";
 
 export { DuplicateMemberError } from "./errors";
@@ -36,6 +37,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date }
   const outbox = createOutboxModule(ctx);
   const membership = createMembershipModule(ctx, identity, ledger, outbox);
   const events = createEventsModule(ctx, identity, membership, ledger);
+  const merchandise = createMerchandiseModule(ctx, identity, membership, ledger);
   let closed = false;
 
   return {
@@ -45,6 +47,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date }
     outbox,
     membership,
     events,
+    merchandise,
     health: () => {
       db.prepare("SELECT 1").get();
       return { status: "ok" as const, database: "sqlite" as const, schemaVersion: SCHEMA_VERSION };
