@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { WorkspaceMainSkeleton } from "./skeleton";
+import { localDateTimeValue } from "@/lib/local-datetime";
 import type {
   Dashboard,
   Event,
-  EventReport,
+  WorkspaceEventReport as EventReport,
   Expense,
-  LedgerEntry,
+  ExpenseLedgerEntry as LedgerEntry,
+  SessionUser,
   LedgerSummary,
   Member,
   TaskDetails,
@@ -362,7 +364,8 @@ type TaskFilter = {
   mine: boolean;
 };
 
-function TaskBoard({ members, events }: { members: Member[]; events: Event[] }) {
+function TaskBoard({ members, events, user }: { members: Member[]; events: Event[]; user: SessionUser }) {
+  const canWrite = user.permissions.includes("tasks:write");
   const [tasks, setTasks] = useState<TaskDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -530,6 +533,7 @@ function TaskBoard({ members, events }: { members: Member[]; events: Event[] }) 
           className="button primary"
           type="button"
           onClick={() => { setShowCreate(true); setCreateError(""); }}
+          disabled={!canWrite}
         >
           <Icon name="plus" size={16} />
           New task
@@ -649,6 +653,8 @@ function TaskBoard({ members, events }: { members: Member[]; events: Event[] }) 
                   <TaskCard
                     key={task.id}
                     task={task}
+                    canEdit={canWrite}
+                    canChangeStatus={canWrite || task.assigneeId === user.id}
                     members={members}
                     updating={updatingId === task.id}
                     onStatusChange={handleStatusChange}
@@ -668,6 +674,8 @@ function TaskBoard({ members, events }: { members: Member[]; events: Event[] }) 
 }
 
 function TaskCard({
+  canEdit,
+  canChangeStatus,
   task,
   members,
   updating,
@@ -678,6 +686,8 @@ function TaskCard({
   events,
 }: {
   task: TaskDetails;
+  canEdit: boolean;
+  canChangeStatus: boolean;
   members: Member[];
   updating: boolean;
   onStatusChange: (id: string, status: "todo" | "in_progress" | "done") => void;
@@ -738,6 +748,7 @@ function TaskCard({
             type="button"
             className="icon-button"
             aria-label={showEdit ? "Close edit" : "Edit task"}
+            disabled={!canEdit}
             onClick={onEdit}
           >
             <Icon name={showEdit ? "close" : "chevron"} size={14} />
@@ -775,7 +786,7 @@ function TaskCard({
               key={s}
               type="button"
               className={`status-chip ${s}`}
-              disabled={updating}
+              disabled={updating || !canChangeStatus}
               onClick={() => onStatusChange(task.id, s)}
             >
               {taskLabel[s]}
@@ -822,7 +833,7 @@ function TaskCard({
             <input
               name="dueAt"
               type="datetime-local"
-              defaultValue={task.dueAt ? task.dueAt.slice(0, 16) : ""}
+              defaultValue={task.dueAt ? localDateTimeValue(task.dueAt) : ""}
               disabled={saving}
             />
           </label>
@@ -842,7 +853,7 @@ function TaskCard({
 
 // ── My Expenses ────────────────────────────────────────────────────────────────
 
-function MyExpenses({ members, events }: { members: Member[]; events: Event[] }) {
+function MyExpenses({ user, events }: { user: SessionUser; events: Event[] }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -853,8 +864,7 @@ function MyExpenses({ members, events }: { members: Member[]; events: Event[] })
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
 
-  // In the demo we pick "self" as first member for submitting
-  const selfMember = members[0];
+  const selfMember = user;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -918,8 +928,6 @@ function MyExpenses({ members, events }: { members: Member[]; events: Event[] })
         setUploadProgress("Uploading receipt…");
         const uploadFd = new FormData();
         uploadFd.append("file", file);
-        uploadFd.append("uploaderId", selfMember.id);
-        uploadFd.append("uploaderName", selfMember.name);
         const uploadRes = await fetch("/api/receipts", { method: "POST", body: uploadFd });
         const uploadResult = await uploadRes.json() as { id?: string; error?: string };
         if (!uploadRes.ok) throw new Error(uploadResult.error || "Receipt upload failed.");
@@ -930,7 +938,6 @@ function MyExpenses({ members, events }: { members: Member[]; events: Event[] })
       const body: Record<string, string | number | undefined> = {
         amountPaise,
         purpose,
-        submitterId: selfMember.id,
       };
       if (receiptId) body.receiptId = receiptId;
       if (receiptRef) body.receiptReference = receiptRef;
@@ -1224,14 +1231,22 @@ function Treasury() {
     setActionError("");
     const expense = expenses.find((e) => e.id === expenseId);
     if (!expense) return;
+    if (action === "pay") {
+      const reference = window.prompt("Enter the reference from the completed bank or UPI payment:");
+      if (reference === null) return;
+      if (!reference.trim()) { setActionError("Enter the actual payment reference before marking paid."); return; }
+      extra = { paymentReference: reference.trim() };
+    }
+    if (action === "reject") {
+      const note = window.prompt("Reason for rejecting this expense (optional):");
+      if (note === null) return;
+      extra = { note: note.trim() };
+    }
     if (action === "approve" && !window.confirm(`Approve ${currency(expense.amountPaise)} for ${expense.purpose}?`)) return;
     if (action === "reject" && !window.confirm(`Reject the expense "${expense.purpose}"?`)) return;
     if (action === "pay" && !window.confirm(`Mark ${currency(expense.amountPaise)} as paid? This creates the ledger outflow.`)) return;
-    // For demo: use first non-submitter member as reviewer (in real auth this would be the logged-in officer)
-    // We pass a dummy reviewer ID that is different from the submitter
-    const dummyReviewerId = "00000000-0000-0000-0000-000000000001";
     try {
-      const body: Record<string, string> = { reviewerId: dummyReviewerId, ...extra };
+      const body: Record<string, string> = { ...extra };
       const res = await fetch(`/api/expenses/${expenseId}/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1437,7 +1452,10 @@ function Treasury() {
                     {pendingExpenses.map((exp) => (
                       <tr key={exp.id}>
                         <td><strong>{exp.submitterName}</strong></td>
-                        <td>{exp.purpose}</td>
+                        <td>{exp.purpose}
+                          {exp.receiptId && <div><a href={`/api/receipts/${encodeURIComponent(exp.receiptId)}`} target="_blank" rel="noreferrer">View receipt</a></div>}
+                          {exp.receiptReference && <div>Receipt reference: {exp.receiptReference}</div>}
+                        </td>
                         <td className="amount-cell">{currency(exp.amountPaise)}</td>
                         <td>{date(exp.submittedAt)}</td>
                         <td>
@@ -1452,7 +1470,7 @@ function Treasury() {
                             <button
                               type="button"
                               className="button-small red-btn"
-                              onClick={() => void handleExpenseAction(exp.id, "reject", { note: "Does not meet policy requirements." })}
+                              onClick={() => void handleExpenseAction(exp.id, "reject")}
                             >
                               Reject
                             </button>
@@ -1482,13 +1500,16 @@ function Treasury() {
                     {approvedExpenses.map((exp) => (
                       <tr key={exp.id}>
                         <td><strong>{exp.submitterName}</strong></td>
-                        <td>{exp.purpose}</td>
+                        <td>{exp.purpose}
+                          {exp.receiptId && <div><a href={`/api/receipts/${encodeURIComponent(exp.receiptId)}`} target="_blank" rel="noreferrer">View receipt</a></div>}
+                          {exp.receiptReference && <div>Receipt reference: {exp.receiptReference}</div>}
+                        </td>
                         <td className="amount-cell">{currency(exp.amountPaise)}</td>
                         <td>
                           <button
                             type="button"
                             className="button-small"
-                            onClick={() => void handleExpenseAction(exp.id, "pay", { paymentReference: `UPI-${Date.now()}` })}
+                            onClick={() => void handleExpenseAction(exp.id, "pay")}
                           >
                             Mark paid
                           </button>
@@ -1682,7 +1703,7 @@ function EventReportCard({ eventId }: { eventId: string }) {
 
 // ── Main App ───────────────────────────────────────────────────────────────────
 
-export default function Home() {
+function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void }) {
   const [section, setSection] = useState<Section>("Overview");
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1818,9 +1839,11 @@ export default function Home() {
             <small>Student organization</small>
           </span>
         </div>
+        <p className="nav-caption">{user.name} · {user.role}</p>
+        <button className="button secondary" type="button" onClick={onLogout}>Sign out</button>
         <p className="nav-caption">YOUR WORKSPACE</p>
         <nav aria-label="Main navigation">
-          {navigation.map((item) => (
+          {navigation.filter(item => (item.label !== "Treasury" || user.permissions.includes("ledger:read")) && (item.label !== "Members" || user.permissions.includes("members:read"))).map((item) => (
             <button
               key={item.label}
               type="button"
@@ -1871,7 +1894,7 @@ export default function Home() {
             <span className="profile-avatar">{clubInitials}</span>
             <span>
               <strong>Demo workspace</strong>
-              <small>Local starter · no sign-in</small>
+              <small>Signed in · {user.role}</small>
             </span>
           </div>
         </div>
@@ -1924,7 +1947,7 @@ export default function Home() {
               </h1>
               <p>{descriptions[section]}</p>
             </div>
-            {(section === "Overview" || section === "Members") && (
+            {user.permissions.includes("members:create") && (section === "Overview" || section === "Members") && (
               <button
                 className="button primary"
                 type="button"
@@ -2224,7 +2247,7 @@ export default function Home() {
                             <strong>{currency(event.guestPricePaise)}</strong>
                           </div>
                         </div>
-                        <EventReportCard eventId={event.id} />
+                        {user.permissions.includes("events:report") && <EventReportCard eventId={event.id} />}
                       </article>
                     ))}
                   </div>
@@ -2340,13 +2363,13 @@ export default function Home() {
               )}
 
               {/* ── Tasks ────────────────────────────────────────────────── */}
-              {section === "Tasks" && <TaskBoard members={data.members} events={data.events} />}
+              {section === "Tasks" && <TaskBoard members={data.members} events={data.events} user={user} />}
 
               {/* ── My Expenses ───────────────────────────────────────────── */}
-              {section === "My Expenses" && <MyExpenses members={data.members} events={data.events} />}
+              {section === "My Expenses" && <MyExpenses user={user} events={data.events} />}
 
               {/* ── Treasury ─────────────────────────────────────────────── */}
-              {section === "Treasury" && <Treasury />}
+              {section === "Treasury" && user.permissions.includes("ledger:read") && <Treasury />}
             </>
           )}
 
@@ -2355,10 +2378,56 @@ export default function Home() {
               <span className="footer-dot" />
               MODE starter workspace
             </span>
-            <p>Fictional seed records · Local database · Authentication and real payments are not implemented.</p>
+            <p>Fictional seed records · Local database · Reimbursements record payments made outside MODE.</p>
           </footer>
         </main>
       </div>
     </div>
   );
 }
+export default function Home() {
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/auth/me", {cache:"no-store"}).then(async response => {
+      if (response.ok) { const result = await response.json(); if(active) setUser(result.user); }
+      else if (response.status !== 401) throw new Error("Unable to check your session. Please sign in again.");
+    }).catch(error => {if(active)setError(error.message);}).finally(()=>{if(active)setLoading(false);});
+    return () => {active=false;};
+  }, []);
+  async function signIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget);
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/auth/login", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:String(values.get("email")),password:String(values.get("password"))})});
+      const result = await response.json();
+      if(!response.ok)throw new Error(result.error || "Sign in failed.");
+      setUser(result.user);
+    } catch(error) {setError(error instanceof Error ? error.message : "Sign in failed.");}
+    finally {setBusy(false);}
+  }
+  async function signOut() {
+    setError("");
+    try {
+      const response = await fetch("/api/auth/logout", {method:"POST"});
+      if(!response.ok)throw new Error("Sign out failed. Please try again.");
+      setUser(null);
+    } catch(error) {setError(error instanceof Error ? error.message : "Sign out failed.");}
+  }
+  if(loading)return <main className="loading-state" role="status">Loading your workspace…</main>;
+  if(user)return <>{error && <p role="alert">{error}</p>}<Workspace key={user.id} user={user} onLogout={()=>void signOut()} /></>;
+  return <main className="auth-screen"><section className="auth-card">
+    <h1>Sign in to MODE</h1><p>Use your club account to manage tasks and expenses.</p>
+    <form onSubmit={signIn}>
+      <label htmlFor="email">Email</label><input id="email" name="email" type="email" autoComplete="username" required />
+      <label htmlFor="password">Password</label><input id="password" name="password" type="password" autoComplete="current-password" required />
+      {error && <p role="alert">{error}</p>}
+      <button className="button primary" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+    </form>
+  </section></main>;
+}
+

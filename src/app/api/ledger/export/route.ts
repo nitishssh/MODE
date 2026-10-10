@@ -1,12 +1,15 @@
 import { getDatabase } from "@/lib/database";
+import { requireActor } from "@/lib/auth/authorize";
+import { route } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function escapeCSV(value: string | number | null): string {
   if (value === null || value === undefined) return "";
-  const str = String(value);
-  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+  const raw = String(value);
+  const str = /^[\s]*[=+@-]/.test(raw) ? "\'" + raw : raw;
+  if (str.includes(",") || str.includes('"') || /[\r\n]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
   }
   return str;
@@ -16,9 +19,11 @@ function paise(amount: number): string {
   return (amount / 100).toFixed(2);
 }
 
-export async function GET() {
+export const GET = route("ledger export", (request) => {
+  const db = getDatabase();
+  const actor = requireActor(request, db, { permission: "ledger:read" });
   try {
-    const entries = getDatabase().getLedgerEntries();
+    const entries = db.getLedgerEntries(actor);
     const rows = [
       ["Date", "Type", "Description", "Category", "Event", "Reference", "Amount (₹)"].join(","),
       ...entries.map((e) =>
@@ -46,4 +51,4 @@ export async function GET() {
     console.error("MODE ledger export failed", error);
     return Response.json({ error: "Unable to export the ledger. Please try again." }, { status: 500 });
   }
-}
+});

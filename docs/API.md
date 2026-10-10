@@ -20,7 +20,7 @@ Web clients use the HttpOnly cookie and do not persist the response token in bro
 
 ### Development CORS
 
-`src/proxy.ts` applies to `/api/:path*`. Only `NODE_ENV=development` enables the optional `MODE_CORS_ORIGINS` comma-separated allowlist of exact HTTP(S) origins, for example `http://localhost:8081,http://127.0.0.1:8081`. Paths, trailing slashes, wildcards and `null` origins are not accepted. Production ignores this configuration.
+`src/proxy.ts` applies to `/api/:path*`. Only `NODE_ENV=development` enables the optional `MODE_CORS_ORIGINS` comma-separated allowlist of HTTP(S) origins, for example `http://localhost:8081,http://127.0.0.1:8081`. Configured trailing slashes normalize to the origin; non-root paths, credentials, queries, hashes, wildcards and `null` origins are ignored. Request origins must match a normalized allowlist entry exactly. Production ignores this configuration.
 
 An allowed preflight returns 204 and advertises GET, HEAD, POST, PATCH, DELETE and OPTIONS with Content-Type/Authorization headers. Denied origins, methods or headers get 403 without ACAO. Actual responses grant ACAO only to allowed origins and vary by Origin; credentialed cross-origin cookies are not enabled. Native requests without Origin continue normally.
 
@@ -71,7 +71,7 @@ Roles: `member`, `volunteer`, `organizer`, `treasurer`, `admin` (club lead). Sel
 | `outbox:manage` | | | ✓ | | ✓ |
 | `tasks:write` | | | ✓ | | ✓ |
 
-Permissions for tickets #4–#9 are reserved here so the UI can be built against the final matrix; the routes behind them land with their tickets.
+Permissions for unfinished merchandise and announcement workflows remain reserved. Implemented membership, ticket, task and reimbursement routes are documented below.
 
 ### Demo accounts
 
@@ -83,7 +83,87 @@ Schema v2 seeds four synthetic officer accounts in the sample club: `lead@exampl
 - **Member pass**: every member has a unique 128-bit base64url `qrToken` and a unique 10-character Crockford base32 `shortCode` (bounded collision retry, max 5). `GET /api/auth/me` returns `pass:{qrToken,shortCode,membership,expiresOn}` to the member themselves; `Member` exposes `shortCode` only. Door scanning resolves a pass by token or code, never by sequential id (`findMemberByPass`).
 - **Ledger**: `transactions` gains `sourceType`, `sourceId`, `recordedBy` with a UNIQUE index on the source pair. The three starter rows are backfilled as `opening_balance` entries with "Opening balance (pre-system): …" descriptions. Financial modules call `postLedgerEntry()` inside the same transaction as the source transition; it rejects non-positive or non-integer paise and a second post for the same source.
 - **Reconciliation**: `reconcileLedger(db)` reports balance, opening balances, duplicates, unsourced rows and orphans (rows whose source no longer resolves). Modules register a resolver per `sourceType` in `SOURCE_RESOLVERS` and extend `tests/ledger-reconciliation.test.ts`.
-- **Demo accounts**: `active@example.com` (membership active, expires in 300 days) and `expired@example.com` (expired 10 days ago), password `MODE_DEMO_PASSWORD`, join the four officer accounts. Schema version is 3.
+- **Demo accounts**: `active@example.com` (membership active, expires in 300 days) and `expired@example.com` (expired 10 days ago), password `MODE_DEMO_PASSWORD`, join the four officer accounts. The current schema version is 7.
+
+## Membership dues, renewals and reminders (#4, P1)
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| POST | `/api/membership/dues` `{memberId, reference}` | `membership:record_payment` | 201 recorded · 200 same reference replayed `{payment,created,membership,expiresOn}` | 400; 401; 403; 404 member; 409 reference used by another member |
+| GET | `/api/membership/expiring?days=30` | `members:read` | 200 `{asOf, windowDays, members:ExpiringMember[]}` | 400; 401; 403 |
+| POST | `/api/membership/reminders/run` `{days?}` | `membership:reminders` | 200 `{asOf,windowDays,candidates,sent,skipped}` | 401; 403 |
+| GET | `/api/notifications` | signed in | 200 `{notifications:Notification[]}` | 401 |
+| GET | `/api/members/{id}/dues` | `members:read` | 200 `{payments:DuesPayment[]}` | 401; 403; 404 |
+
+- Officers record dues received; there is no member-side payment request and no gateway. The amount is the club's `annual_dues_paise` (default 50000), never a client value.
+- First payment sets `expiresOn = clubToday + 365`; renewal sets `max(clubToday, currentExpiry) + 365`, so paying early never loses days. Eligibility everywhere is `membershipState`.
+- The dues row, the member's new expiry and one `dues_payment` income ledger row (with `recordedBy`) commit in one transaction. Replaying a reference returns the same payment with `created:false` and credits nothing; another member's reference is `409`.
+- Reminders: one in-app notification and one `simulated` outbox row per member per expiry date, enforced by `UNIQUE(member_id, expires_on)`; repeat runs report `skipped`. The outbox is explicitly simulated; no email is sent.
+
+## Event tickets, holds and the door (#5, P2)
+
+Ticketing was introduced in schema v6; reserved v5 remains skipped and workspace schema v9 follows merchandise v8. `events` gains `clubId`, `status` (`draft|published|cancelled`) and `description`; `tickets` holds member and guest bookings with a 30-minute hold, unique QR token and 10-character Crockford short code (same bounded collision retry as member passes, checked against both tables).
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/events` | public (organizers also see drafts) | 200 `{events:EventDetails[]}` | |
+| POST | `/api/events` | `events:write` | 201 `{event}` | 400; 401; 403 |
+| GET | `/api/events/{id}` | public (drafts 404 unless `events:write`) | 200 `{event}` | 404 |
+| PATCH | `/api/events/{id}` | `events:write` | 200 `{event}` | 400 (incl. capacity below held seats); 401; 403; 404 |
+| POST | `/api/events/{id}/tickets` | `bookings:create` | 201 `{ticket:Ticket}` with `qrToken` | 401; 403; 404; 409 `duplicate_ticket` · `sold_out` · `event_not_open` · `event_started` |
+| POST | `/api/events/{id}/guest-tickets` `{name,email}` | public, same-origin | 201 `{ticket, url:"/t/{qrToken}"}` | 400; 403 cross-origin; 404; 409 `duplicate_ticket` · `sold_out` · `member_email` (sign in instead) |
+| GET | `/t/{qrToken}` | public, token only | 200 `{ticket:PublicTicket}` | 404 |
+| GET | `/api/tickets/mine` | signed in | 200 `{tickets:Ticket[]}` with `qrToken` | 401 |
+| GET | `/api/events/{id}/holds` | `payments:confirm` | 200 `{holds:Ticket[]}` pending only, soonest expiry first | 401; 403; 404 |
+| GET | `/api/events/{id}/tickets` | `payments:confirm` | 200 `{tickets:Ticket[]}` all statuses, full guest email | 401; 403; 404 |
+| POST | `/api/tickets/{id}/confirm` `{reference}` | `payments:confirm` | 201 `{ticket,created:true}` · 200 `{ticket,created:false}` already paid | 400; 401; 403; 404; 409 `hold_expired` ("Hold expired, rebook") |
+| POST | `/api/tickets/{id}/cancel` | owner of a pending ticket, or `payments:confirm` | 200 `{ticket}` (repeat is a no-op) | 401; 403; 404; 409 `hold_expired` · `refunds_out_of_scope` (paid) |
+| POST | `/api/events/{id}/scan` `{credential}` | `tickets:check_in` | 200 `ScanResult` | 400; 401; 403; 404 event |
+| GET | `/api/events/{id}/report` | `events:report` | 200 `EventReport` | 401; 403; 404 |
+
+- **Pricing** is fixed at booking from `membershipState`: active members pay `memberPricePaise`, everyone else `guestPricePaise`. Guests book by name and email (normalised lower-case); an email that belongs to a club member is refused with `member_email`.
+- **One live ticket** per member or guest email per event (`pending_payment` or `paid`), enforced by partial UNIQUE indexes. Cancelled and expired tickets do not block rebooking.
+- **Seats**: `registered` is incremented with a conditional `UPDATE … WHERE registered < capacity` inside `BEGIN IMMEDIATE`, with no awaits; the last seat can never be sold twice. Zero-price tickets are `paid` at booking and post no ledger row.
+- **Holds**: a pending ticket holds its seat for 30 minutes (`holdExpiresAt`). `releaseExpiredHolds()` runs inside the transaction before booking, confirmation, cancellation, scan, hold lists and the report; it marks lapsed holds `expired` and returns their seats exactly once. Indexes: `(event_id, status, hold_expires_at)`, `(status, hold_expires_at)`.
+- **Confirmation** is the only income path: release expired holds, then one conditional `UPDATE … WHERE status = 'pending_payment'`, then exactly one `ticket` income row via `postLedgerEntry` with `recordedBy`. Expired or cancelled holds answer `409 hold_expired` and write nothing; a second confirmation of a paid ticket returns `200 created:false` and posts nothing. Refunds are out of scope, so paid tickets cannot be cancelled.
+- **Door contract**: the scanner selects the event first, then sends a ticket QR token / short code or a member QR token / short code (never an id). A member resolves to their single live ticket for that event. Outcomes and the fixed messages:
+
+| `outcome` | `message` | When |
+|---|---|---|
+| `admitted` | Admitted | paid, not yet scanned; `attendee:{name, membership}` where membership is `active|expired|none|guest` |
+| `already_checked_in` | Already checked in | repeat scan; `checkedInAt` is the original timestamp |
+| `payment_pending` | Payment pending | ticket still on hold |
+| `not_valid` | Not valid for this event | unknown credential, other event, cancelled or expired ticket |
+| `member_no_ticket` | Member, no ticket | active member pass, no live ticket here |
+| `no_ticket_membership_expired` | No ticket · membership expired | expired or never-paid member pass, no live ticket here |
+
+  Admission depends on the paid ticket, not on membership. Check-in is one conditional `UPDATE … WHERE status = 'paid' AND checked_in_at IS NULL`, so a repeat scan cannot admit twice.
+- **Report**: `{event, tickets:{pendingPayment,paid,cancelled,expired}, ticketsSold, attendance, realizedRevenuePaise}` where revenue is the sum of `ticket` ledger rows for the event. The starter events' seeded `registered` counts are pre-system registrations and are not tickets.
+
+## Merchandise orders, stock holds and fulfilment (#6, P3)
+
+Schema v8 (v7 is reserved for Nitish's P5). `products` gains `clubId`, `description`, nullable `memberPricePaise` and `active`; `product_variants` holds one stock figure per size (the starter products get a single `ONE SIZE` variant with their seeded stock); `merch_orders` holds member orders with a 30-minute hold. `products.stock` is kept equal to the sum of its sizes for the dashboard.
+
+| Method | Path | Permission | Success | Failure |
+|---|---|---|---|---|
+| GET | `/api/products` | public (organizers also see retired) | 200 `{products:ProductDetails[]}` | |
+| POST | `/api/products` `{name,description?,pricePaise,memberPricePaise?,variants:[{size,stock}]}` | `products:write` | 201 `{product}` | 400 (incl. duplicate size); 401; 403 |
+| GET | `/api/products/{id}` | public | 200 `{product}` | 404 |
+| PATCH | `/api/products/{id}` `{active}` | `products:write` | 200 `{product}` | 400; 401; 403; 404 |
+| PATCH | `/api/products/variants/{id}` `{stock}` | `products:write` | 200 `{product}` | 400; 401; 403; 404 |
+| POST | `/api/orders` `{variantId, quantity?=1 (max 2)}` | `orders:create` (signed-in member) | 201 `{order:MerchOrder}` | 400; 401; 403; 404; 409 `out_of_stock` · `pending_limit` · `product_inactive` |
+| GET | `/api/orders/mine` | signed in | 200 `{orders}` | 401 |
+| GET | `/api/orders?status=` | `payments:confirm` or `orders:fulfil` | 200 `{orders}` (`pending_payment` = confirmation desk, soonest expiry first) | 400; 401; 403 |
+| POST | `/api/orders/{id}/confirm` `{reference}` | `payments:confirm` | 201 `{order,created:true}` · 200 `{order,created:false}` already paid or fulfilled | 400; 401; 403; 404; 409 `hold_expired` ("Hold expired, reorder") |
+| POST | `/api/orders/{id}/cancel` | owner of a pending order, or `payments:confirm` | 200 `{order}` (repeat is a no-op) | 401; 403; 404; 409 `hold_expired` · `refunds_out_of_scope` |
+| POST | `/api/orders/{id}/fulfil` | `orders:fulfil` | 200 `{order}` (repeat is a no-op) | 401; 403; 404; 409 `order_not_paid` |
+
+- **Identity**: ordering requires a session; guest orders are out of scope. A member may hold at most **two unpaid units per size** at a time (`pending_limit`); cancelling or paying frees the allowance.
+- **Stock** is reserved with a conditional `UPDATE product_variants SET stock = stock - ? WHERE stock >= ?` inside `BEGIN IMMEDIATE`; zero stock and concurrent overselling both answer `409 out_of_stock`. `ProductVariant.stock` is therefore "available right now", holds already subtracted.
+- **Pricing**: if the product has `memberPricePaise` and the member is `active` by `membershipState` at order time, `pricing:"member"` at that unit price; otherwise `standard`. The price is stored on the order and never recomputed. Zero-total orders are `paid` at creation and post no ledger row.
+- **Holds**: `holdExpiresAt` is 30 minutes after creation. `releaseExpiredHolds()` runs inside the transaction before ordering, confirmation, cancellation, stock edits and every order list; it marks lapsed orders `expired` and returns their units exactly once (index `(status, hold_expires_at)`).
+- **States**: `pending_payment → paid → fulfilled`, or `pending_payment → cancelled`, or `pending_payment → expired` by the clock. Confirmation releases expired holds, then one conditional `UPDATE … WHERE status = 'pending_payment'`, then exactly one `merch_order` income row via `postLedgerEntry` with `recordedBy`. Expired or cancelled orders cannot be revived and never produce income. Paid orders cannot be cancelled (refunds are out of scope).
+- **Reconciliation**: `SOURCE_RESOLVERS.merch_order` resolves paid and fulfilled orders; `tests/ledger-reconciliation.test.ts` covers paid, held, expired and cancelled orders.
 
 ## Starter routes
 
@@ -103,14 +183,14 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 - Schema changes are versioned migrations in `src/lib/db/migrations.ts`, applied in one write transaction and recorded in `PRAGMA user_version`. `GET /api/health` reports the current version.
 - Member email has a case-insensitive UNIQUE constraint. API validation is also enforced at the store boundary.
 - Sessions store only a SHA-256 hash of the session token with `expires_at`/`revoked_at`.
-- `audit_events` records who changed what (`member.created`, `member.role_changed`, `member.password_set`, and future finance decisions).
-- A sample event's `registered` count cannot exceed capacity. The starter has no booking operation yet.
+- `audit_events` records who changed what, including member, dues, ticket, task and expense decisions.
+- An event's `registered` count cannot exceed capacity. Booking and hold release update the count transactionally.
 - Ledger amounts are positive integer paise; `kind` determines income versus expense. Balance is calculated on the server.
 - Products are aggregate read-only examples until the merchandise ticket introduces size variants.
 
 ## Planned conventions
 
-These are design constraints for future tickets, not implemented endpoints:
+These are the ticket design constraints. The membership, ticket, task and reimbursement endpoints above and below implement the corresponding parts; merchandise and announcement workflows remain future work:
 
 - Membership: define plans, free/paid status, benefit eligibility, renewal and idempotent dues recording in #4.
 - Ticketing: reserve capacity atomically; issue tickets against confirmed states; reject duplicate check-in in #5.
@@ -121,43 +201,47 @@ These are design constraints for future tickets, not implemented endpoints:
 
 Payment and notification adapters must expose pending, succeeded and failed states honestly. Secrets and demo credentials live in environment configuration, never in code.
 
-## Platform delivery and LAN access
-
-MODE's web UI and API are served by the same Next.js origin. The root path already serves the web application, and `/api/*` remains handled by the Node.js route handlers. This is the supported browser deployment model; there is no separate Expo web export in this repository.
-
-`GET /api/health` is the LAN-safe liveness check. Its successful response is `{status:"ok",database:"sqlite",schemaVersion:number}`. It does not authenticate a user and must not be treated as proof of identity or authorization.
-
-### Authentication status
-
-Browser authentication uses same-origin `HttpOnly`, `SameSite=Lax` session cookies (`Secure` on HTTPS). State-changing requests must be same-origin and are CSRF-protected by origin and fetch-site validation. Native clients must use an explicit credential flow rather than ambient browser cookies. Ticket check-in and a native Expo client are not implemented yet.
-
-### CORS policy
-
-Same-origin requests require no CORS configuration. Development cross-origin browser clients are denied unless their exact origin is listed in `MODE_CORS_ORIGINS`, a comma-separated list such as `http://192.168.1.50:8081,http://localhost:8081`. Wildcards, paths, queries, and malformed origins are ignored. Allowed origins receive explicit `Access-Control-Allow-Origin`, `Access-Control-Allow-Credentials: true`, `Content-Type`, `Authorization`, `X-Requested-With`, and methods including `PATCH`. `OPTIONS` preflights receive `204`; an unlisted Origin receives `403`. An absent Origin is not a CORS grant and follows the normal same-origin/native request path.
-
-### Future Expo configuration
-
-There is no Expo client in this repository today. A future Expo client must set `EXPO_PUBLIC_API_URL` to an absolute API origin reachable from the device, for example `http://192.168.1.50:3000` as a placeholder only. It must never contain secrets, paths, query strings, or hashes. The shared resolver in `src/lib/api-url.ts` rejects malformed values and defaults only to `http://127.0.0.1:3000` for simulator/local use; that loopback address does not reach a physical phone.
 ## Local demo clock
 
 `MODE_DEMO_NOW=<ISO timestamp>` freezes the server clock so expiry, reminders and deadlines can be demonstrated deterministically. Tests use an injected clock instead of this variable.
 
-## Workflow routes
+## Tasks, expenses and receipts (schema v9)
 
-These routes preserve the existing task, reimbursement, receipt, finance, and event-report workspace. They use the same SQLite database and return `Cache-Control: no-store` for mutable operational data.
+All endpoints below require a session. Cookie mutations also enforce same-origin requests; valid bearer sessions retain the native authentication contract.
+Identity and club scope come from the session, never from request-body member IDs.
 
-| Method | Path | Success | Failure |
+| Method | Path | Access | Response |
 |---|---|---|---|
-| GET / POST | `/api/tasks` | 200 `TaskDetails[]`; 201 `TaskDetails` | 400 invalid create request; 500 |
-| GET / PATCH | `/api/tasks/{id}` | 200 `TaskDetails` | 400 invalid patch; 404 task; 500 |
-| POST | `/api/tasks/{id}/status` | 200 `TaskDetails` | 400 invalid status; 404 task; 409 invalid transition; 500 |
-| GET / POST | `/api/expenses` | 200 `Expense[]`; 201 `Expense` | 400 invalid submission; 500 |
-| POST | `/api/expenses/{id}/{approve\|reject\|pay}` | 200 `Expense` | 400 invalid action body; 404 expense; 409 invalid transition; 500 |
-| POST | `/api/receipts` | 201 `Receipt` | 400 invalid form/file; 413 over 2 MB; 415 unsupported type; 500 |
-| GET | `/api/receipts/{id}` | receipt file or `Receipt` metadata in memory mode | 404 receipt; 500 |
-| GET | `/api/ledger/summary` | 200 `LedgerSummary` | 500 |
-| GET | `/api/ledger/entries` | 200 `LedgerEntry[]` | 500 |
-| GET | `/api/ledger/export` | CSV attachment | 500 |
-| GET | `/api/events/{id}/report` | 200 `EventReport` | 404 event; 500 |
+| GET | `/api/tasks` | signed in, own club | `TaskDetails[]`; filters: status, assigneeId, eventId, overdue=true, mine=true |
+| POST | `/api/tasks` | tasks:write | 201 TaskDetails |
+| GET / PATCH | `/api/tasks/{id}` | signed in / tasks:write | TaskDetails |
+| POST | `/api/tasks/{id}/status` | assigned member or tasks:write | TaskDetails |
+| GET | `/api/expenses` | own expenses; expenses:review sees club expenses | Expense[]; optional submitterId filter for reviewers |
+| POST | `/api/expenses` | expenses:submit | 201 Expense |
+| POST | `/api/expenses/{id}/{action}` | expenses:review | Expense; action is approve, reject or pay |
+| POST | `/api/receipts` | expenses:submit | multipart file; 201 Receipt |
+| GET | `/api/receipts/{id}` | uploader or expenses:review, same club | original file, private/no-store |
+| GET | `/api/ledger/summary` | ledger:read | LedgerSummary |
+| GET | `/api/ledger/entries` | ledger:read | ExpenseLedgerEntry[] |
+| GET | `/api/ledger/export` | ledger:read | CSV with formula cells escaped |
+| GET | `/api/events/{id}/report` | events:report | Existing ticket report plus WorkspaceEventReport fields |
 
-`TaskDetails` retains assignment, event, due-date, and overdue presentation fields. An `Expense` moves only from `submitted` to `approved` or `rejected`; only an approved expense can become `paid`. Payment posts exactly one `expense` source ledger entry within the same database transaction. Receipts permit JPEG, PNG, WebP, or PDF files up to 2 MB after server-side signature validation.
+Task creation takes `{title,description?,assigneeId?,eventId?,dueAt?}`. PATCH permits the same optional fields, with null to clear description, assignee, event or deadline. Status takes `{status:"todo"|"in_progress"|"done"}`. Deadlines normalize to UTC. Assignment and event references must belong to the caller's club; mine uses the actual session member.
+
+Expense submission takes `{amountPaise,purpose,receiptId?,receiptReference?,eventId?}`. Amounts must be positive safe integer paise. Receipt ownership is checked; one member cannot submit another member's receipt. Approve takes `{}`, reject takes `{note?}`, and pay takes `{paymentReference}`. No uploader, submitter or reviewer identity fields are accepted in JSON; multipart uploader fields are ignored.
+
+An expense moves submitted → approved/rejected, then approved → paid. Officers cannot review or pay their own expenses. Payment takes a database write lock before reading state, updates the expense and posts one source-linked transaction atomically. Repeating the same payment reference returns the paid expense without another outflow; a different reference conflicts. Payment records a reimbursement already made externally; it does not transfer money.
+
+The existing `transactions` ledger remains the single source of balances, including pre-system opening balances. There is no second expense ledger. Expense sources participate in reconciliation. Task changes and expense decisions are audited.
+
+Receipts accept JPEG, PNG, WebP or PDF with checked signatures, at most 2 MiB. Uploads use a multipart field named `file`; oversized files return 413 and unsupported signatures return 415. Files live in the receipts directory beside SQLITE_PATH; failed database inserts remove their new file. Missing files return 404. Back up SQLite and this directory together.
+
+Errors use 400 for invalid bodies, 401 for absent/expired sessions, 403 for role/ownership/origin failures, 404 for missing or foreign-club records, and 409 for invalid transitions. Schema v9 upgrades the released v1–v8 history without replacing existing members, sessions, passes or opening balances. Databases made by the earlier unmerged PR's conflicting schema are not a supported migration source.
+
+The event report preserves ticket counts, attendance and realized revenue, and adds fundraiser progress and task counts. Ticket receipts, dues and merchandise income remain in the same ledger; the new migration backfills their club metadata and ticket event attribution. Treasury entries retain their external payment references. Reserved schema gaps remain skipped; v9 follows the already released v8.
+
+EXPO_PUBLIC_API_URL remains configuration for a future Expo client. Browser sign-in and native bearer authentication exist, but the Expo UI is not included. MODE_CORS_ORIGINS follows the development-only policy above.
+
+### Authentication status
+
+The workspace uses the existing HttpOnly cookie session for browsers. Native callers can use the existing bearer token returned by login; role and club checks are identical.

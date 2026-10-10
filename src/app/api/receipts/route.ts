@@ -1,5 +1,6 @@
 import { getDatabase } from "@/lib/database";
-import { rejectUnsafeMutation } from "@/lib/mutation-guard";
+import { requireActor } from "@/lib/auth/authorize";
+import { route } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,9 +41,9 @@ function detectMimeType(bytes: Uint8Array): string | null {
   return null;
 }
 
-export async function POST(request: Request) {
-  const rejected = rejectUnsafeMutation(request);
-  if (rejected) return rejected;
+export const POST = route("receipt upload", async (request) => {
+  const db = getDatabase();
+  const actor = requireActor(request, db, { mutation: true, permission: "expenses:submit" });
 
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.includes("multipart/form-data")) {
@@ -57,14 +58,9 @@ export async function POST(request: Request) {
   }
 
   const file = formData.get("file");
-  const uploaderId = formData.get("uploaderId");
-  const uploaderName = formData.get("uploaderName");
 
   if (!(file instanceof File)) {
     return Response.json({ error: "A file field named 'file' is required." }, { status: 400 });
-  }
-  if (!uploaderId || typeof uploaderId !== "string" || !uploaderName || typeof uploaderName !== "string") {
-    return Response.json({ error: "uploaderId and uploaderName are required." }, { status: 400 });
   }
 
   if (file.size > MAX_SIZE_BYTES) {
@@ -88,10 +84,7 @@ export async function POST(request: Request) {
   const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
 
   try {
-    const db = getDatabase();
-    const receipt = db.saveReceipt({
-      uploaderId,
-      uploaderName,
+    const receipt = db.saveReceipt(actor, {
       filename: safeFilename,
       mimeType: detectedMime,
       sizeBytes: file.size,
@@ -102,4 +95,4 @@ export async function POST(request: Request) {
     console.error("MODE receipt upload failed", error);
     return Response.json({ error: "Unable to save the receipt. Please try again." }, { status: 500 });
   }
-}
+});

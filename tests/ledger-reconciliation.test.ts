@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { openClubDatabase } from "../src/lib/database";
 import { ConflictError, ValidationError } from "../src/lib/errors";
 import { SOURCE_RESOLVERS } from "../src/lib/modules/ledger";
+import { DEMO, actorFor, memoryDatabase } from "./helpers";
 
 const fixedNow = () => new Date("2026-10-10T08:00:00.000Z");
 
@@ -72,6 +73,66 @@ test("postLedgerEntry posts each source exactly once, inside a transaction, with
     assert.ok(!db.ledger.list().some((e) => e.sourceId === "ok-rb"), "ledger row and source commit or fail together");
   } finally {
     delete SOURCE_RESOLVERS.test_source;
+    db.close();
+  }
+});
+
+test("tickets (#5): a confirmed ticket posts one `ticket` income row that reconciles; holds and cancellations post nothing", () => {
+  const { db, clock } = memoryDatabase();
+  try {
+    const organizer = actorFor(db, DEMO.organizer);
+    const event = db.events.createEvent(organizer, { title: "Reconcile gala", startsAt: "2026-11-01T13:30:00.000Z", venue: "Hall", capacity: 3, memberPricePaise: 5000, guestPricePaise: 10000 });
+    const before = db.ledger.reconcile();
+    const paid = db.events.bookTicket(actorFor(db, "active@example.com"), event.id);
+    const held = db.events.bookTicket(actorFor(db, "expired@example.com"), event.id);
+    const cancelled = db.events.bookGuestTicket(organizer.clubId, event.id, { name: "Cancel Me", email: "cancel@example.com" });
+    db.events.confirmTicket(organizer, paid.id, { reference: "REC-1" });
+    db.events.confirmTicket(organizer, paid.id, { reference: "REC-1" });
+    db.events.cancelTicket(organizer, cancelled.id);
+    clock.now = new Date(clock.now.getTime() + 31 * 60_000);
+    db.events.pendingHolds(organizer, event.id); // releases `held`
+
+    const after = db.ledger.reconcile();
+    assert.equal(after.entries, before.entries + 1, "exactly one row for the paid ticket");
+    assert.equal(after.balancePaise, before.balancePaise + 5000);
+    assert.deepEqual(after.orphans, []);
+    assert.deepEqual(after.duplicates, []);
+    assert.equal(after.unsourced, 0);
+    assert.deepEqual(db.ledger.list().filter((e) => e.sourceType === "ticket").map((e) => e.sourceId), [paid.id]);
+    assert.equal(db.events.eventReport(organizer, event.id).realizedRevenuePaise, 5000);
+    assert.equal(db.events.myTickets(actorFor(db, "expired@example.com")).find((t) => t.id === held.id)?.status, "expired");
+  } finally {
+    db.close();
+  }
+});
+
+test("merchandise (#6): a confirmed order posts one `merch_order` income row that reconciles; expired and cancelled holds post nothing", () => {
+  const { db, clock } = memoryDatabase();
+  try {
+    const organizer = actorFor(db, DEMO.organizer);
+    const product = db.merchandise.createProduct(organizer, { name: "Reconcile tee", pricePaise: 34900, memberPricePaise: 29900, variants: [{ size: "M", stock: 4 }] });
+    const variantId = product.variants[0].id;
+    const before = db.ledger.reconcile();
+    const paid = db.merchandise.createOrder(actorFor(db, "active@example.com"), { variantId, quantity: 2 });
+    const held = db.merchandise.createOrder(actorFor(db, "expired@example.com"), { variantId });
+    const cancelled = db.merchandise.createOrder(actorFor(db, "treasurer@example.com"), { variantId });
+    db.merchandise.confirmOrder(organizer, paid.id, { reference: "REC-M1" });
+    db.merchandise.confirmOrder(organizer, paid.id, { reference: "REC-M1" });
+    db.merchandise.fulfilOrder(organizer, paid.id);
+    db.merchandise.cancelOrder(organizer, cancelled.id);
+    clock.now = new Date(clock.now.getTime() + 31 * 60_000);
+    db.merchandise.listOrders(organizer, "pending_payment"); // releases `held`
+
+    const after = db.ledger.reconcile();
+    assert.equal(after.entries, before.entries + 1);
+    assert.equal(after.balancePaise, before.balancePaise + 59800);
+    assert.deepEqual(after.orphans, []);
+    assert.deepEqual(after.duplicates, []);
+    assert.equal(after.unsourced, 0);
+    assert.deepEqual(db.ledger.list().filter((e) => e.sourceType === "merch_order").map((e) => e.sourceId), [paid.id]);
+    assert.equal(db.merchandise.requireProduct(organizer.clubId, product.id).stock, 2, "held and cancelled units are back; paid units are gone");
+    assert.equal(db.merchandise.myOrders(actorFor(db, "expired@example.com")).find((o) => o.id === held.id)?.status, "expired");
+  } finally {
     db.close();
   }
 });
