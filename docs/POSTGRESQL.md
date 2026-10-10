@@ -9,7 +9,7 @@ migrations, same modules, same routes, same tests; the choice is made once in
 | Runtime driver: synchronous `pg` bridge with the `node:sqlite` surface | `src/lib/db/postgres-sync.ts` | whole test suite on PostgreSQL 17 (`npm run test:postgres`), production server on PostgreSQL |
 | Dialect translation (placeholders, PRAGMAs, DDL types, rowid, INSERT OR IGNORE, …) | `translateStatement()` in `src/lib/db/postgres.ts` | `tests/postgres-runtime.test.ts` |
 | PostgreSQL DDL generated from the migrations | `docs/schema.postgres.sql` | `npm run schema:check` (part of `npm run check`) |
-| Move an existing SQLite database across (schema + data, one transaction) | `scripts/export-postgres.ts` → `npm run postgres:export`, `npm run postgres:push` | loaded into PostgreSQL 17, 19 tables, row counts equal |
+| Move an existing SQLite database across (schema + data, one transaction) | `scripts/export-postgres.ts` → `npm run postgres:export`, `npm run postgres:push` | loaded into PostgreSQL 17, 20 tables, row counts equal |
 | Local PostgreSQL 17 | `docker-compose.postgres.yml` → `npm run postgres:up` / `postgres:down` | healthcheck `pg_isready` |
 | Driver-neutral contract the modules are written against | `SqlDatabase` in `src/lib/db/core.ts` | typecheck; `DatabaseSync` satisfies it structurally |
 
@@ -20,7 +20,7 @@ npm run postgres:up                               # PostgreSQL 17 on 127.0.0.1:5
 DATABASE_URL=postgres://mode:mode@127.0.0.1:5432/mode npm run dev
 ```
 
-The first request creates the schema (migrations v1–v12 run through the translator), seeds
+The first request creates the schema (migrations v1–v13 run through the translator; v13 adds the club foreign keys with `ALTER TABLE … ADD CONSTRAINT` on PostgreSQL instead of SQLite's table rebuild), seeds
 the same synthetic records as SQLite, and `/api/health` reports `"database": "postgres"`.
 Receipt files go to `MODE_RECEIPTS_DIR` (default `.data/receipts`). For `next start`, set
 `MODE_DEMO_PASSWORD` exactly as for SQLite: production refuses to seed with the public default.
@@ -98,7 +98,7 @@ requirement.
 ## Verified on 10 October 2026
 
 - PostgreSQL 17.11 (`postgres:17-alpine`), Node 24.14, `pg` 8.23.
-- `npm run test:postgres`: 97 passed, 3 skipped (SQLite-file fixtures), 0 failed.
+- `npm run test:postgres` (schema v13, including `tests/db-hardening.test.ts`): 109 passed, 3 skipped (SQLite-file fixtures), 0 failed.
 - `tests/postgres-runtime.test.ts`: migrate from empty, identity (duplicate email → `DuplicateMemberError` via SQLSTATE mapping), dues, ticket hold/expiry/confirm/scan, merchandise stock, receipts and reimbursements, announcements, reminders, tasks, clean `reconcileLedger()`, reopen without reset.
 - `next build` + `next start` with `DATABASE_URL`: health, login, bearer member list, dashboard, member creation, rows visible in `psql`.
-- `npm run postgres:push`: 19 tables loaded, row counts and ledger balance equal to SQLite, constraint behaviour identical.
+- `npm run postgres:push`: all tables loaded, row counts and ledger balance equal to SQLite, constraint behaviour identical.

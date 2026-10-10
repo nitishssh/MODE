@@ -161,5 +161,5 @@ export function openPostgresSync(url: string, options: PostgresSyncOptions = {})
   query("CREATE EXTENSION IF NOT EXISTS citext");
   query(MIGRATIONS_TABLE_DDL);
 
-  return { prepare, exec, close };
+  return { prepare, exec, close, dialect: "postgres" };
 }

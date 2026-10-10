@@ -11,7 +11,7 @@ import { createAnnouncementsModule } from "./modules/announcements";
 import { createEventsModule } from "./modules/events";
 import { createIdentityModule } from "./modules/identity";
 import { createMerchandiseModule } from "./modules/merchandise";
-import { ledgerBalance, listLedger, postLedgerEntry, reconcileLedger, type LedgerEntryInput } from "./modules/ledger";
+import { ledgerBalance, listLedger, postLedgerEntry, reconcileInventory, reconcileLedger, type LedgerEntryInput } from "./modules/ledger";
 
 export { DuplicateMemberError } from "./errors";
 export { SCHEMA_VERSION };
@@ -47,10 +47,10 @@ export function openClubDatabase(target: string, options: { now?: () => Date; re
 
   const ctx: DbContext = { db, now, depth: 0 };
   const identity = createIdentityModule(ctx);
-  const dashboard = createDashboardModule(ctx, identity);
   const dues = createDuesModule(ctx, identity);
   const events = createEventsModule(ctx, identity);
   const merchandise = createMerchandiseModule(ctx, identity);
+  const dashboard = createDashboardModule(ctx, identity, { beforeRead: () => { events.releaseIfLapsed(); merchandise.releaseIfLapsed(); } });
   let closed = false;
 
   return {
@@ -63,9 +63,10 @@ export function openClubDatabase(target: string, options: { now?: () => Date; re
     merchandise,
     ledger: {
       post: (input: LedgerEntryInput) => postLedgerEntry(ctx, input),
-      list: () => listLedger(db),
-      balance: () => ledgerBalance(db),
+      list: (clubId: string) => listLedger(db, clubId),
+      balance: (clubId: string) => ledgerBalance(db, clubId),
       reconcile: () => reconcileLedger(db),
+      reconcileInventory: () => reconcileInventory(db),
     },
     /** Run `fn` atomically; financial modules post their ledger row inside it. */
     transaction: <T>(fn: () => T): T => transaction(ctx, fn),

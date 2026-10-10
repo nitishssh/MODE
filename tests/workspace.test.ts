@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { DEFAULT_CLUB_ID } from "../src/lib/db/migrations";
 import { test } from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,9 +33,9 @@ test("workspace routes require sessions and derive submitter/reviewer identity f
     assert.equal((await action(apiRequest("/api/expenses",{cookie:treasurer,body:{}}),params)).status,200);
     const pay=()=>action(apiRequest("/api/expenses",{cookie:treasurer,body:{paymentReference:"TEST-123"}}),routeParams({id:expense.id,action:"pay"}));
     assert.equal((await pay()).status,200); assert.equal((await pay()).status,200);
-    assert.equal(getDatabase().ledger.list().filter(r=>r.sourceId===expense.id).length,1);
+    assert.equal(getDatabase().ledger.list(DEFAULT_CLUB_ID).filter(r=>r.sourceId===expense.id).length,1);
     const total=await (await ledger(apiRequest("/api/ledger/summary",{cookie:treasurer}))).json();
-    assert.equal(total.balancePaise,getDatabase().ledger.balance());
+    assert.equal(total.balancePaise,getDatabase().ledger.balance(DEFAULT_CLUB_ID));
     assert.equal((await action(apiRequest("/api/expenses",{cookie:treasurer,origin:"https://other.example",body:{}}),params)).status,403);
     assert.equal((await submit(apiRequest("/api/expenses",{cookie:member,rawBody:"{"}))).status,400);
   });
@@ -72,7 +73,7 @@ test("expense ownership, self review, payment retry and rollback keep one reconc
   const {db}=memoryDatabase();
   try{
     const member=actorFor(db,"active@example.com"), reviewer=actorFor(db,DEMO.treasurer), admin=actorFor(db,DEMO.admin);
-    const before=db.ledger.balance();
+    const before=db.ledger.balance(DEFAULT_CLUB_ID);
     const expense=db.submitExpense(member,{amountPaise:25000,purpose:"Supplies",eventId:"demo-event-1",receiptId:receiptFor(db,member)});
     assert.throws(()=>db.payExpense(reviewer,expense.id,"TEST-REF"),ConflictError);
     const own=db.submitExpense(reviewer,{amountPaise:500,purpose:"Own expense",receiptId:receiptFor(db,reviewer)});
@@ -83,12 +84,12 @@ test("expense ownership, self review, payment retry and rollback keep one reconc
     assert.equal(db.getLedgerSummary(reviewer).approvedUnpaidPaise,25500);
     assert.throws(()=>db.transaction(()=>{db.payExpense(reviewer,expense.id,"ROLLBACK");throw new Error("abort");}),/abort/);
     assert.equal(db.getExpenseById(member,expense.id).status,"approved");
-    assert.equal(db.ledger.balance(),before);
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID),before);
     db.payExpense(reviewer,expense.id,"PAID-1");db.payExpense(reviewer,expense.id,"PAID-1");
     assert.throws(()=>db.payExpense(reviewer,expense.id,"PAID-2"),ConflictError);
-    assert.equal(db.ledger.balance(),before-25000);
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID),before-25000);
     assert.deepEqual(db.ledger.reconcile().orphans,[]);
-    assert.equal(db.ledger.list().filter(r=>r.sourceId===expense.id).length,1);
+    assert.equal(db.ledger.list(DEFAULT_CLUB_ID).filter(r=>r.sourceId===expense.id).length,1);
     assert.equal(db.getLedgerSummary(reviewer).byEvent[0].outflowPaise,25000);
     const other=db.createClub("Other");
     db.createMemberWithCredentials({name:"Other lead",email:"other-lead@example.com",password:"other-pass-123",role:"admin",clubId:other});
@@ -132,7 +133,7 @@ test("schema v8 upgrades preserve members, passes, sessions, merchandise and ope
     const product=db.merchandise.createProduct(other,{name:"Migration cap",pricePaise:2345,variants:[{size:"M",stock:2}]});
     const order=db.merchandise.createOrder(other,{variantId:product.variants[0].id});
     db.merchandise.confirmOrder(other,order.id,{reference:"MIGRATED-MERCH"});
-    const pass=db.getPass(session.member.id),balance=db.ledger.balance(),count=db.getMembers().length;
+    const pass=db.getPass(session.member.id),balance=db.ledger.balance(DEFAULT_CLUB_ID),count=db.getMembers().length;
     db.close();
     // Reconstruct the released v8 shape by removing later additive migrations.
     const raw=new DatabaseSync(path);
@@ -146,7 +147,7 @@ test("schema v8 upgrades preserve members, passes, sessions, merchandise and ope
     raw.exec("ALTER TABLE events DROP COLUMN fundraiser_goal_paise; PRAGMA user_version=8;");raw.close();
     db=openClubDatabase(path,{now:()=>FIXED_NOW});
     assert.equal(db.health().schemaVersion,SCHEMA_VERSION);assert.equal(db.getMembers().length,count);
-    assert.equal(db.ledger.balance(),balance);assert.deepEqual(db.getPass(session.member.id),pass);
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID),balance);assert.deepEqual(db.getPass(session.member.id),pass);
     assert.equal(db.getActor(session.token)?.memberId,session.member.id);
     assert.equal(db.getTasks(db.getActor(session.token)!).length,3);
     assert.equal(db.merchandise.listProducts(clubId).length,1);
@@ -234,7 +235,7 @@ test("dues, ticket income and expenses share scoped treasury and combined event 
     const result=await response.json();
     assert.equal(result.ticketsSold,1);assert.equal(result.realizedRevenuePaise,5000);
     assert.equal(result.fundraiser.raisedPaise,5000);assert.equal(result.tasks.overdue,1);
-    assert.equal(db.getLedgerSummary(admin).balancePaise,db.ledger.balance());
+    assert.equal(db.getLedgerSummary(admin).balancePaise,db.ledger.balance(DEFAULT_CLUB_ID));
     assert.deepEqual(db.ledger.reconcile().orphans,[]);
   });
 });

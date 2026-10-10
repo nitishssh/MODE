@@ -13,6 +13,10 @@ import { membershipState } from "./membership-state";
 /** A pending booking holds its seat for this long; then releaseExpiredHolds() returns it. */
 export const HOLD_MINUTES = 30;
 export const HOLD_MS = HOLD_MINUTES * 60_000;
+/** Anonymous guests may hold at most this many unpaid seats per event at once (audit #11). */
+export function maxPendingGuestHolds(capacity: number): number {
+  return Math.max(3, Math.ceil(capacity / 10));
+}
 
 /** The fixed door contract (#5). Volunteers read `message` aloud; clients may key on `outcome`. */
 export const DOOR_MESSAGES: Record<ScanOutcome, string> = {
@@ -163,7 +167,14 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
       db.prepare(
         "UPDATE events SET title = ?, description = ?, starts_at = ?, venue = ?, capacity = ?, member_price_paise = ?, guest_price_paise = ?, status = ? WHERE id = ? AND club_id = ?",
       ).run(next.title, next.description, next.startsAt, next.venue, next.capacity, next.memberPricePaise, next.guestPricePaise, next.status, eventId, actor.clubId);
-      identity.recordAudit(actor, "event.updated", "event", eventId, data);
+      let releasedHolds = 0;
+      if (next.status === "cancelled" && current.status !== "cancelled") {
+        // Cancelling an event ends its unpaid holds; paid tickets keep their record (refunds are outside this MVP) but the door refuses them (audit #1).
+        const nowIso = ctx.now().toISOString();
+        releasedHolds = Number(db.prepare("UPDATE tickets SET status = 'cancelled', updated_at = ? WHERE event_id = ? AND status = 'pending_payment'").run(nowIso, eventId).changes);
+        if (releasedHolds) db.prepare("UPDATE events SET registered = MAX(0, registered - ?) WHERE id = ?").run(releasedHolds, eventId);
+      }
+      identity.recordAudit(actor, "event.updated", "event", eventId, { ...data, ...(releasedHolds ? { releasedHolds } : {}) });
       return requireEvent(actor.clubId, eventId);
     });
   }
@@ -192,6 +203,16 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
       released += changes;
     }
     return released;
+  }
+
+  /** Reads call this instead of opening a write transaction: the write lock is taken only when a hold has actually lapsed (audit #13). */
+  function releaseIfLapsed(eventId?: string): number {
+    const nowIso = ctx.now().toISOString();
+    const lapsed = eventId
+      ? db.prepare("SELECT 1 FROM tickets WHERE event_id = ? AND status = 'pending_payment' AND hold_expires_at <= ? LIMIT 1").get(eventId, nowIso)
+      : db.prepare("SELECT 1 FROM tickets WHERE status = 'pending_payment' AND hold_expires_at <= ? LIMIT 1").get(nowIso);
+    if (!lapsed) return 0;
+    return transaction(ctx, () => releaseExpiredHolds(eventId));
   }
 
   // ----- booking ------------------------------------------------------------
@@ -272,6 +293,10 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
       if (db.prepare("SELECT 1 FROM members WHERE club_id = ? AND email = ?").get(clubId, data.email)) {
         throw new ConflictError("This email belongs to a club member. Sign in to book at the member price.", "member_email");
       }
+      const pendingGuests = int((db.prepare("SELECT COUNT(*) AS n FROM tickets WHERE event_id = ? AND guest_email IS NOT NULL AND status = 'pending_payment'").get(event.id) as Row).n);
+      if (pendingGuests >= maxPendingGuestHolds(event.capacity)) {
+        throw new ConflictError("Guest holds for this event are full right now; try again in a few minutes.", "guest_holds_full");
+      }
       const id = issueTicket(clubId, event, { memberId: null, guestName: data.name, guestEmail: data.email }, "guest", event.guestPricePaise);
       identity.recordAudit(null, "ticket.booked", "ticket", id, { eventId, pricing: "guest", guest: true }, clubId);
       return mapTicket(requireTicketRow(clubId, id), { token: true });
@@ -287,16 +312,24 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
   function confirmTicket(actor: Actor, ticketId: string, input: z.input<typeof confirmTicketSchema>): { ticket: Ticket; created: boolean } {
     assertPermission(actor, "payments:confirm");
     const data = parseInput(confirmTicketSchema, input);
+    const before = mapTicket(requireTicketRow(actor.clubId, ticketId), { officer: true });
+    releaseIfLapsed(before.eventId); // its own transaction, so a conflict below cannot roll the release back (audit #24)
     return transaction(ctx, () => {
-      const before = mapTicket(requireTicketRow(actor.clubId, ticketId), { officer: true });
-      releaseExpiredHolds(before.eventId);
       const nowIso = ctx.now().toISOString();
+      // One external payment pays for one ticket (audit #3); the UNIQUE index is the backstop.
+      if (db.prepare("SELECT 1 FROM tickets WHERE club_id = ? AND payment_reference = ? AND id <> ?").get(actor.clubId, data.reference, ticketId)) {
+        throw new ConflictError("This payment reference is already recorded against another ticket.", "payment_reference_reused");
+      }
       const moved = db
         .prepare("UPDATE tickets SET status = 'paid', paid_at = ?, payment_reference = ?, confirmed_by = ?, hold_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'pending_payment'")
         .run(nowIso, data.reference, actor.memberId, nowIso, ticketId);
       if (Number(moved.changes) === 0) {
         const fresh = mapTicket(requireTicketRow(actor.clubId, ticketId), { officer: true });
-        if (fresh.status === "paid") return { ticket: fresh, created: false }; // duplicate confirmation: same answer, no second income
+        if (fresh.status === "paid") {
+          // Duplicate confirmation: same answer, no second income; a different reference is a real disagreement (audit #4).
+          if (fresh.paymentReference !== data.reference) throw new ConflictError("This ticket was already confirmed with a different payment reference.", "payment_reference_mismatch");
+          return { ticket: fresh, created: false };
+        }
         throw new ConflictError("Hold expired, rebook", "hold_expired");
       }
       const event = requireEvent(actor.clubId, before.eventId);
@@ -337,33 +370,27 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
 
   function pendingHolds(actor: Actor, eventId: string): Ticket[] {
     assertPermission(actor, "payments:confirm");
-    return transaction(ctx, () => {
-      requireEvent(actor.clubId, eventId);
-      releaseExpiredHolds(eventId);
-      return (db.prepare(`${TICKET_SELECT} WHERE t.event_id = ? AND t.status = 'pending_payment' ORDER BY t.hold_expires_at, t.id`).all(eventId) as Row[]).map((row) => mapTicket(row, { officer: true }));
-    });
+    requireEvent(actor.clubId, eventId);
+    releaseIfLapsed(eventId);
+    return (db.prepare(`${TICKET_SELECT} WHERE t.event_id = ? AND t.status = 'pending_payment' ORDER BY t.hold_expires_at, t.id`).all(eventId) as Row[]).map((row) => mapTicket(row, { officer: true }));
   }
 
   function eventTickets(actor: Actor, eventId: string): Ticket[] {
     assertPermission(actor, "payments:confirm");
-    return transaction(ctx, () => {
-      requireEvent(actor.clubId, eventId);
-      releaseExpiredHolds(eventId);
-      return (db.prepare(`${TICKET_SELECT} WHERE t.event_id = ? ORDER BY t.created_at DESC, t.id`).all(eventId) as Row[]).map((row) => mapTicket(row, { officer: true }));
-    });
+    requireEvent(actor.clubId, eventId);
+    releaseIfLapsed(eventId);
+    return (db.prepare(`${TICKET_SELECT} WHERE t.event_id = ? ORDER BY t.created_at DESC, t.id`).all(eventId) as Row[]).map((row) => mapTicket(row, { officer: true }));
   }
 
   function myTickets(actor: Actor): Ticket[] {
-    return transaction(ctx, () => {
-      releaseExpiredHolds();
-      return (db.prepare(`${TICKET_SELECT} WHERE t.club_id = ? AND t.member_id = ? ORDER BY t.created_at DESC, t.id`).all(actor.clubId, actor.memberId) as Row[]).map((row) => mapTicket(row, { token: true }));
-    });
+    releaseIfLapsed();
+    return (db.prepare(`${TICKET_SELECT} WHERE t.club_id = ? AND t.member_id = ? ORDER BY t.created_at DESC, t.id`).all(actor.clubId, actor.memberId) as Row[]).map((row) => mapTicket(row, { token: true }));
   }
 
-  /** /t/{qr_token}: the holder's view, resolved by the random token only. */
+  /** /t/{qr_token}: the holder's view, resolved by the random token only. Anonymous reads never take the write lock. */
   function publicTicket(qrToken: string): PublicTicket {
-    return transaction(ctx, () => {
-      releaseExpiredHolds();
+    releaseIfLapsed();
+    {
       const row = db
         .prepare(
           `SELECT t.*, m.name AS member_name, e.title AS event_title, e.starts_at AS event_starts_at, e.venue AS event_venue
@@ -382,7 +409,7 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
         holdExpiresAt: ticket.holdExpiresAt,
         checkedInAt: ticket.checkedInAt,
       };
-    });
+    }
   }
 
   // ----- the door -----------------------------------------------------------
@@ -431,6 +458,8 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
     const { credential } = parseInput(scanSchema, input);
     return transaction(ctx, () => {
       const event = requireEvent(actor.clubId, eventId);
+      // A cancelled or draft event admits nobody, whatever the ticket says (audit #1).
+      if (event.status !== "published") return result("not_valid");
       releaseExpiredHolds(eventId);
       const ticketRow = db
         .prepare(`${TICKET_SELECT} WHERE t.club_id = ? AND (t.qr_token = ? OR t.short_code = ?)`)
@@ -475,6 +504,7 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
     createEvent,
     updateEvent,
     releaseExpiredHolds,
+    releaseIfLapsed,
     bookTicket,
     bookGuestTicket,
     confirmTicket,

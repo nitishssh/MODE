@@ -85,7 +85,7 @@ test("tables are ordered so every foreign key target is created first", () => {
     before("product_variants", "merch_orders");
     before("expense_receipts", "expenses");
     before("transactions", "legacy_ledger_imports");
-    assert.equal(tables.length, 19);
+    assert.equal(tables.length, 20);
   } finally {
     db.close();
   }
@@ -128,7 +128,7 @@ test("the export carries every seeded row, escapes awkward text and restores ide
     assert.equal(exportedRows(script, "clubs"), 2);
     assert.match(script, /INSERT INTO "members" \("id", "name", "email", .*"seq"\) VALUES/);
     assert.ok(/DO \$\$ BEGIN\n(  PERFORM setval[^\n]+\n)+END \$\$;/.test(script), "identity sequences restored in one DO block");
-    assert.match(script, /-- \d+ row\(s\) across 19 table\(s\)\./);
+    assert.match(script, /-- \d+ row\(s\) across 20 table\(s\)\./);
   } finally {
     db.close();
   }
@@ -141,7 +141,7 @@ test("export options: replace prefixes drops in reverse order, skipData keeps DD
     const drops = [...script.matchAll(/DROP TABLE IF EXISTS "(\w+)" CASCADE;/g)].map((m) => m[1]);
     assert.equal(drops[0], "schema_migrations");
     assert.ok(drops.indexOf("sessions") < drops.indexOf("members"), "children dropped before parents");
-    assert.ok(script.indexOf('DROP TABLE IF EXISTS "members"') < script.indexOf("CREATE TABLE members ("));
+    assert.ok(script.indexOf('DROP TABLE IF EXISTS "members"') < script.search(/CREATE TABLE "?members"? \(/));
     assert.match(script, /-- members: data skipped on request/);
     assert.equal(exportedRows(script, "members"), 0);
     assert.equal(exportedRows(script, "clubs"), 1);

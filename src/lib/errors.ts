@@ -47,3 +47,10 @@ export class DuplicateMemberError extends ConflictError {
     super("A member with this email address already exists.", "duplicate_member");
   }
 }
+
+/** Login throttling (audit #10): the account is locked for a short window after repeated failures. */
+export class TooManyAttemptsError extends DomainError {
+  constructor(readonly lockedUntil: string) {
+    super("Too many sign-in attempts. Try again in a few minutes.", 429, "too_many_attempts");
+  }
+}

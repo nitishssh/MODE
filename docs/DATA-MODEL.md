@@ -25,6 +25,8 @@ Writes use synchronous `BEGIN IMMEDIATE` transactions, with savepoints for nesti
 | 9 | Workspace tasks, receipts, expenses, ledger club/event attribution and event fundraiser goals |
 | 10 | Rename receipts to expense_receipts and preserve legacy UUID filenames in storage_name |
 | 11 | Announcement club/author/retry/audience fields and notification/outbox announcement links |
+| 12 | Legacy workspace normalisation and historical ledger imports |
+| 13 | Hardening ([DB-AUDIT.md](DB-AUDIT.md)): `club_id` foreign keys on six tables (SQLite table rebuild), receipt and payment-reference uniqueness, `events.seeded_registrations`, `clubs.require_separate_payer`, `login_attempts`, reminders primary key, purge/throttle indexes |
 
 Versions 5 and 7 are historical gaps; do not reuse them. Append migrations above the latest released version. v10 does not move/delete old receipt files; new uploads use UUID plus detected extension, while legacy extensionless/WebP downloads remain supported.
 

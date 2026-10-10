@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { DEFAULT_CLUB_ID } from "../src/lib/db/migrations";
 import { test } from "node:test";
 import { openClubDatabase } from "../src/lib/database";
 import { ConflictError, ValidationError } from "../src/lib/errors";
@@ -12,7 +13,7 @@ test('legacy payer exception requires its migration evidence; missing and altere
   const db = openClubDatabase(fixture.filename, fixture.options);
   const raw = new DatabaseSync(fixture.filename);
   try {
-    const payment = db.ledger.list().find(row => row.sourceId === 'demo-expense-1')!;
+    const payment = db.ledger.list(DEFAULT_CLUB_ID).find(row => row.sourceId === 'demo-expense-1')!;
     assert.deepEqual(db.ledger.reconcile().mismatched, []);
     raw.prepare('UPDATE transactions SET amount_paise = amount_paise + 1 WHERE id = ?').run(payment.id);
     assert.deepEqual(db.ledger.reconcile().mismatched[0].fields, ['amountPaise']);
@@ -53,8 +54,12 @@ test("reimbursements (#7): only payment changes balance, with one source and the
     const before = db.ledger.reconcile();
     const receiptId = receiptFor(db, submitter);
     const expense = db.submitExpense(submitter, { amountPaise: 12345, purpose: "Synthetic transport", receiptId });
-    const rejected = db.submitExpense(submitter, { amountPaise: 500, purpose: "Duplicate claim", receiptId });
+    // One receipt backs one live claim; a rejected claim frees its receipt again.
+    assert.throws(() => db.submitExpense(submitter, { amountPaise: 500, purpose: "Duplicate claim", receiptId }), (e: unknown) => e instanceof ConflictError && e.code === "receipt_already_claimed");
+    const spareReceipt = receiptFor(db, submitter);
+    const rejected = db.submitExpense(submitter, { amountPaise: 500, purpose: "Will be rejected", receiptId: spareReceipt });
     db.rejectExpense(reviewer, rejected.id, "Duplicate");
+    db.submitExpense(submitter, { amountPaise: 600, purpose: "Receipt reused after rejection", receiptId: spareReceipt });
     db.approveExpense(reviewer, expense.id);
     assert.deepEqual(db.ledger.reconcile(), before);
     assert.throws(() => db.transaction(() => { db.payExpense(payer, expense.id, "ROLLBACK"); throw new Error("abort"); }));
@@ -92,7 +97,7 @@ test("starter transactions are honest opening balances and the ledger reconciles
     assert.deepEqual(report.duplicates, []);
     assert.equal(report.unsourced, 0);
     assert.equal(report.balancePaise, 185000);
-    for (const entry of db.ledger.list()) {
+    for (const entry of db.ledger.list(DEFAULT_CLUB_ID)) {
       assert.equal(entry.sourceType, "opening_balance");
       assert.equal(entry.sourceId, entry.id, "an opening balance is its own source");
       assert.equal(entry.recordedBy, null);
@@ -109,25 +114,25 @@ test("postLedgerEntry posts each source exactly once, inside a transaction, with
     const officer = db.getMembers().find((m) => m.email === "treasurer@example.com")!;
     SOURCE_RESOLVERS.test_source = (_db, sourceId) => sourceId.startsWith("ok-");
 
-    assert.throws(() => db.ledger.post({ kind: "income", amountPaise: 100, description: "outside tx", source: { type: "test_source", id: "ok-1" }, recordedBy: officer.id }), /inside the source's transaction/);
-    const before = db.ledger.balance();
+    assert.throws(() => db.ledger.post({ clubId: DEFAULT_CLUB_ID, kind: "income", amountPaise: 100, description: "outside tx", source: { type: "test_source", id: "ok-1" }, recordedBy: officer.id }), /inside the source's transaction/);
+    const before = db.ledger.balance(DEFAULT_CLUB_ID);
     const entry = db.transaction(() =>
-      db.ledger.post({ kind: "income", amountPaise: 2500, description: "Test income", source: { type: "test_source", id: "ok-1" }, recordedBy: officer.id }),
+      db.ledger.post({ clubId: DEFAULT_CLUB_ID, kind: "income", amountPaise: 2500, description: "Test income", source: { type: "test_source", id: "ok-1" }, recordedBy: officer.id }),
     );
     assert.equal(entry.recordedBy, officer.id);
-    assert.equal(db.ledger.balance(), before + 2500);
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before + 2500);
 
     assert.throws(
-      () => db.transaction(() => db.ledger.post({ kind: "income", amountPaise: 2500, description: "again", source: { type: "test_source", id: "ok-1" }, recordedBy: officer.id })),
+      () => db.transaction(() => db.ledger.post({ clubId: DEFAULT_CLUB_ID, kind: "income", amountPaise: 2500, description: "again", source: { type: "test_source", id: "ok-1" }, recordedBy: officer.id })),
       (error: unknown) => error instanceof ConflictError && error.code === "duplicate_ledger_source",
     );
-    assert.equal(db.ledger.balance(), before + 2500, "the duplicate attempt rolled back");
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before + 2500, "the duplicate attempt rolled back");
     for (const bad of [0, -5, 12.5, Number.NaN]) {
-      assert.throws(() => db.transaction(() => db.ledger.post({ kind: "expense", amountPaise: bad, description: "bad", source: { type: "test_source", id: `ok-${bad}` }, recordedBy: officer.id })), ValidationError);
+      assert.throws(() => db.transaction(() => db.ledger.post({ clubId: DEFAULT_CLUB_ID, kind: "expense", amountPaise: bad, description: "bad", source: { type: "test_source", id: `ok-${bad}` }, recordedBy: officer.id })), ValidationError);
     }
 
     // A source that disappears becomes an orphan the harness reports.
-    db.transaction(() => db.ledger.post({ kind: "expense", amountPaise: 700, description: "Orphan test", source: { type: "test_source", id: "gone-1" }, recordedBy: officer.id }));
+    db.transaction(() => db.ledger.post({ clubId: DEFAULT_CLUB_ID, kind: "expense", amountPaise: 700, description: "Orphan test", source: { type: "test_source", id: "gone-1" }, recordedBy: officer.id }));
     const report = db.ledger.reconcile();
     assert.deepEqual(report.orphans.map((o) => o.sourceId), ["gone-1"]);
     assert.deepEqual(report.duplicates, []);
@@ -137,11 +142,11 @@ test("postLedgerEntry posts each source exactly once, inside a transaction, with
     // A transaction that fails after posting leaves no ledger row behind.
     assert.throws(() =>
       db.transaction(() => {
-        db.ledger.post({ kind: "income", amountPaise: 999, description: "rolled back", source: { type: "test_source", id: "ok-rb" }, recordedBy: officer.id });
+        db.ledger.post({ clubId: DEFAULT_CLUB_ID, kind: "income", amountPaise: 999, description: "rolled back", source: { type: "test_source", id: "ok-rb" }, recordedBy: officer.id });
         throw new Error("source transition failed");
       }),
     );
-    assert.ok(!db.ledger.list().some((e) => e.sourceId === "ok-rb"), "ledger row and source commit or fail together");
+    assert.ok(!db.ledger.list(DEFAULT_CLUB_ID).some((e) => e.sourceId === "ok-rb"), "ledger row and source commit or fail together");
   } finally {
     delete SOURCE_RESOLVERS.test_source;
     db.close();
@@ -169,7 +174,7 @@ test("tickets (#5): a confirmed ticket posts one `ticket` income row that reconc
     assert.deepEqual(after.orphans, []);
     assert.deepEqual(after.duplicates, []);
     assert.equal(after.unsourced, 0);
-    assert.deepEqual(db.ledger.list().filter((e) => e.sourceType === "ticket").map((e) => e.sourceId), [paid.id]);
+    assert.deepEqual(db.ledger.list(DEFAULT_CLUB_ID).filter((e) => e.sourceType === "ticket").map((e) => e.sourceId), [paid.id]);
     assert.equal(db.events.eventReport(organizer, event.id).realizedRevenuePaise, 5000);
     assert.equal(db.events.myTickets(actorFor(db, "expired@example.com")).find((t) => t.id === held.id)?.status, "expired");
   } finally {
@@ -200,7 +205,7 @@ test("merchandise (#6): a confirmed order posts one `merch_order` income row tha
     assert.deepEqual(after.orphans, []);
     assert.deepEqual(after.duplicates, []);
     assert.equal(after.unsourced, 0);
-    assert.deepEqual(db.ledger.list().filter((e) => e.sourceType === "merch_order").map((e) => e.sourceId), [paid.id]);
+    assert.deepEqual(db.ledger.list(DEFAULT_CLUB_ID).filter((e) => e.sourceType === "merch_order").map((e) => e.sourceId), [paid.id]);
     assert.equal(db.merchandise.requireProduct(organizer.clubId, product.id).stock, 2, "held and cancelled units are back; paid units are gone");
     assert.equal(db.merchandise.myOrders(actorFor(db, "expired@example.com")).find((o) => o.id === held.id)?.status, "expired");
   } finally {

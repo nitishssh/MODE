@@ -17,6 +17,8 @@ export interface SqlDatabase {
   prepare(sql: string): SqlStatement;
   exec(sql: string): void;
   close(): void;
+  /** Absent for node:sqlite; "postgres" for the PostgreSQL bridge. Migrations branch on it only for DDL SQLite cannot express. */
+  dialect?: "postgres";
 }
 
 /** Shared state handed to every domain module. */

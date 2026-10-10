@@ -4,7 +4,8 @@ import { SQLITE_CONSTRAINT_UNIQUE, int, isConstraintError, nullableText, text, t
 import { ConflictError, ValidationError } from "../errors";
 
 export interface LedgerEntryInput {
-  clubId?: string;
+  /** Required: a ledger row never defaults to the sample club (audit #7). */
+  clubId: string;
   eventId?: string | null;
   kind: "income" | "expense";
   /** Positive integer paise. */
@@ -39,13 +40,14 @@ export function postLedgerEntry(ctx: DbContext, input: LedgerEntryInput): Ledger
     throw new ValidationError("Ledger amounts must be positive integer paise.", [{ field: "amountPaise", message: "Must be a positive integer." }]);
   }
   if (!input.source.type || !input.source.id) throw new ValidationError("A ledger entry needs its source type and id.");
+  if (!input.clubId) throw new ValidationError("A ledger entry needs its club.", [{ field: "clubId", message: "Required." }]);
   const id = randomUUID();
   try {
     ctx.db
       .prepare(
-        "INSERT INTO transactions (id, description, kind, amount_paise, occurred_at, source_type, source_id, recorded_by, club_id, event_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'club-sample'), ?)",
+        "INSERT INTO transactions (id, description, kind, amount_paise, occurred_at, source_type, source_id, recorded_by, club_id, event_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(id, input.description, input.kind, input.amountPaise, ctx.now().toISOString(), input.source.type, input.source.id, input.recordedBy, input.clubId ?? null, input.eventId ?? null);
+      .run(id, input.description, input.kind, input.amountPaise, ctx.now().toISOString(), input.source.type, input.source.id, input.recordedBy, input.clubId, input.eventId ?? null);
   } catch (error) {
     if (isConstraintError(error, SQLITE_CONSTRAINT_UNIQUE)) {
       throw new ConflictError(`${input.source.type} ${input.source.id} has already been posted to the ledger.`, "duplicate_ledger_source");
@@ -55,15 +57,41 @@ export function postLedgerEntry(ctx: DbContext, input: LedgerEntryInput): Ledger
   return mapLedgerEntry(ctx.db.prepare("SELECT * FROM transactions WHERE id = ?").get(id) as Row);
 }
 
-export function listLedger(db: SqlDatabase): LedgerEntry[] {
-  return (db.prepare("SELECT * FROM transactions ORDER BY occurred_at DESC, rowid DESC").all() as Row[]).map(mapLedgerEntry);
+/** Club-scoped (audit #16): there is no all-clubs ledger view. */
+export function listLedger(db: SqlDatabase, clubId: string): LedgerEntry[] {
+  if (!clubId) throw new ValidationError("A club is required to list the ledger.");
+  return (db.prepare("SELECT * FROM transactions WHERE club_id = ? ORDER BY occurred_at DESC, rowid DESC").all(clubId) as Row[]).map(mapLedgerEntry);
 }
 
-export function ledgerBalance(db: SqlDatabase): number {
+export function ledgerBalance(db: SqlDatabase, clubId: string): number {
+  if (!clubId) throw new ValidationError("A club is required to read the balance.");
   const row = db
-    .prepare("SELECT COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_paise ELSE -amount_paise END), 0) AS balance FROM transactions")
-    .get() as Row;
+    .prepare("SELECT COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_paise ELSE -amount_paise END), 0) AS balance FROM transactions WHERE club_id = ?")
+    .get(clubId) as Row;
   return int(row.balance);
+}
+
+export interface InventoryReport {
+  /** Events whose `registered` counter disagrees with live tickets plus the registrations seeded before the ticket table existed. */
+  events: Array<{ eventId: string; registered: number; liveTickets: number; seeded: number; drift: number }>;
+  /** Products whose aggregate stock disagrees with the sum of their sizes. */
+  products: Array<{ productId: string; stock: number; variantTotal: number; drift: number }>;
+}
+
+/** Seat and stock counters are denormalised (audit #5); this is their twin of `reconcileLedger()`. Empty arrays mean clean. */
+export function reconcileInventory(db: SqlDatabase): InventoryReport {
+  const events = (db.prepare(`
+    SELECT e.id, e.registered, e.seeded_registrations,
+           (SELECT COUNT(*) FROM tickets t WHERE t.event_id = e.id AND t.status IN ('pending_payment', 'paid')) AS live
+      FROM events e ORDER BY e.id`).all() as Row[])
+    .map((row) => ({ eventId: text(row.id), registered: int(row.registered), liveTickets: int(row.live), seeded: int(row.seeded_registrations), drift: int(row.registered) - int(row.seeded_registrations) - int(row.live) }))
+    .filter((row) => row.drift !== 0);
+  const products = (db.prepare(`
+    SELECT p.id, p.stock, COALESCE((SELECT SUM(v.stock) FROM product_variants v WHERE v.product_id = p.id), 0) AS total
+      FROM products p ORDER BY p.id`).all() as Row[])
+    .map((row) => ({ productId: text(row.id), stock: int(row.stock), variantTotal: int(row.total), drift: int(row.stock) - int(row.total) }))
+    .filter((row) => row.drift !== 0);
+  return { events, products };
 }
 
 /** How a module proves a ledger row's source still exists. Modules register theirs here. */
@@ -147,5 +175,6 @@ export function reconcileLedger(db: SqlDatabase): ReconciliationReport {
     if ((entry.recorded_by === null && !knownHistoricalException) || (source.source_type !== 'expense' && entry.recorded_by !== source.recorded_by)) fields.push('recordedBy');
     if (fields.length) mismatched.push({ ...identity, fields });
   }
-  return { balancePaise: ledgerBalance(db), entries: rows.length, openingBalances, orphans, duplicates, unsourced, missing, mismatched };
+  const balance = db.prepare("SELECT COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_paise ELSE -amount_paise END), 0) AS balance FROM transactions").get() as Row;
+  return { balancePaise: int(balance.balance), entries: rows.length, openingBalances, orphans, duplicates, unsourced, missing, mismatched };
 }

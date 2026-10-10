@@ -22,6 +22,7 @@
     "postgres:push": "tsx scripts/export-postgres.ts --replace --push",
     "postgres:up": "docker compose -f docker-compose.postgres.yml up -d --wait",
     "postgres:down": "docker compose -f docker-compose.postgres.yml down",
+    "db:purge": "tsx scripts/purge.ts",
     "sync:contracts": "node scripts/sync-contracts.mjs",
     "check:client-contracts": "node scripts/sync-contracts.mjs --check",
     "build:client": "npm run check:client-contracts && npm --prefix client run export:web && node scripts/stage-expo-web.mjs",
