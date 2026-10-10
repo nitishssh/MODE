@@ -13,6 +13,7 @@
     "start:lan": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "test:postgres": "tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:foundation": "node scripts/check-foundation.mjs",
     "check:contracts": "tsx scripts/check-contract-docs.ts",
     "schema:dump": "tsx scripts/dump-schema.ts",
@@ -29,6 +30,7 @@
   },
   "dependencies": {
     "next": "16.4.0",
+    "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -36,6 +38,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

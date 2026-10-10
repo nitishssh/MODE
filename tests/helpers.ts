@@ -18,11 +18,17 @@ export const DEMO = {
   member: "asha@example.com",
 } as const;
 
-/** In-memory database with a controllable clock for domain-level tests. */
+/**
+ * Set MODE_TEST_DATABASE_URL=postgres://… to run the helper-based tests against PostgreSQL
+ * (the schema is dropped and recreated for every database the helpers open).
+ */
+export const TEST_DATABASE_URL = process.env.MODE_TEST_DATABASE_URL;
+
+/** In-memory database (or a reset PostgreSQL schema) with a controllable clock for domain-level tests. */
 export function memoryDatabase(): { db: ClubDatabase; clock: { now: Date } } {
   const clock = { now: new Date(FIXED_NOW) };
   const receiptsDir = mkdtempSync(join(tmpdir(), "mode-memory-receipts-"));
-  const db = openClubDatabase(":memory:", { now: () => new Date(clock.now), receiptsDir });
+  const db = openClubDatabase(TEST_DATABASE_URL ?? ":memory:", { now: () => new Date(clock.now), receiptsDir, resetSchema: Boolean(TEST_DATABASE_URL) });
   const close = db.close;
   db.close = () => { close(); rmSync(receiptsDir, { recursive: true, force: true }); };
   return { db, clock };
@@ -45,15 +51,24 @@ export function actorFor(db: ClubDatabase, email: string, password = demoPasswor
 export async function withRouteDatabase(fn: () => Promise<void>): Promise<void> {
   const directory = mkdtempSync(join(tmpdir(), "mode-route-test-"));
   const priorPath = process.env.SQLITE_PATH;
+  const priorUrl = process.env.DATABASE_URL;
   const priorNow = process.env.MODE_DEMO_NOW;
   process.env.SQLITE_PATH = join(directory, "mode.sqlite");
   process.env.MODE_DEMO_NOW = FIXED_NOW.toISOString();
+  if (TEST_DATABASE_URL) {
+    openClubDatabase(TEST_DATABASE_URL, { resetSchema: true }).close(); // wipe, then let getDatabase() reopen
+    process.env.DATABASE_URL = TEST_DATABASE_URL;
+    process.env.MODE_RECEIPTS_DIR = join(directory, "receipts");
+  } else delete process.env.DATABASE_URL;
   try {
     await fn();
   } finally {
     getDatabase().close();
     if (priorPath === undefined) delete process.env.SQLITE_PATH;
     else process.env.SQLITE_PATH = priorPath;
+    if (priorUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = priorUrl;
+    delete process.env.MODE_RECEIPTS_DIR;
     if (priorNow === undefined) delete process.env.MODE_DEMO_NOW;
     else process.env.MODE_DEMO_NOW = priorNow;
     rmSync(directory, { recursive: true, force: true });

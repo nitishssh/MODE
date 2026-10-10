@@ -144,7 +144,14 @@ operational problem; **Low** = hygiene.
     translation for fidelity; `timestamptz`, `date` and `jsonb` are the natural follow-up
     after the runtime port (`docs/POSTGRESQL.md`).
 
-24. **`migrate()` special-cases `user_version = 2` without `members.club_id`.** A guard for
+24. **A failed confirmation undoes the hold release it just performed.** `confirmTicket()` and
+    `confirmOrder()` call `releaseExpiredHolds()` and then throw `hold_expired` inside the same
+    transaction, so the rollback restores the expired hold; the seat or unit is freed only by
+    the next caller. Harmless for correctness (every path re-runs the release) but it makes
+    "available" lag by one request. Fix: release in its own transaction before the conditional
+    update, or return the conflict without throwing.
+
+25. **`migrate()` special-cases `user_version = 2` without `members.club_id`.** A guard for
     a historical half-applied v2; it can be removed once no such database exists.
 
 ## What is solid

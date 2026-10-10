@@ -254,3 +254,80 @@ export function postgresExport(db: DatabaseSync, options: PostgresScriptOptions)
   lines.push(`-- ${total} row(s) across ${tables.length} table(s).`, "COMMIT;", "");
   return lines.join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Runtime dialect translation: the SQL the modules write (SQLite) -> PostgreSQL.
+// Used by openPostgresSync() for every statement the application executes.
+// ---------------------------------------------------------------------------
+
+/** PostgreSQL SQLSTATE -> the SQLite extended code `isConstraintError()` expects. */
+export const POSTGRES_TO_SQLITE_ERRCODE: Record<string, number> = Object.fromEntries(
+  Object.entries(SQLITE_TO_POSTGRES_ERRCODE).map(([sqlite, pg]) => [pg, Number(sqlite)]),
+);
+
+/** Split a multi-statement script on `;` outside string literals; drops empty statements. */
+export function splitStatements(sql: string): string[] {
+  const out: string[] = [];
+  let current = "";
+  let inString = false;
+  for (const ch of sql) {
+    if (ch === "'") inString = !inString;
+    if (ch === ";" && !inString) {
+      if (current.trim()) out.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) out.push(current.trim());
+  return out;
+}
+
+export const MIGRATIONS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS "${MIGRATIONS_TABLE}" (version bigint PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`;
+
+/**
+ * Translate one statement. Returns null for statements PostgreSQL does not need
+ * (SQLite PRAGMAs that configure the connection).
+ */
+export function translateStatement(sql: string): string | null {
+  let s = sql.trim().replace(/;$/, "");
+  const upper = s.toUpperCase();
+
+  // --- PRAGMAs -------------------------------------------------------------
+  const pragma = /^PRAGMA\s+(\w+)(?:\s*=\s*(.+)|\s*\((\w+)\))?$/i.exec(s);
+  if (pragma) {
+    const [, name, assigned, arg] = pragma;
+    if (name.toLowerCase() === "user_version") {
+      if (assigned !== undefined) return `INSERT INTO "${MIGRATIONS_TABLE}" (version) VALUES (${Number(assigned)}) ON CONFLICT (version) DO NOTHING`;
+      return `SELECT COALESCE(MAX(version), 0)::int AS user_version FROM "${MIGRATIONS_TABLE}"`;
+    }
+    if (name.toLowerCase() === "table_info" && arg) {
+      return `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = '${arg.replace(/"/g, "")}' ORDER BY ordinal_position`;
+    }
+    return null; // foreign_keys, busy_timeout, journal_mode: connection settings SQLite needs, PostgreSQL does not
+  }
+
+  // --- transactions --------------------------------------------------------
+  if (upper === "BEGIN IMMEDIATE" || upper === "BEGIN") return "BEGIN";
+
+  // --- DDL -----------------------------------------------------------------
+  if (/^CREATE\s+TABLE\b/i.test(s)) return translateTableDdl(s).replace(/;$/, "");
+  if (/^CREATE\s+(UNIQUE\s+)?INDEX\b/i.test(s)) return translateIndexDdl(s).replace(/;$/, "");
+  if (/^ALTER\s+TABLE\b/i.test(s)) {
+    return s.replace(/\bINTEGER\b/g, "bigint").replace(/\bTEXT\b([^,()]*?)\s+COLLATE\s+NOCASE/gi, "citext$1");
+  }
+
+  // --- catalog -------------------------------------------------------------
+  s = s.replace(/FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'\s+AND\s+name\s*=\s*\?/i,
+    "FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?");
+
+  // --- DML / query dialect -------------------------------------------------
+  s = s.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, "INSERT INTO");
+  if (/^INSERT INTO\b/i.test(s) && /\bINSERT\s+OR\s+IGNORE\b/i.test(sql)) s += " ON CONFLICT DO NOTHING";
+  s = s.replace(/\bMAX\(\s*0\s*,/gi, "GREATEST(0,");
+  s = s.replace(/\browid\b/gi, "seq");
+  s = s.replace(/(\w+(?:\.\w+)?)\s+COLLATE\s+NOCASE\b/gi, "LOWER($1)");
+  s = s.replace(/\bAS\s+'([^']+)'/gi, 'AS "$1"');
+  s = s.replace(/\bIS\s+\?/gi, "IS NOT DISTINCT FROM ?");
+  return toPostgresPlaceholders(s);
+}

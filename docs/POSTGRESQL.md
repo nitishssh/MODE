@@ -1,103 +1,104 @@
 # PostgreSQL for MODE
 
-Status on 10 October 2026: the application runs on native `node:sqlite` and nothing in the
-runtime talks to PostgreSQL. This document and the tooling it describes are the complete
-PostgreSQL integration that can exist **without adding an npm dependency** (a team rule for
-the hackathon): a generated PostgreSQL schema, a verified export/load path, a local server,
-the error-code and placeholder shims a driver adapter will need, and the plan for the
-runtime switch. Supabase is not a target for the app database.
+MODE runs on SQLite by default and on PostgreSQL when `DATABASE_URL` is set. Same
+migrations, same modules, same routes, same tests; the choice is made once in
+`getDatabase()`. Supabase is not a target for the app database.
 
 | Piece | Where | Verified by |
 |---|---|---|
+| Runtime driver: synchronous `pg` bridge with the `node:sqlite` surface | `src/lib/db/postgres-sync.ts` | whole test suite on PostgreSQL 17 (`npm run test:postgres`), production server on PostgreSQL |
+| Dialect translation (placeholders, PRAGMAs, DDL types, rowid, INSERT OR IGNORE, …) | `translateStatement()` in `src/lib/db/postgres.ts` | `tests/postgres-runtime.test.ts` |
 | PostgreSQL DDL generated from the migrations | `docs/schema.postgres.sql` | `npm run schema:check` (part of `npm run check`) |
-| Translation + export library (no deps) | `src/lib/db/postgres.ts` | `tests/postgres-export.test.ts` |
-| Export CLI (schema + data, one transaction) | `scripts/export-postgres.ts` → `npm run postgres:export` | loaded into PostgreSQL 17 on 2026-10-10, all 19 tables, row counts equal |
-| Local PostgreSQL 17 | `docker-compose.postgres.yml` → `npm run postgres:up` | healthcheck `pg_isready` |
-| Load into a server | `npm run postgres:push` (`psql` with `DATABASE_URL`, else the compose service) | re-runnable thanks to `--replace` |
-| Driver shims for the runtime port | `toPostgresPlaceholders`, `PG_*` codes, `SQLITE_TO_POSTGRES_ERRCODE`, `isPostgresConstraintError` | unit tests |
+| Move an existing SQLite database across (schema + data, one transaction) | `scripts/export-postgres.ts` → `npm run postgres:export`, `npm run postgres:push` | loaded into PostgreSQL 17, 19 tables, row counts equal |
+| Local PostgreSQL 17 | `docker-compose.postgres.yml` → `npm run postgres:up` / `postgres:down` | healthcheck `pg_isready` |
+| Driver-neutral contract the modules are written against | `SqlDatabase` in `src/lib/db/core.ts` | typecheck; `DatabaseSync` satisfies it structurally |
 
-## Quick start
+## Run the app on PostgreSQL
 
 ```bash
-npm run postgres:up                 # PostgreSQL 17 on 127.0.0.1:5432 (MODE_POSTGRES_PORT to change)
-npm run postgres:push               # export .data/mode.sqlite and load it, replacing any previous load
-docker compose -f docker-compose.postgres.yml exec postgres psql -U mode -d mode
+npm run postgres:up                               # PostgreSQL 17 on 127.0.0.1:5432 (MODE_POSTGRES_PORT to change)
+DATABASE_URL=postgres://mode:mode@127.0.0.1:5432/mode npm run dev
 ```
 
-Against a hosted server, set `DATABASE_URL=postgres://user:pass@host:5432/db` and make sure
-`psql` is on PATH; `npm run postgres:push` then loads there. The export file itself is
-`.data/mode.postgres.sql` (ignored by git); it is a plain SQL script you can also hand to any
-PostgreSQL tool. Options: `--out <file>`, `--sqlite <path>`, `--schema-only`,
-`--skip sessions,audit_events`, `--replace`, `--push`.
+The first request creates the schema (migrations v1–v12 run through the translator), seeds
+the same synthetic records as SQLite, and `/api/health` reports `"database": "postgres"`.
+Receipt files go to `MODE_RECEIPTS_DIR` (default `.data/receipts`). For `next start`, set
+`MODE_DEMO_PASSWORD` exactly as for SQLite: production refuses to seed with the public default.
 
-Receipt files are not in the database. Copy the `receipts` directory next to the SQLite file
-together with the export; `expense_receipts.storage_name` is the file name.
+Already have data in `.data/mode.sqlite`? Move it first, then start on PostgreSQL:
 
-## What the translation does
+```bash
+npm run postgres:push            # export + load (replaces any previous load; psql when DATABASE_URL is set, else the compose service)
+```
 
-`postgresSchema()` reads `sqlite_master` after running the real migrations, so the output can
-never drift from `src/lib/db/migrations.ts`. Tables are emitted parents-first (foreign keys
-are declared inline), then indexes, then a `schema_migrations` table holding the version
-(the twin of `PRAGMA user_version`).
+and copy the `receipts` directory next to the SQLite file to `MODE_RECEIPTS_DIR`.
 
-| SQLite | PostgreSQL | Why |
+Tests against PostgreSQL (the schema is dropped and recreated for every database a test opens,
+so point this at a disposable database and never at a shared one):
+
+```bash
+MODE_TEST_DATABASE_URL=postgres://mode:mode@127.0.0.1:5432/mode npm run test:postgres
+```
+
+`test:postgres` serialises the test files because they share one schema. Three tests that
+edit the SQLite file directly are skipped under PostgreSQL; everything else runs.
+
+## How the runtime driver works
+
+Every domain module is synchronous and assumes one writer at a time (`BEGIN IMMEDIATE`,
+conditional `UPDATE … WHERE`, UNIQUE backstops). PostgreSQL drivers are asynchronous, so
+`openPostgresSync()` runs the `pg` client in a worker thread and blocks the calling thread on
+each statement with `Atomics.wait` + `receiveMessageOnPort`. One connection, one statement in
+flight, strictly in program order. That is the same concurrency model the SQLite code was
+written for, so the modules did not change: `DbContext.db` is now the `SqlDatabase`
+interface (`prepare().get/all/run`, `exec`, `close`) that both `DatabaseSync` and the
+PostgreSQL bridge satisfy.
+
+What the bridge does per statement:
+
+| SQLite construct | PostgreSQL | Where |
 |---|---|---|
-| `INTEGER` | `bigint` | paise amounts and counters never overflow; 0/1 booleans keep their `CHECK (x IN (0,1))` |
-| `TEXT COLLATE NOCASE UNIQUE` (`members.email`) | `citext UNIQUE` | case-insensitive uniqueness; `CREATE EXTENSION citext` is emitted |
-| `CHECK ((a IS NULL) + (b IS NULL) = 1)` (`tickets`) | `CHECK (((a IS NULL)::int + (b IS NULL)::int) = 1)` | PostgreSQL has no boolean arithmetic |
-| implicit `rowid` | explicit `seq bigint GENERATED BY DEFAULT AS IDENTITY` on every table | the app orders `transactions` and `product_variants` by `rowid`; the export carries the SQLite rowid into `seq` and resets each sequence |
-| `TEXT` ISO-8601 timestamps and dates | kept as `TEXT` | string comparison semantics are identical to the SQLite code paths; converting to `timestamptz`/`date` is a follow-up once the runtime is ported |
-| `TEXT` JSON (`audit_events.details`) | kept as `TEXT` | same reason; `jsonb` is a follow-up |
-| partial unique indexes (`tickets_*_live_idx`) | unchanged | PostgreSQL supports `WHERE` on indexes |
-| `PRAGMA user_version` | `schema_migrations(version, applied_at)` | PostgreSQL has no per-database integer slot |
+| `?` placeholders | `$1 … $n` (string literals untouched) | `toPostgresPlaceholders` |
+| `PRAGMA foreign_keys / busy_timeout / journal_mode` | dropped | `translateStatement` |
+| `PRAGMA user_version` (read / write) | `schema_migrations(version, applied_at)` | `translateStatement` |
+| `PRAGMA table_info(t)`, `sqlite_master` | `information_schema.columns / tables` | `translateStatement` |
+| `BEGIN IMMEDIATE` | `BEGIN` (the bridge itself serialises writers) | `translateStatement` |
+| `CREATE TABLE … INTEGER / TEXT COLLATE NOCASE / (a IS NULL)+(b IS NULL)` | `bigint` / `citext` / `::int` casts, plus `seq bigint GENERATED BY DEFAULT AS IDENTITY` | `translateTableDdl` |
+| `ALTER TABLE … INTEGER` | `bigint` | `translateStatement` |
+| `INSERT OR IGNORE` | `INSERT … ON CONFLICT DO NOTHING` | `translateStatement` |
+| scalar `MAX(0, x)` | `GREATEST(0, x)` | `translateStatement` |
+| `ORDER BY rowid` | `ORDER BY seq` | `translateStatement` |
+| `x COLLATE NOCASE` in queries | `LOWER(x)` | `translateStatement` |
+| `AS 'Alias'` | `AS "Alias"` | `translateStatement` |
+| `col IS ?` | `col IS NOT DISTINCT FROM $n` | `translateStatement` |
+| `int8` / `numeric` results | parsed to JavaScript numbers (paise, counts, sums) | worker type parsers |
+| SQLSTATE `23505 / 23514 / 23503 / 23502` | SQLite `errcode` 2067 / 275 / 787 / 1299 on the thrown error, so `isConstraintError()` works unchanged | `PostgresError` |
 
-Verified on PostgreSQL 17.11 (docker `postgres:17-alpine`): the script loads inside one
-transaction; a case-variant duplicate email raises `23505`; a ticket naming both a member and a
-guest raises `23514`; an unknown `club_id` raises `23503`; a second live ticket for the same
-member and event raises `23505` from the partial index; inserts after the load continue the
-identity sequences.
+Timestamps, dates and JSON stay `TEXT`, exactly as in SQLite, so every string comparison in the
+modules keeps its meaning. `timestamptz`, `date` and `jsonb` are a possible follow-up, not a
+requirement.
 
-## Runtime port: what it takes
+## Limits you should know
 
-Everything in `src/lib/modules/*` is synchronous because `node:sqlite` is synchronous. A
-PostgreSQL driver is asynchronous. Switching the runtime is therefore not a configuration
-change; it is this list, in order.
+- **One connection per process, blocking.** Throughput equals SQLite's: fine for a club, not
+  for a fleet of stateless workers. Several app instances on one PostgreSQL keep the UNIQUE
+  and conditional-update guarantees the audit relies on, but `BEGIN` is not `BEGIN IMMEDIATE`
+  across instances: two instances can both pass a read-then-write check. Add
+  `SELECT … FOR UPDATE` in `issueTicket`, `createOrder` and `recordDues` before running more
+  than one instance.
+- **A statement that waits more than 60 s throws** (`PostgresError` with no SQLSTATE). Lock
+  waits that long mean another session holds the schema; look at `pg_stat_activity`.
+- **`pg` is a runtime dependency** (pure JavaScript, no native build). The starter originally
+  forbade new npm packages; `main` now carries `qrcode` (PR #40), and this one is loaded only
+  when `DATABASE_URL` is set: the SQLite path never touches it.
+- **Receipt files are not in the database.** `MODE_RECEIPTS_DIR` is part of the backup set.
+- **Test runs wipe the schema.** `MODE_TEST_DATABASE_URL` drops and recreates `public` on every
+  database the helpers open. Use a throw-away database.
 
-1. **Driver.** Add `pg` (or `postgres`) as a dependency. The starter originally forbade new
-   npm packages; `main` now carries `qrcode` (PR #40), so the question is open for the
-   integrator rather than closed. There is no PostgreSQL client in Node's standard library,
-   and a driver alone changes nothing until step 2 is done.
-2. **Make the data layer async.** `DbContext.db` becomes a driver interface
-   `{ query(sql, params) }`; `transaction(ctx, fn)` becomes `async` and maps
-   `BEGIN IMMEDIATE` → `BEGIN` + `SELECT ... FOR UPDATE` on the row being guarded
-   (events for seats, product_variants for stock), savepoints stay as they are. Every module
-   function and every route handler gains `await`. The tests already use the route handlers
-   directly, so they port mechanically.
-3. **SQL dialect.** `?` → `$n` (`toPostgresPlaceholders`); `INSERT OR IGNORE` →
-   `INSERT ... ON CONFLICT DO NOTHING`; scalar `MAX(0, x)` → `GREATEST(0, x)`;
-   `ORDER BY rowid` → `ORDER BY seq`; `PRAGMA table_info` → `information_schema.columns`;
-   `sqlite_master` → `pg_catalog`. Boolean arithmetic appears only in the one CHECK above.
-4. **Error mapping.** Replace `isConstraintError(error, SQLITE_CONSTRAINT_UNIQUE)` with
-   `isPostgresConstraintError(error, PG_UNIQUE_VIOLATION)`; the table in
-   `SQLITE_TO_POSTGRES_ERRCODE` covers every code the modules test for.
-5. **Migrations.** Keep `MIGRATIONS[]` but run each `up` against the driver and record the
-   version in `schema_migrations` under an advisory lock (`pg_advisory_xact_lock`) instead
-   of `BEGIN IMMEDIATE`. The DDL in `docs/schema.postgres.sql` is the v12 baseline; new
-   versions are written once in the SQLite dialect and translated by the same rules.
-6. **Concurrency model.** SQLite serialises writers; PostgreSQL does not. Every
-   "check then update" in the modules already uses a conditional `UPDATE ... WHERE`
-   (seat, stock, status transitions) and a UNIQUE index as the backstop, so the invariants
-   survive. Add `FOR UPDATE` where a read is followed by a dependent write in the same
-   transaction (`recordDues` reads `members.expires_on`, `confirmTicket` reads the price).
-7. **Cut-over.** `npm run postgres:push` moves the data; `SQLITE_PATH` is replaced by
-   `DATABASE_URL`; the receipts directory moves with the database.
+## Verified on 10 October 2026
 
-Estimated size: the data layer is about 2,700 lines across seven modules and 50 route files.
-This is a team decision after the hackathon, not a hotfix.
-
-## Why not Supabase or a sync workaround
-
-Supabase is used only for gbrain (a developer memory tool) and is explicitly not the app
-database. A synchronous PostgreSQL client via `child_process` + `psql` would keep the modules
-unchanged but adds a process spawn per query and loses prepared statements and transactions
-across calls; it is not a production path and is not provided.
+- PostgreSQL 17.11 (`postgres:17-alpine`), Node 24.14, `pg` 8.23.
+- `npm run test:postgres`: 97 passed, 3 skipped (SQLite-file fixtures), 0 failed.
+- `tests/postgres-runtime.test.ts`: migrate from empty, identity (duplicate email → `DuplicateMemberError` via SQLSTATE mapping), dues, ticket hold/expiry/confirm/scan, merchandise stock, receipts and reimbursements, announcements, reminders, tasks, clean `reconcileLedger()`, reopen without reset.
+- `next build` + `next start` with `DATABASE_URL`: health, login, bearer member list, dashboard, member creation, rows visible in `psql`.
+- `npm run postgres:push`: 19 tables loaded, row counts and ledger balance equal to SQLite, constraint behaviour identical.

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
 import type { LedgerEntry } from "../contracts";
-import { SQLITE_CONSTRAINT_UNIQUE, int, isConstraintError, nullableText, text, type DbContext, type Row } from "../db/core";
+import { SQLITE_CONSTRAINT_UNIQUE, int, isConstraintError, nullableText, text, type DbContext, type Row, type SqlDatabase } from "../db/core";
 import { ConflictError, ValidationError } from "../errors";
 
 export interface LedgerEntryInput {
@@ -56,11 +55,11 @@ export function postLedgerEntry(ctx: DbContext, input: LedgerEntryInput): Ledger
   return mapLedgerEntry(ctx.db.prepare("SELECT * FROM transactions WHERE id = ?").get(id) as Row);
 }
 
-export function listLedger(db: DatabaseSync): LedgerEntry[] {
+export function listLedger(db: SqlDatabase): LedgerEntry[] {
   return (db.prepare("SELECT * FROM transactions ORDER BY occurred_at DESC, rowid DESC").all() as Row[]).map(mapLedgerEntry);
 }
 
-export function ledgerBalance(db: DatabaseSync): number {
+export function ledgerBalance(db: SqlDatabase): number {
   const row = db
     .prepare("SELECT COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_paise ELSE -amount_paise END), 0) AS balance FROM transactions")
     .get() as Row;
@@ -68,7 +67,7 @@ export function ledgerBalance(db: DatabaseSync): number {
 }
 
 /** How a module proves a ledger row's source still exists. Modules register theirs here. */
-export type SourceResolver = (db: DatabaseSync, sourceId: string) => boolean;
+export type SourceResolver = (db: SqlDatabase, sourceId: string) => boolean;
 
 export const SOURCE_RESOLVERS: Record<string, SourceResolver> = {
   expense: (db, id) => db.prepare("SELECT 1 FROM expenses WHERE id = ? AND status = 'paid'").get(id) !== undefined,
@@ -93,7 +92,7 @@ export interface ReconciliationReport {
 }
 
 /** The reconciliation harness (P0, #2). Every financial module extends SOURCE_RESOLVERS and asserts a clean report. */
-export function reconcileLedger(db: DatabaseSync): ReconciliationReport {
+export function reconcileLedger(db: SqlDatabase): ReconciliationReport {
   const rows = db.prepare("SELECT * FROM transactions").all() as Row[];
   const orphans: ReconciliationReport["orphans"] = [];
   let unsourced = 0;

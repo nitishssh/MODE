@@ -1,13 +1,12 @@
-import type { DatabaseSync } from "node:sqlite";
 import { hashPassword } from "../auth/password";
 import { allocateUniqueTokens } from "../auth/tokens";
-import { clubDate, addDays } from "./core";
+import { clubDate, addDays, type SqlDatabase } from "./core";
 
 export const DEFAULT_CLUB_ID = "club-sample";
 
 interface Migration {
   version: number;
-  up: (db: DatabaseSync, now: Date) => void;
+  up: (db: SqlDatabase, now: Date) => void;
 }
 
 /**
@@ -31,7 +30,7 @@ const MIGRATIONS: Migration[] = [
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 
 // P4 (#8): preserve the starter archive and reuse the existing notification/outbox tables.
-function addAnnouncementPublication(db: DatabaseSync) {
+function addAnnouncementPublication(db: SqlDatabase) {
   db.exec(`
     ALTER TABLE announcements ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
     ALTER TABLE announcements ADD COLUMN published_by TEXT REFERENCES members(id);
@@ -47,7 +46,7 @@ function addAnnouncementPublication(db: DatabaseSync) {
 }
 
 /** Preserve released receipt files and claim links without filesystem moves. */
-function addReceiptStorageNames(db: DatabaseSync) {
+function addReceiptStorageNames(db: SqlDatabase) {
   db.exec(`
     ALTER TABLE receipts RENAME TO expense_receipts;
     ALTER TABLE expense_receipts ADD COLUMN storage_name TEXT;
@@ -55,20 +54,20 @@ function addReceiptStorageNames(db: DatabaseSync) {
   `);
 }
 
-function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
+function hasColumn(db: SqlDatabase, table: string, column: string): boolean {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(entry => entry.name === column);
 }
 
-function hasTable(db: DatabaseSync, table: string): boolean {
+function hasTable(db: SqlDatabase, table: string): boolean {
   return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== undefined;
 }
 
-function addColumnIfMissing(db: DatabaseSync, table: string, column: string, definition: string): void {
+function addColumnIfMissing(db: SqlDatabase, table: string, column: string, definition: string): void {
   if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
 }
 
 /** Preserve workflow-v2 money history without inventing the officer who paid it. */
-function normalizeLegacyWorkspace(db: DatabaseSync) {
+function normalizeLegacyWorkspace(db: SqlDatabase) {
   if (hasTable(db, "tasks")) {
     addColumnIfMissing(db, "tasks", "assignee", "assignee TEXT NOT NULL DEFAULT 'Unassigned'");
     db.exec("UPDATE tasks SET assignee = COALESCE((SELECT name FROM members WHERE id = tasks.assignee_id), assignee)");
@@ -107,7 +106,7 @@ function normalizeLegacyWorkspace(db: DatabaseSync) {
   }
 }
 
-export function migrate(db: DatabaseSync, now: Date): void {
+export function migrate(db: SqlDatabase, now: Date): void {
   // Check inside the write transaction so simultaneous first requests cannot both seed.
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -129,7 +128,7 @@ export function migrate(db: DatabaseSync, now: Date): void {
 // ---------------------------------------------------------------------------
 // v1 — starter tables and fictional seed (unchanged from the published starter)
 // ---------------------------------------------------------------------------
-function createStarterSchema(db: DatabaseSync, now: Date) {
+function createStarterSchema(db: SqlDatabase, now: Date) {
   db.exec(`
     CREATE TABLE members (
       id TEXT PRIMARY KEY,
@@ -178,7 +177,7 @@ function createStarterSchema(db: DatabaseSync, now: Date) {
   seedStarterDemo(db, now);
 }
 
-function seedStarterDemo(db: DatabaseSync, now: Date) {
+function seedStarterDemo(db: SqlDatabase, now: Date) {
   const offset = (days: number) => new Date(now.getTime() + days * 86_400_000).toISOString();
   const insertMember = db.prepare("INSERT INTO members VALUES (?, ?, ?, ?, ?, ?)");
   insertMember.run("demo-member-1", "Asha Demo", "asha@example.com", offset(-30), offset(335).slice(0, 10), "paid");
@@ -233,7 +232,7 @@ export function demoPassword(): string {
   return "mode-demo-2026";
 }
 
-function addIdentityAndRoles(db: DatabaseSync, now: Date) {
+function addIdentityAndRoles(db: SqlDatabase, now: Date) {
   db.exec(`
     CREATE TABLE clubs (
       id TEXT PRIMARY KEY,
@@ -291,7 +290,7 @@ export const DEMO_MEMBERS = [
   { id: "demo-member-expired", name: "Expired Member Demo", email: "expired@example.com", expiresInDays: -10 },
 ] as const;
 
-function addLedgerSourcesAndMemberPasses(db: DatabaseSync, now: Date) {
+function addLedgerSourcesAndMemberPasses(db: SqlDatabase, now: Date) {
   db.exec(`
     ALTER TABLE transactions ADD COLUMN source_type TEXT;
     ALTER TABLE transactions ADD COLUMN source_id TEXT;
@@ -335,7 +334,7 @@ function addLedgerSourcesAndMemberPasses(db: DatabaseSync, now: Date) {
 // ---------------------------------------------------------------------------
 export const DEFAULT_ANNUAL_DUES_PAISE = 50000;
 
-function addMembershipDues(db: DatabaseSync) {
+function addMembershipDues(db: SqlDatabase) {
   db.exec(`
     ALTER TABLE clubs ADD COLUMN annual_dues_paise INTEGER NOT NULL DEFAULT ${DEFAULT_ANNUAL_DUES_PAISE} CHECK (annual_dues_paise > 0);
     CREATE TABLE dues_payments (
@@ -387,7 +386,7 @@ function addMembershipDues(db: DatabaseSync) {
 // ---------------------------------------------------------------------------
 // v6 — P2 (#5): event status/club scope, tickets with 30-minute holds, door check-in
 // ---------------------------------------------------------------------------
-function addEventTickets(db: DatabaseSync) {
+function addEventTickets(db: SqlDatabase) {
   db.exec(`
     ALTER TABLE events ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
     ALTER TABLE events ADD COLUMN status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('draft', 'published', 'cancelled'));
@@ -427,7 +426,7 @@ function addEventTickets(db: DatabaseSync) {
 }
 
 // v9 — tasks, receipts and expenses; follows released merchandise schema v8.
-function addWorkspaceFlows(db: DatabaseSync, now: Date) {
+function addWorkspaceFlows(db: SqlDatabase, now: Date) {
   addColumnIfMissing(db, "transactions", "club_id", `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`);
   addColumnIfMissing(db, "transactions", "event_id", "event_id TEXT REFERENCES events(id)");
   addColumnIfMissing(db, "events", "fundraiser_goal_paise", "fundraiser_goal_paise INTEGER NOT NULL DEFAULT 0 CHECK (fundraiser_goal_paise >= 0)");
@@ -492,7 +491,7 @@ function addWorkspaceFlows(db: DatabaseSync, now: Date) {
 // ---------------------------------------------------------------------------
 // v8 — P3 (#6): size variants with their own stock, member orders with 30-minute holds
 // ---------------------------------------------------------------------------
-function addMerchandiseOrders(db: DatabaseSync) {
+function addMerchandiseOrders(db: SqlDatabase) {
   db.exec(`
     ALTER TABLE products ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
     ALTER TABLE products ADD COLUMN description TEXT NOT NULL DEFAULT '';

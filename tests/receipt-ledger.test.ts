@@ -15,7 +15,7 @@ import { GET as download } from "../src/app/api/receipts/[id]/route";
 import { POST as submit } from "../src/app/api/expenses/route";
 import { GET as csv } from "../src/app/api/ledger/export.csv/route";
 import { GET as source } from "../src/app/api/ledger/entries/[id]/source/route";
-import { DEMO, FIXED_NOW, actorFor, apiRequest, loginCookie, receiptFor, routeParams, withRouteDatabase } from "./helpers";
+import { DEMO, FIXED_NOW, actorFor, apiRequest, loginCookie, receiptFor, routeParams, withRouteDatabase, TEST_DATABASE_URL } from "./helpers";
 
 async function sendFile(cookie: string, bytes: Uint8Array, name = "receipt.exe", mime = "application/octet-stream") {
   const form = new FormData();
@@ -172,7 +172,7 @@ test("v9 upgrade preserves extensionless receipts, IDs, ownership, claims and se
   } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("receipt insert failure removes its new file and leaves no metadata", async () => {
+test("receipt insert failure removes its new file and leaves no metadata", { skip: TEST_DATABASE_URL ? "edits the SQLite file directly" : false }, async () => {
   await withRouteDatabase(async () => {
     const db = getDatabase(), actor = actorFor(db, "active@example.com");
     const raw = new DatabaseSync(process.env.SQLITE_PATH!);
