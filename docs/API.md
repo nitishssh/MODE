@@ -205,7 +205,7 @@ Payment and notification adapters must expose pending, succeeded and failed stat
 
 `MODE_DEMO_NOW=<ISO timestamp>` freezes the server clock so expiry, reminders and deadlines can be demonstrated deterministically. Tests use an injected clock instead of this variable.
 
-## Tasks, expenses and receipts (schema v9)
+## Tasks, expenses and receipts (schema v10)
 
 All endpoints below require a session. Cookie mutations also enforce same-origin requests; valid bearer sessions retain the native authentication contract.
 Identity and club scope come from the session, never from request-body member IDs.
@@ -224,21 +224,29 @@ Identity and club scope come from the session, never from request-body member ID
 | GET | `/api/ledger/summary` | ledger:read | LedgerSummary |
 | GET | `/api/ledger/entries` | ledger:read | ExpenseLedgerEntry[] |
 | GET | `/api/ledger/export` | ledger:read | CSV with user text formula-escaped and numeric amount cells |
+| GET | `/api/ledger/export.csv` | ledger:read | canonical seven-column CSV described below |
+| GET | `/api/ledger/entries/{id}/source` | ledger:read, same club | exact source record; 404 for opening balances or missing/foreign records |
 | GET | `/api/events/{id}/report` | events:report | Existing ticket report plus WorkspaceEventReport fields |
 
 Task creation takes `{title,description?,assigneeId?,eventId?,dueAt?}`. PATCH permits the same optional fields, with null to clear description, assignee, event or deadline. Status takes `{status:"todo"|"in_progress"|"done"}`. Deadlines normalize to UTC. Assignment and event references must belong to the caller's club; mine uses the actual session member.
 
-Expense submission takes `{amountPaise,purpose,receiptId?,receiptReference?,eventId?}`. Amounts must be positive safe integer paise. Receipt ownership is checked; one member cannot submit another member's receipt. Approve takes `{}`, reject takes `{note?}`, and pay takes `{paymentReference}`. No uploader, submitter or reviewer identity fields are accepted in JSON; multipart uploader fields are ignored.
+Expense submission takes `{amountPaise,purpose,receiptId,receiptReference?,eventId?}`. New claims require an existing, readable receipt owned by the submitter; a reference string is not an attachment. Amounts must be positive safe integer paise. Receipt ownership is checked; one member cannot submit another member's receipt. Approve takes `{}`, reject takes `{note?}`, and pay takes `{paymentReference}`. No uploader, submitter or reviewer identity fields are accepted in JSON; multipart uploader fields are ignored. Historical claims, including those with no receipt, keep their existing state and payment/retry behavior.
 
 An expense moves submitted → approved/rejected, then approved → paid. Officers cannot review or pay their own expenses. Payment takes a database write lock before reading state, updates the expense and posts one source-linked transaction atomically. Repeating the same payment reference returns the paid expense without another outflow; a different reference conflicts. Payment records a reimbursement already made externally; it does not transfer money.
 
 The existing `transactions` ledger remains the single source of balances, including pre-system opening balances. There is no second expense ledger. Expense sources participate in reconciliation. Task changes and expense decisions are audited.
 
-Receipts accept JPEG, PNG, WebP or PDF with checked signatures, at most 2 MiB. Uploads use a multipart field named `file`; oversized files return 413 and unsupported signatures return 415. Files live in the receipts directory beside SQLITE_PATH; failed database inserts remove their new file. Missing files return 404. Back up SQLite and this directory together.
+New receipts accept JPG, PNG or PDF with checked magic bytes, at most **5 MB (5,000,000 bytes)**. Uploads use a multipart field named `file`; oversized files return 413 and unsupported signatures return 415. The request body is bounded to the file limit plus 64 KiB of multipart overhead, including chunked requests. Detected bytes determine the stored MIME type and extension, irrespective of the claimed browser type or filename. New files live at `.data/receipts/{uuid}.{ext}` by default (the receipts directory beside SQLITE_PATH), with metadata in `expense_receipts`. Downloads require the uploader or an expenses:review holder in the same club and send `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and `Cache-Control: private, no-store`. Failed database inserts remove their new file. Missing files return 404. Back up SQLite and this directory together.
+
+Schema v10 renames the released receipts metadata table and records each existing UUID as its storage name. It preserves IDs, expense foreign keys, extensionless files and historical WebP downloads without moving or deleting files. New uploads use typed filenames. Released v1–v9 databases upgrade forward; reopening does not repeat the migration. Never replace released migrations with the earlier unmerged treasury branch's divergent history.
+
+Treasury entries retain the existing `type`, category, event and reference fields and add `kind: income|expense`, `sourceType`, `sourceId`, `recordedBy` (officer ID), and `recordedByName` (current display name). Opening balances have null sourceId and officer fields in the API; the internal ledger keeps its self-link for reconciliation. The source endpoint returns `LedgerSource {type,id,title,details:[{label,value}],receiptId}` for an expense, dues payment, ticket or merchandise order. It never returns ticket QR tokens or emails; receiptId is exposed only to the receipt owner or an expenses:review holder.
+
+The web register exports from `GET /api/ledger/export.csv`. Header: `date,kind,amount,source_type,source_id,description,recorded_by`. Amounts are positive rupees with exactly two decimals; kind supplies direction. Dates are the UTC date portion of the recorded timestamp. Officer display names appear in recorded_by; opening balances have empty source_id and recorded_by. There is no totals row: summing income and expense rows reproduces the register's integer-paise totals and balance. All textual cells beginning with `=`, `+`, `-`, `@` (including preceding whitespace), tab, CR or LF receive an apostrophe before standard CSV quote escaping. The old `/api/ledger/export` remains a compatibility endpoint with its original column layout and signed expense amounts.
 
 Errors use 400 for invalid bodies, 401 for absent/expired sessions, 403 for role/ownership/origin failures, 404 for missing or foreign-club records, and 409 for invalid transitions. Schema v9 upgrades the released v1–v8 history without replacing existing members, sessions, passes or opening balances. Databases made by the earlier unmerged PR's conflicting schema are not a supported migration source.
 
-The event report preserves ticket counts, attendance and realized revenue, and adds fundraiser progress and task counts. Ticket receipts, dues and merchandise income remain in the same ledger; the new migration backfills their club metadata and ticket event attribution. Treasury entries retain their external payment references. Reserved schema gaps remain skipped; v9 follows the already released v8.
+The event report preserves ticket counts, attendance and realized revenue, and adds fundraiser progress and task counts. Ticket receipts, dues and merchandise income remain in the same ledger; schema v9 backfilled their club metadata and ticket event attribution. Treasury entries retain their external payment references. Reserved schema gaps remain skipped; v10 follows the already released v9.
 
 EXPO_PUBLIC_API_URL remains configuration for a future Expo client. Browser sign-in and native bearer authentication exist, but the Expo UI is not included. MODE_CORS_ORIGINS follows the development-only policy above.
 

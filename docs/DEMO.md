@@ -108,8 +108,17 @@ The default development password for these synthetic accounts is mode-demo-2026;
 ## Treasury export and event reports
 
 1. Sign in as treasurer@example.com after recording an external reimbursement. Open Treasury and compare the paid expense, payment reference and remaining balance.
-2. Open `/api/ledger/export` in the same authenticated browser. Save the CSV and check that each confirmed payment has one row. Submitted, rejected and approved-but-unpaid expenses must not reduce the ledger balance. Text beginning with spreadsheet formula characters is escaped.
+2. Open `/api/ledger/export.csv` in the same authenticated browser. Save the CSV and check that each confirmed payment has one row. Submitted, rejected and approved-but-unpaid expenses must not reduce the ledger balance. Text beginning with spreadsheet formula characters is escaped. Income and expense amounts are positive; subtract total expenses from income. Check the source ID and paying officer display name against the register, with blank IDs for opening balances.
 3. As an organizer or administrator, request `GET /api/events/{id}/report` for an event in the same club. Replace `{id}` with its actual ID. Compare ticket counts and realized revenue with confirmed bookings, and compare the added task counts with the task board. Fundraiser income comes from the same event-attributed ledger.
 4. Repeat the export without signing in and expect 401. A signed-in ordinary member receives 403. Reports for another club are unavailable.
 
 For LAN setup and home-screen limitations, follow [the README](../README.md#lan-and-home-screen-access). This walkthrough describes checks to perform; it is not a claim that hosted or physical-device checks have passed.
+
+## #7 receipt-to-ledger acceptance
+
+1. On a synthetic database, sign in as active@example.com. In My Expenses, submit a JPG, PNG or PDF attachment with amount ₹123.45 and purpose “Synthetic travel receipt”. Confirm a file is required and the form says 5 MB; WebP and files above 5,000,000 bytes are rejected.
+2. Sign in as treasurer@example.com, open Treasury → Expenses, and download the receipt. Approve the claim. Balance must remain unchanged and the claim must appear under Ready to pay.
+3. Click Mark paid, enter SYNTHETIC-TRAVEL-1 in the inline Payment reference field, then Confirm paid. This is a simulated officer confirmation, not a money transfer. Verify exactly one ₹123.45 outflow and the new balance. A failed request leaves the reference available for retry.
+4. Open Ledger, follow the expense source link and inspect its exact claim ID, purpose, paid status and reference. Download the protected receipt from the source details. Verify the Recorded by column names the paying officer.
+5. Export CSV and compare all seven columns and totals with the register. Sign out and confirm export requires a session; a member account receives 403.
+6. Run `npm run check`. Receipt migration tests preserve released v9 files, ownership, links and historical receiptless claims. The reconciliation harness covers paid reimbursements, failed transactions, retries and officer attribution.

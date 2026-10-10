@@ -23,7 +23,8 @@ const MIGRATIONS: Migration[] = [
   // Unused historical versions stay skipped; new migrations must exceed released v9.
   { version: 8, up: addMerchandiseOrders },
   { version: 9, up: addWorkspaceFlows },
-  { version: 10, up: addAnnouncementPublication },
+  { version: 10, up: addReceiptStorageNames },
+  { version: 11, up: addAnnouncementPublication },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -41,6 +42,15 @@ function addAnnouncementPublication(db: DatabaseSync) {
     ALTER TABLE outbox_messages ADD COLUMN announcement_id TEXT REFERENCES announcements(id);
     CREATE UNIQUE INDEX notifications_announcement_recipient_idx ON notifications (announcement_id, member_id);
     CREATE UNIQUE INDEX outbox_announcement_recipient_idx ON outbox_messages (announcement_id, member_id);
+  `);
+}
+
+/** Preserve released receipt files and claim links without filesystem moves. */
+function addReceiptStorageNames(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE receipts RENAME TO expense_receipts;
+    ALTER TABLE expense_receipts ADD COLUMN storage_name TEXT;
+    UPDATE expense_receipts SET storage_name = id;
   `);
 }
 

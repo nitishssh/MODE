@@ -171,7 +171,7 @@ test("club boundaries isolate archive, dashboard, idempotency keys, outbox and r
   } finally { db.close(); }
 });
 
-test("v9 databases receive announcement migration and retain legacy archive/reminder rows", () => {
+test("v10 databases receive announcement migration and retain legacy archive/reminder rows", () => {
   const raw = new DatabaseSync(":memory:");
   try {
     raw.exec(`
@@ -185,7 +185,7 @@ test("v9 databases receive announcement migration and retain legacy archive/remi
       INSERT INTO notifications VALUES ('reminder', NULL, 'membership_renewal');
       CREATE TABLE outbox_messages (id TEXT PRIMARY KEY, member_id TEXT, kind TEXT);
       INSERT INTO outbox_messages VALUES ('reminder', NULL, 'membership_renewal');
-      PRAGMA user_version = 9;
+      PRAGMA user_version = 10;
     `);
     migrate(raw, FIXED_NOW);
     migrate(raw, FIXED_NOW);
