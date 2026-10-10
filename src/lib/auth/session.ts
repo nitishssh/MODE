@@ -23,7 +23,11 @@ export function readSessionToken(request: Request): string | null {
 }
 
 export function sessionCookie(token: string, expiresAt: string, request: Request): string {
-  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  // A hosting proxy terminates TLS and forwards plain HTTP; trusting the header here only
+  // ever adds Secure, so a spoofed value cannot weaken the cookie.
+  const https =
+    new URL(request.url).protocol === "https:" || request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() === "https";
+  const secure = https ? "; Secure" : "";
   const expires = new Date(expiresAt).toUTCString();
   return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Expires=${expires}${secure}`;
 }

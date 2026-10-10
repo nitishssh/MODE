@@ -18,7 +18,5 @@ export const POST = route("member creation", async (request) => {
   const db = getDatabase();
   const actor = requireActor(request, db, { permission: "members:create", mutation: true });
   const input = await readJson(request, createMemberSchema);
-  const member = db.createMember(input, { clubId: actor.clubId });
-  db.recordAudit(actor, "member.created", "member", member.id);
-  return json({ member }, { status: 201 });
+  return json({ member: db.createMemberAs(actor, input) }, { status: 201 });
 });

@@ -131,9 +131,17 @@ export const DEMO_OFFICERS = [
   { id: "demo-officer-volunteer", name: "Volunteer Demo", email: "volunteer@example.com", role: "volunteer" },
 ] as const;
 
-/** Synthetic demo credentials. Override with MODE_DEMO_PASSWORD; never reuse for real accounts. */
+/**
+ * Synthetic demo credentials. Override with MODE_DEMO_PASSWORD; never reuse for real accounts.
+ * Production refuses the published default so a hosted deploy never ships a known admin password.
+ */
 export function demoPassword(): string {
-  return process.env.MODE_DEMO_PASSWORD || "mode-demo-2026";
+  const configured = process.env.MODE_DEMO_PASSWORD;
+  if (configured) return configured;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("MODE_DEMO_PASSWORD must be set in production; the documented default is public.");
+  }
+  return "mode-demo-2026";
 }
 
 function addIdentityAndRoles(db: DatabaseSync, now: Date) {
