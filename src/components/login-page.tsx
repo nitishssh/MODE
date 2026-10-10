@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { LoginShowcase } from "@/components/login-showcase";
 
 export function LoginPage() {
   const [error, setError] = useState("");
@@ -42,7 +41,6 @@ export function LoginPage() {
   }
 
   return <main className="mode-login">
-    <LoginShowcase />
     <section className="mode-login-form-column" aria-label="Sign in">
       <section className="mode-login-card" aria-labelledby="login-title">
         <a className="mode-login-back" href="/">← Back to MODE</a>
