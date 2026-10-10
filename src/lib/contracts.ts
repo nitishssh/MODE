@@ -1,4 +1,6 @@
 /** Public API shapes. Money is stored and returned as integer paise. */
+export type Role = "member" | "volunteer" | "organizer" | "treasurer" | "admin";
+
 export interface Member {
   id: string;
   name: string;
@@ -6,6 +8,7 @@ export interface Member {
   joinedAt: string;
   expiresOn: string | null;
   duesStatus: "paid" | "unpaid";
+  role: Role;
 }
 
 export interface Event {
@@ -62,9 +65,37 @@ export interface Dashboard {
   products: Product[];
   tasks: Task[];
   transactions: Transaction[];
+  /** Which protected sections the caller was allowed to see. */
+  access: { members: boolean; finance: boolean };
 }
 
 export interface CreateMemberInput {
   name: string;
   email: string;
+}
+
+/** Identity (#3) */
+export interface SessionUser {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  clubId: string;
+  permissions: string[];
+}
+
+export interface AuthResponse {
+  user: SessionUser;
+  expiresAt: string;
+}
+
+export interface RegisterInput {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
 }

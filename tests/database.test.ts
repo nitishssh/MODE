@@ -3,9 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { DuplicateMemberError, openClubDatabase } from "../src/lib/database";
+import { DuplicateMemberError, SCHEMA_VERSION, openClubDatabase } from "../src/lib/database";
+import { DEMO, actorFor } from "./helpers";
 
 const fixedNow = () => new Date("2026-10-10T08:00:00.000Z");
+// 3 starter members + 4 seeded demo officers.
+const SEEDED_MEMBERS = 7;
 
 test("member creation normalizes input, starts unpaid and rejects case-insensitive duplicates", () => {
   const db = openClubDatabase(":memory:", { now: fixedNow });
@@ -15,8 +18,9 @@ test("member creation normalizes input, starts unpaid and rejects case-insensiti
     assert.equal(member.email, "student@example.com");
     assert.equal(member.duesStatus, "unpaid");
     assert.equal(member.expiresOn, null);
+    assert.equal(member.role, "member");
     assert.throws(() => db.createMember({ name: "Another Student", email: "Student@example.com" }), DuplicateMemberError);
-    assert.equal(db.getMembers().length, 4);
+    assert.equal(db.getMembers().length, SEEDED_MEMBERS + 1);
     assert.equal(db.getDashboard().metrics.activeMembers, 2);
   } finally {
     db.close();
@@ -33,7 +37,7 @@ test("invalid input is rejected without adding records", () => {
     ]) {
       assert.throws(() => db.createMember(input));
     }
-    assert.equal(db.getMembers().length, 3);
+    assert.equal(db.getMembers().length, SEEDED_MEMBERS);
   } finally {
     db.close();
   }
@@ -50,9 +54,9 @@ test("member records persist after reopening and migration does not duplicate se
     db = undefined;
     db = openClubDatabase(filename, { now: fixedNow });
     assert.deepEqual(db.getMembers().find((item) => item.id === member.id), member);
-    assert.equal(db.getMembers().length, 4);
-    assert.equal(db.getDashboard().transactions.length, 3);
-    assert.equal(db.health().schemaVersion, 1);
+    assert.equal(db.getMembers().length, SEEDED_MEMBERS + 1);
+    assert.equal(db.getDashboard(actorFor(db, DEMO.treasurer)).transactions.length, 3);
+    assert.equal(db.health().schemaVersion, SCHEMA_VERSION);
   } finally {
     db?.close();
     rmSync(directory, { recursive: true, force: true });
@@ -63,9 +67,13 @@ test("dashboard subtracts expenses in integer paise and excludes expired members
   let date = fixedNow();
   const db = openClubDatabase(":memory:", { now: () => date });
   try {
-    const current = db.getDashboard();
+    const treasurer = actorFor(db, DEMO.treasurer);
+    const current = db.getDashboard(treasurer);
     assert.equal(current.metrics.balancePaise, 185000);
-    assert.equal(current.metrics.balancePaise, current.transactions.reduce((balance, entry) => balance + (entry.kind === "income" ? entry.amountPaise : -entry.amountPaise), 0));
+    assert.equal(
+      current.metrics.balancePaise,
+      current.transactions.reduce((balance, entry) => balance + (entry.kind === "income" ? entry.amountPaise : -entry.amountPaise), 0),
+    );
     assert.equal(current.metrics.activeMembers, 2);
     assert.equal(current.metrics.upcomingEvents, 2);
     date = new Date("2028-01-01T00:00:00.000Z");

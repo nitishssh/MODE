@@ -1,11 +1,11 @@
-/** The starter has no authentication. Writes are a local-demo-only capability. */
-export function rejectUnsafeMutation(request: Request): Response | null {
-  if (process.env.NODE_ENV === "production" && process.env.MODE_ENABLE_DEMO_WRITES !== "true") {
-    return Response.json(
-      { error: "Demo writes are disabled in production. Enable them only for a trusted local demo." },
-      { status: 403 },
-    );
-  }
+import { ForbiddenError } from "./errors";
+
+/**
+ * Cookie sessions need a same-origin check on every state-changing request so a
+ * third-party page cannot ride a signed-in browser. Authentication itself lives
+ * in `auth/authorize.ts`; this guard only answers "did this request come from us?".
+ */
+export function assertSameOrigin(request: Request): void {
   const origin = request.headers.get("origin");
   const requestUrl = new URL(request.url);
   const host = request.headers.get("host");
@@ -13,21 +13,28 @@ export function rejectUnsafeMutation(request: Request): Response | null {
   if (host !== null) {
     // Next.js can normalize request.url to localhost even when the browser uses
     // 127.0.0.1. The direct HTTP Host retains the actual requested authority.
-    // Do not trust Forwarded / X-Forwarded-* for this local-only starter.
+    // Forwarded / X-Forwarded-* headers are deliberately ignored.
     if (host.length === 0 || /[\\/\s@?#,]/.test(host)) {
-      return Response.json({ error: "Invalid request host." }, { status: 403 });
+      throw new ForbiddenError("Invalid request host.");
     }
     try {
       expectedOrigin = new URL(`${requestUrl.protocol}//${host}`).origin;
     } catch {
-      return Response.json({ error: "Invalid request host." }, { status: 403 });
+      throw new ForbiddenError("Invalid request host.");
     }
   }
-  if (
-    (origin !== null && origin !== expectedOrigin) ||
-    request.headers.get("sec-fetch-site") === "cross-site"
-  ) {
-    return Response.json({ error: "Cross-origin writes are not allowed." }, { status: 403 });
+  if ((origin !== null && origin !== expectedOrigin) || request.headers.get("sec-fetch-site") === "cross-site") {
+    throw new ForbiddenError("Cross-origin writes are not allowed.");
   }
-  return null;
+}
+
+/** Response-returning form kept for the starter's tests and simple handlers. */
+export function rejectUnsafeMutation(request: Request): Response | null {
+  try {
+    assertSameOrigin(request);
+    return null;
+  } catch (error) {
+    if (error instanceof ForbiddenError) return Response.json({ error: error.message }, { status: 403 });
+    throw error;
+  }
 }
