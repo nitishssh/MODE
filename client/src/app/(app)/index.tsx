@@ -21,6 +21,6 @@ export default function Overview() {
         {data.announcements.length ? data.announcements.map(item => <Row key={item.id}><Copy kind="label">{item.title}</Copy><Copy>{item.body}</Copy><Copy kind="mono" style={{ fontSize: 11 }}>{new Date(item.publishedAt).toLocaleDateString()}</Copy></Row>) : <Row><Copy>No announcements have been published.</Copy><Action onPress={() => void reload()}>Check again</Action></Row>}
       </View>
     </>}
-    {Platform.OS === 'web' && <Row><Copy>Booking, scanning and officer workflows remain available in the web workspace while their native screens are being completed.</Copy><Action onPress={() => void Linking.openURL('/legacy')}>Open web workspace</Action></Row>}
+    {Platform.OS === 'web' && <Row><Copy>Use Events for tickets and door check-in, Shop for merchandise, News for announcements and Claims for reimbursements.</Copy><Action onPress={() => void Linking.openURL('/legacy')}>Open web workspace</Action></Row>}
   </Screen>;
 }

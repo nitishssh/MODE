@@ -35,10 +35,10 @@ Native API clients can log in without browser Origin headers and use the returne
 
 ## What works today
 
-- SDK 57 Expo shell in `client/`: cookie-based web login, SecureStore native bearer sessions, permission-driven navigation, membership pass details, task updates and treasury totals. See [the Expo walkthrough](docs/DEMO.md#expo-shell-and-same-origin-web).
-- Optional same-origin Expo export at `/`, with the existing business workspace at `/legacy`. Full scanner, holds and native business screens remain work for #11–#13; bundle compilation does not establish physical-device acceptance.
+- SDK 57 Expo client in `client/`: registration, cookie-based web login, SecureStore native bearer sessions, permission-driven navigation, QR membership passes and dues, event booking and check-in, merchandise, announcements, task assignment, receipt claims and treasury/source/CSV views. See [the interactive journey](docs/DEMO.md#interactive-client-journey).
+- Optional same-origin Expo export at `/`, with the existing business workspace at `/legacy`. Native camera scanning, receipt selection and private-file sharing are implemented; bundle compilation does not establish physical-device acceptance.
 - Responsive dashboard and navigation for all six club areas.
-- Interface in English and eleven of the most spoken Indian languages (Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Malayalam, Punjabi, Assamese), chosen from the browser's language or the in-app switcher.
+- Legacy web interface in English and eleven of the most spoken Indian languages (Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Malayalam, Punjabi, Assamese), chosen from the browser's language or the in-app switcher.
 - Browser sign-in/sign-out, task editing, receipt-backed expenses, treasury review and ledger CSV export.
 - Backend APIs for dues/renewals, simulated reminders, ticket holds, payment confirmation, check-in and merchandise orders with stock holds.
 - Announcement publication API with a public dated archive, active-member notifications, atomic simulated outbox delivery and safe retries. See the [announcement demo](docs/DEMO.md#announcement-publication-8).
@@ -49,18 +49,20 @@ Native API clients can log in without browser Origin headers and use the returne
 - Fictional records showing how events, announcements, merchandise, volunteer work and finances will fit together.
 - Tests, TypeScript and API contract checks, production build, automated server restart acceptance and GitHub Actions configuration.
 
-## What the team will implement
+## Remaining acceptance
 
-The remaining Expo business screens, membership and ticket screens, merchandise ordering screens and announcement publishing/inbox screens remain tracked in [the MVP tickets](https://github.com/nitishssh/MODE/milestone/1). Dues, ticket, merchandise and announcement backend APIs, editable web tasks and reimbursement approvals are implemented. Unfinished web flows remain previews. Payment confirmations record external payments; no gateway transfer or real email is performed.
+Physical Android/iOS camera, picker, haptics and sharing, LAN journeys and installed Windows PWA behavior remain tracked in [the MVP tickets](https://github.com/nitishssh/MODE/milestone/1). Selected local browser journeys and automated API/restart checks are recorded in [the demo guide](docs/DEMO.md#interactive-client-journey); they do not complete every native/web acceptance criterion. Payment confirmations record external payments; no gateway transfer or real email is performed.
 
-The starter is a single-club, local development scaffold with synthetic demo accounts. The web and Expo shell have sign-in; full native business flows remain future work. Anonymous dashboard responses withhold the member directory and finance data. See [API contracts and demo accounts](docs/API.md) to exercise the authenticated endpoints. Hosted SQLite needs a persistent disk and one writable instance; a serverless ephemeral filesystem is not durable storage.
+The starter is a single-club, local development scaffold with synthetic demo accounts. The web and Expo client have sign-in and business screens; physical-device acceptance remains outstanding. Anonymous dashboard responses withhold the member directory and finance data. See [API contracts and demo accounts](docs/API.md) to exercise the authenticated endpoints. Hosted SQLite needs a persistent disk and one writable instance; a serverless ephemeral filesystem is not durable storage.
 
 ## Stack and layout
 
-Next.js App Router · React · TypeScript · Zod · native SQLite · plain CSS.
+Next.js App Router API · Expo Router · React Native Web · React · TypeScript · Zod · native SQLite.
 
 ```text
-src/app/page.tsx          Sign-in, student workspace and member form
+client/src/app/          Expo registration, booking and authenticated business screens
+src/app/page.tsx          Existing web entry (Expo export is optional)
+src/app/legacy/page.tsx   Existing web workspace
 src/app/globals.css       Responsive design, script fallbacks and right-to-left layout
 src/app/api/              Auth, memberships, tickets, tasks, expenses and ledger
 src/i18n/                 Locale registry, dictionaries (12 languages), formatters and provider
@@ -100,8 +102,10 @@ The web workspace now has sign-in, a task board, personal expense submissions an
 
 ## Languages
 
-The web workspace is available in English and eleven of the most spoken scheduled languages of India: Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Malayalam, Punjabi and Assamese. The language is chosen once per request by one rule: a valid `mode_lang` cookie wins, otherwise the browser's `Accept-Language` header, otherwise English. The switcher in the top bar (and on the sign-in screen) writes that cookie and re-renders the server tree, so `<html lang>` and `dir` are always correct and Urdu renders right-to-left.
+The legacy web workspace is available in English and eleven of the most spoken scheduled languages of India: Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Malayalam, Punjabi and Assamese. The language is chosen once per request by one rule: a valid `mode_lang` cookie wins, otherwise the browser's `Accept-Language` header, otherwise English. The switcher in the top bar (and on the sign-in screen) writes that cookie and re-renders the server tree, so `<html lang>` and `dir` are always correct and Urdu renders right-to-left.
 
 Dictionaries live in `src/i18n/dictionaries/<code>.ts`; English is the master and the `Dictionary` type plus `tests/i18n.test.ts` force every language to carry the same keys and placeholders. Only the requested language is loaded, on the server, so other languages are not bundled into the client (the selected dictionary is sent to the browser). Amounts and dates use `Intl` with the matching `*-IN` locale and Latin digits in every language, so figures on screen always match the ledger and the CSV export. API error messages are mapped by their `code` to the active language; the API itself stays English.
+
+The Expo client and guest ticket HTML currently use English labels; the legacy language switcher does not translate those surfaces.
 
 To add a language: append it to `LOCALES` in `src/i18n/locales.ts`, add `src/i18n/dictionaries/<code>.ts` typed as `Dictionary`, and register it in `src/i18n/dictionaries/index.ts`. The test suite fails until every key is translated.

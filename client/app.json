@@ -5,10 +5,24 @@
     "scheme": "mode",
     "version": "0.1.0",
     "userInterfaceStyle": "automatic",
-    "web": { "output": "single" },
-    "plugins": ["expo-router", "expo-secure-store"],
-    "experiments": { "typedRoutes": true },
-    "ios": { "supportsTablet": true },
-    "android": { "allowBackup": false }
+    "web": {
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-sharing",
+      ["expo-camera", { "cameraPermission": "Allow MODE to scan member and ticket QR codes at the selected event.", "recordAudioAndroid": false }],
+      "expo-document-picker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "allowBackup": false
+    }
   }
 }
