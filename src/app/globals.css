@@ -374,6 +374,9 @@ main{padding:27px 20px 22px}
 .error-inline{background:#fffaf7;border:1px solid #ead7ce;color:#b57b5f;padding:11px 16px;border-radius:8px;font-size:11px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
 .events-panel{min-width:0}
 .tasks-panel{min-width:0}
+.workspace-body{background-image:radial-gradient(circle,#b8785d20 1px,transparent 1.25px);background-size:16px 16px}
+.mode-dark .workspace-body{background-image:radial-gradient(circle,#cc785c25 1px,transparent 1.25px)}
+.tasks-panel{grid-column:1/-1}.dashboard-kanban{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:4px 24px 24px}.dashboard-kanban-column{min-height:176px;background:#f7f2eb;border:1px solid #e7ded5;border-radius:14px;padding:13px;transition:border-color .18s ease,background .18s ease}.dashboard-kanban-column.is-drop-target:hover{border-color:#cc785c;background:#fdf5f0}.dashboard-kanban-column>header{display:flex;align-items:center;gap:7px;color:#766e66;font-size:10px;font-weight:700;text-transform:uppercase}.dashboard-kanban-column>header b{margin-left:auto}.dashboard-kanban-cards{display:flex;flex-direction:column;gap:8px;margin-top:12px}.dashboard-task-card{position:relative;width:100%;overflow:hidden;border:1px solid #e7ded5;border-radius:10px;background:#fffdf9;color:var(--ink);cursor:grab;padding:11px;text-align:left}.dashboard-task-card::before{content:"";position:absolute;inset:0;background:#302b27;transform:scaleX(0);transform-origin:left;transition:transform .48s ease}.dashboard-task-card.completing::before{transform:scaleX(1)}.dashboard-task-card.completed{background:#302b27;color:#fff}.dashboard-task-title,.dashboard-task-assignee{position:relative;z-index:1;display:block}.dashboard-task-title{font-size:11px;font-weight:650}.dashboard-task-assignee{color:#837b73;font-size:9px;margin-top:5px}.dashboard-task-card.completing .dashboard-task-title,.dashboard-task-card.completing .dashboard-task-assignee,.dashboard-task-card.completed .dashboard-task-title{color:#fff}.dashboard-task-card.completing .dashboard-task-title,.dashboard-task-card.completed .dashboard-task-title{text-decoration:line-through}.dashboard-task-card.completed .dashboard-task-assignee{color:#d2cbc4}.dashboard-kanban-empty{text-align:center;color:#9a9188;font-size:10px;margin:24px 0}@media(max-width:760px){.dashboard-kanban{grid-template-columns:1fr;padding:4px 18px 20px}}
 .expense-action-row{display:flex;align-items:center;gap:8px}
 .filter-select{height:36px;padding:0 12px;border:1px solid var(--line);background:#fff;border-radius:7px;font-size:11px;color:var(--ink);outline:none}
 .filter-select:focus{border-color:#8fa3a8}
@@ -501,9 +504,375 @@ th{background:#faf7f2;border-color:#eee7df;color:#746c64}td{color:#716a63;border
 .auth-card form { display: grid; gap: 12px; margin-top: 24px; }
 .auth-card input { width: 100%; padding: 12px; border: 1px solid #a6afba; border-radius: 8px; font: inherit; }
 
+/* Topbar user avatar, progress bar & dropdown */
+.topbar-user-section {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.topbar-progress-bar {
+  width: 36px;
+  height: 4px;
+  background: #ede8df;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.topbar-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #cc785c, #a95638);
+  border-radius: 999px;
+  transition: width 0.35s ease;
+}
+.topbar-avatar-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f2e8e3;
+  border: 1px solid #dfd6cd;
+  color: #a95638;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+  box-shadow: 0 1px 3px rgba(36, 32, 30, 0.05);
+}
+.topbar-avatar-btn:hover,
+.topbar-avatar-btn.active {
+  background: #ebdcd4;
+  border-color: #a95638;
+  transform: scale(1.05);
+}
+.topbar-avatar-btn:focus-visible {
+  outline: 2px solid #a95638;
+  outline-offset: 2px;
+}
+
+/* Floating user profile dropdown */
+.topbar-user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 230px;
+  background: #ffffff;
+  border: 1px solid #e5ded5;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(36, 32, 30, 0.12), 0 2px 6px rgba(36, 32, 30, 0.06);
+  padding: 14px;
+  z-index: 100;
+  animation: dropdown-fade-in 0.15s ease-out;
+}
+@keyframes dropdown-fade-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.dropdown-user-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.dropdown-user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #f2e8e3;
+  color: #a95638;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.dropdown-user-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dropdown-user-info strong {
+  font-size: 13px;
+  color: #24201e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dropdown-role-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #a95638;
+  background: #f8ebe6;
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-top: 3px;
+  text-transform: capitalize;
+  align-self: flex-start;
+}
+.dropdown-progress-stats {
+  background: #faf7f2;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.dropdown-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #746c64;
+  margin-bottom: 5px;
+}
+.dropdown-progress-label b {
+  color: #a95638;
+}
+.dropdown-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: #ede8df;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.dropdown-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #cc785c, #a95638);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.dropdown-divider {
+  height: 1px;
+  background: #eee7df;
+  margin: 10px -14px;
+}
+.dropdown-signout-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #b33939;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.dropdown-signout-btn:hover {
+  background: #fdf2f2;
+  color: #902222;
+}
+
+/* Team to-dos check button and mid-paced left-to-right brown animation */
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #ebe5dd;
+}
+.task-row:first-child {
+  padding-top: 4px;
+}
+.task-row:last-child {
+  border-bottom: 0;
+}
+.task-check-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1.5px solid #d9d1c8;
+  background: #fdfaf5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: transform 0.18s ease, background 0.2s ease, border-color 0.2s ease;
+  color: #ffffff;
+}
+.task-check-btn:hover {
+  border-color: #302b27;
+  transform: scale(1.08);
+}
+.task-check-btn.checked {
+  background: #302b27;
+  border-color: #302b27;
+}
+
+.task-bubble {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #faf7f2;
+  border: 1px solid #ede7df;
+  overflow: hidden;
+  transition: border-color 0.3s ease;
+}
+.task-bubble::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #302b27;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+}
+.task-bubble.completed::before,
+.task-bubble.animating::before {
+  transform: scaleX(1);
+}
+.task-bubble.completed,
+.task-bubble.animating {
+  border-color: #302b27;
+}
+.task-bubble-content,
+.task-bubble .badge {
+  position: relative;
+  z-index: 1;
+}
+.task-bubble .task-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  transition: color 0.3s ease;
+  margin: 0;
+}
+.task-bubble .task-assignee {
+  font-size: 10px;
+  color: #817870;
+  margin: 3px 0 0 0;
+  transition: color 0.3s ease;
+}
+.task-bubble.completed .task-title,
+.task-bubble.animating .task-title {
+  color: #ffffff;
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.6);
+}
+.task-bubble.completed .task-assignee,
+.task-bubble.animating .task-assignee {
+  color: #d2cbc4;
+}
+.task-bubble.completed .badge,
+.task-bubble.animating .badge {
+  background: #443c36;
+  color: #e5dfd8;
+}
+
+/* Dark mode styling */
+.mode-dark .topbar-progress-bar {
+  background: #3c3836;
+}
+.mode-dark .topbar-avatar-btn {
+  background: #302b27;
+  border-color: #4a4541;
+  color: #f0a58b;
+}
+.mode-dark .topbar-avatar-btn:hover,
+.mode-dark .topbar-avatar-btn.active {
+  background: #443c36;
+  border-color: #cc785c;
+}
+.mode-dark .topbar-user-dropdown {
+  background: #24201e;
+  border-color: #4a4541;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.mode-dark .dropdown-user-avatar {
+  background: #302b27;
+  color: #f0a58b;
+}
+.mode-dark .dropdown-user-info strong {
+  color: #f5f0e8;
+}
+.mode-dark .dropdown-role-badge {
+  background: #3d2b24;
+  color: #f0a58b;
+}
+.mode-dark .dropdown-progress-stats {
+  background: #1c1917;
+}
+.mode-dark .dropdown-progress-label {
+  color: #c8c3bb;
+}
+.mode-dark .dropdown-progress-bar {
+  background: #3c3836;
+}
+.mode-dark .dropdown-divider {
+  background: #3c3836;
+}
+.mode-dark .dropdown-signout-btn {
+  color: #f08080;
+}
+.mode-dark .dropdown-signout-btn:hover {
+  background: #382424;
+  color: #ff9999;
+}
+.mode-dark .task-check-btn {
+  background: #24201e;
+  border-color: #4a4541;
+}
+.mode-dark .task-check-btn.checked {
+  background: #f5f0e8;
+  border-color: #f5f0e8;
+  color: #24201e;
+}
+.mode-dark .task-bubble {
+  background: #24201e;
+  border-color: #4a4541;
+}
+.mode-dark .task-bubble::before {
+  background: #3c342d;
+}
+.mode-dark .task-bubble.completed,
+.mode-dark .task-bubble.animating {
+  border-color: #5a4f46;
+}
+
 /* Keep the drawer above its scrim, including the older narrow-screen layout. */
 @media (max-width: 760px) {
   .sidebar { position: fixed; inset: 0 auto 0 0; overflow-y: auto; }
   .sidebar nav { flex-direction: column; }
   .nav-item { width: 100%; }
+}
+
+/* ── Internationalization: language switcher, scripts and right-to-left ── */
+.language-switcher{display:inline-flex;align-items:center}
+.language-switcher .filter-select{height:34px;padding:0 10px;min-width:0;max-width:150px;border-radius:10px;background:var(--paper,#fff)}
+.auth-card-tools{display:flex;justify-content:flex-end;margin-bottom:12px}
+/* DM Sans carries Latin only; Indic and Arabic glyphs fall back to the system script fonts. */
+html:not(:lang(en)) body{font-family:var(--font),"Noto Sans","Nirmala UI","Kohinoor Devanagari","Mukta","Segoe UI",system-ui,sans-serif}
+html:lang(ur) body{font-family:"Noto Nastaliq Urdu","Noto Naskh Arabic","Urdu Typesetting","Segoe UI",system-ui,sans-serif;line-height:1.75}
+/* Tracking tuned for Latin capitals does not suit other scripts. */
+html:not(:lang(en)) h1,html:not(:lang(en)) h2,html:not(:lang(en)) .brand{letter-spacing:0}
+html:not(:lang(en)) .eyebrow,html:not(:lang(en)) .nav-caption{letter-spacing:.4px;text-transform:none}
+/* Right-to-left layout (Urdu): mirror the fixed sidebar and directional spacing. */
+[dir=rtl] .sidebar{inset:0 0 0 auto;border-right:0;border-left:1px solid var(--line)}
+[dir=rtl] .workspace-body{margin-left:0;margin-right:256px}
+[dir=rtl] .nav-item{text-align:right}
+[dir=rtl] .nav-count{margin-left:0;margin-right:auto}
+[dir=rtl] .brand-mark{margin-right:0;margin-left:12px}
+[dir=rtl] .brand-dot{margin-left:0;margin-right:1px}
+[dir=rtl] .workspace-footer p{text-align:left}
+[dir=rtl] .skip-link{left:auto;right:15px}
+[dir=rtl] .amount-cell,[dir=rtl] td.amount-cell,[dir=rtl] th.amount-cell{direction:ltr;unicode-bidi:isolate}
+[dir=rtl] .icon{transform:scaleX(-1)}
+[dir=rtl] .not-found-shortcuts{text-align:right}
+[dir=rtl] .topbar-user-dropdown{right:auto;left:0}
+/* The current desktop sidebar stays 256px wide down to the drawer breakpoint. */
+@media(max-width:760px){
+  [dir=rtl] .workspace-body{margin-right:0}
+  [dir=rtl] .sidebar{transform:translateX(105%);box-shadow:-12px 0 35px #24201e2e}
+  [dir=rtl] .sidebar.mobile-open{transform:translateX(0)}
+  [dir=rtl] .topbar-right{margin-left:0;margin-right:auto}
+  [dir=rtl] .workspace-footer p{text-align:right}
+  .language-switcher .filter-select{max-width:110px}
 }

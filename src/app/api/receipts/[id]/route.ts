@@ -9,5 +9,6 @@ export const GET=route<{id:string}>("receipt download",(request,{id})=>{
   const db=getDatabase(),actor=requireActor(request,db);
   const receipt=db.getReceiptById(actor,id),file=db.getReceiptFile(actor,id);
   if(!file)return json({error:"Receipt file not found."},{status:404});
-  return new Response(new Uint8Array(file),{headers:{"Content-Type":receipt.mimeType,"Content-Disposition":`inline; filename="${receipt.filename}"`,"Content-Length":String(file.length),"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"}});
+  const filename = receipt.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return new Response(new Uint8Array(file),{headers:{"Content-Type":receipt.mimeType,"Content-Disposition":`attachment; filename="${filename}"`,"Content-Length":String(file.length),"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"}});
 });

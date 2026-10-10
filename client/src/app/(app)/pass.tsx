@@ -1,0 +1,7 @@
+import { useResource } from '../../lib/use-resource';
+import type { MeResponse } from '../../lib/session-client';
+import { Action, AsOf, Copy, ErrorNotice, LoadingRows, Row, Screen, useTheme } from '../../components/ui';
+export default function Pass() {
+  const { data, loading, time, error, reload } = useResource<MeResponse>('/api/auth/me'); const theme = useTheme();
+  return <Screen title="My member pass"><AsOf time={time} refreshing={loading} /><ErrorNotice error={error} />{loading && !data ? <LoadingRows /> : data && <><Row><Copy kind="title">{data.user.name}</Copy><Copy style={{ color: theme.terracottaInk }}>{data.user.email}</Copy></Row><Row><Copy kind="label">MEMBERSHIP</Copy><Copy style={{ color: data.pass.membership === 'active' ? theme.verified : data.pass.membership === 'expired' ? theme.overdue : theme.pending }}>{data.pass.membership === 'active' ? 'Active' : data.pass.membership === 'expired' ? 'Expired · renew with an officer' : 'Not yet joined'}</Copy>{data.pass.expiresOn && <Copy kind="mono">Through {data.pass.expiresOn}</Copy>}</Row><Row><Copy kind="label">DOOR CODE</Copy><Copy kind="mono" selectable style={{ fontSize: 30, lineHeight: 44 }}>{data.pass.shortCode}</Copy><Copy>Show this code to the volunteer at the door. Admission depends on your ticket for the selected event.</Copy></Row></>}<Action disabled={loading} onPress={() => void reload()}>Refresh membership</Action></Screen>;
+}

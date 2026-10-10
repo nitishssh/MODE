@@ -31,7 +31,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
       guestPricePaise: int(row.guest_price_paise),
     }));
     const announcements: Announcement[] = (
-      db.prepare("SELECT * FROM announcements ORDER BY published_at DESC, id").all() as Row[]
+      db.prepare("SELECT * FROM announcements WHERE club_id = ? ORDER BY published_at DESC, id").all(clubId) as Row[]
     ).map((row) => ({
       id: text(row.id),
       title: text(row.title),
@@ -48,6 +48,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
       id: text(row.id),
       title: text(row.title),
       assignee: text(row.assignee),
+      assigneeId: row.assignee_id === null ? null : text(row.assignee_id),
       status: row.status as Task["status"],
     }));
     const transactions: Transaction[] = (
