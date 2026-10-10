@@ -1,13 +1,14 @@
-import type { DatabaseSync } from "node:sqlite";
 import { hashPassword } from "../auth/password";
 import { allocateUniqueTokens } from "../auth/tokens";
-import { clubDate, addDays } from "./core";
+import { clubDate, addDays, type SqlDatabase } from "./core";
 
 export const DEFAULT_CLUB_ID = "club-sample";
 
 interface Migration {
   version: number;
-  up: (db: DatabaseSync, now: Date) => void;
+  up: (db: SqlDatabase, now: Date) => void;
+  /** SQLite only: the migration drops and recreates tables, which needs foreign keys off outside the transaction. */
+  rebuildsTables?: boolean;
 }
 
 /**
@@ -26,12 +27,13 @@ const MIGRATIONS: Migration[] = [
   { version: 10, up: addReceiptStorageNames },
   { version: 11, up: addAnnouncementPublication },
   { version: 12, up: normalizeLegacyWorkspace },
+  { version: 13, up: hardenSchema, rebuildsTables: true },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 
 // P4 (#8): preserve the starter archive and reuse the existing notification/outbox tables.
-function addAnnouncementPublication(db: DatabaseSync) {
+function addAnnouncementPublication(db: SqlDatabase) {
   db.exec(`
     ALTER TABLE announcements ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
     ALTER TABLE announcements ADD COLUMN published_by TEXT REFERENCES members(id);
@@ -47,7 +49,7 @@ function addAnnouncementPublication(db: DatabaseSync) {
 }
 
 /** Preserve released receipt files and claim links without filesystem moves. */
-function addReceiptStorageNames(db: DatabaseSync) {
+function addReceiptStorageNames(db: SqlDatabase) {
   db.exec(`
     ALTER TABLE receipts RENAME TO expense_receipts;
     ALTER TABLE expense_receipts ADD COLUMN storage_name TEXT;
@@ -55,20 +57,20 @@ function addReceiptStorageNames(db: DatabaseSync) {
   `);
 }
 
-function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
+function hasColumn(db: SqlDatabase, table: string, column: string): boolean {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(entry => entry.name === column);
 }
 
-function hasTable(db: DatabaseSync, table: string): boolean {
+function hasTable(db: SqlDatabase, table: string): boolean {
   return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== undefined;
 }
 
-function addColumnIfMissing(db: DatabaseSync, table: string, column: string, definition: string): void {
+function addColumnIfMissing(db: SqlDatabase, table: string, column: string, definition: string): void {
   if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
 }
 
 /** Preserve workflow-v2 money history without inventing the officer who paid it. */
-function normalizeLegacyWorkspace(db: DatabaseSync) {
+function normalizeLegacyWorkspace(db: SqlDatabase) {
   if (hasTable(db, "tasks")) {
     addColumnIfMissing(db, "tasks", "assignee", "assignee TEXT NOT NULL DEFAULT 'Unassigned'");
     db.exec("UPDATE tasks SET assignee = COALESCE((SELECT name FROM members WHERE id = tasks.assignee_id), assignee)");
@@ -107,7 +109,27 @@ function normalizeLegacyWorkspace(db: DatabaseSync) {
   }
 }
 
-export function migrate(db: DatabaseSync, now: Date): void {
+function readVersion(db: SqlDatabase): number {
+  return Number((db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)?.user_version ?? 0);
+}
+
+export function migrate(db: SqlDatabase, now: Date): void {
+  // A table rebuild (SQLite) must run with foreign keys off, and that PRAGMA is a no-op inside a
+  // transaction; decide before BEGIN. PostgreSQL ignores the PRAGMAs and never rebuilds.
+  const rebuilding = db.dialect !== "postgres" && MIGRATIONS.some((m) => m.rebuildsTables && m.version > readVersion(db));
+  if (rebuilding) db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    migrateInTransaction(db, now);
+  } finally {
+    if (rebuilding) {
+      const violations = db.prepare("PRAGMA foreign_key_check").all();
+      db.exec("PRAGMA foreign_keys = ON");
+      if (violations.length) throw new Error(`Schema rebuild left ${violations.length} foreign key violation(s); restore the backup and reconcile.`);
+    }
+  }
+}
+
+function migrateInTransaction(db: SqlDatabase, now: Date): void {
   // Check inside the write transaction so simultaneous first requests cannot both seed.
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -129,7 +151,7 @@ export function migrate(db: DatabaseSync, now: Date): void {
 // ---------------------------------------------------------------------------
 // v1 — starter tables and fictional seed (unchanged from the published starter)
 // ---------------------------------------------------------------------------
-function createStarterSchema(db: DatabaseSync, now: Date) {
+function createStarterSchema(db: SqlDatabase, now: Date) {
   db.exec(`
     CREATE TABLE members (
       id TEXT PRIMARY KEY,
@@ -178,7 +200,7 @@ function createStarterSchema(db: DatabaseSync, now: Date) {
   seedStarterDemo(db, now);
 }
 
-function seedStarterDemo(db: DatabaseSync, now: Date) {
+function seedStarterDemo(db: SqlDatabase, now: Date) {
   const offset = (days: number) => new Date(now.getTime() + days * 86_400_000).toISOString();
   const insertMember = db.prepare("INSERT INTO members VALUES (?, ?, ?, ?, ?, ?)");
   insertMember.run("demo-member-1", "Asha Demo", "asha@example.com", offset(-30), offset(335).slice(0, 10), "paid");
@@ -233,7 +255,7 @@ export function demoPassword(): string {
   return "mode-demo-2026";
 }
 
-function addIdentityAndRoles(db: DatabaseSync, now: Date) {
+function addIdentityAndRoles(db: SqlDatabase, now: Date) {
   db.exec(`
     CREATE TABLE clubs (
       id TEXT PRIMARY KEY,
@@ -291,7 +313,7 @@ export const DEMO_MEMBERS = [
   { id: "demo-member-expired", name: "Expired Member Demo", email: "expired@example.com", expiresInDays: -10 },
 ] as const;
 
-function addLedgerSourcesAndMemberPasses(db: DatabaseSync, now: Date) {
+function addLedgerSourcesAndMemberPasses(db: SqlDatabase, now: Date) {
   db.exec(`
     ALTER TABLE transactions ADD COLUMN source_type TEXT;
     ALTER TABLE transactions ADD COLUMN source_id TEXT;
@@ -335,7 +357,7 @@ function addLedgerSourcesAndMemberPasses(db: DatabaseSync, now: Date) {
 // ---------------------------------------------------------------------------
 export const DEFAULT_ANNUAL_DUES_PAISE = 50000;
 
-function addMembershipDues(db: DatabaseSync) {
+function addMembershipDues(db: SqlDatabase) {
   db.exec(`
     ALTER TABLE clubs ADD COLUMN annual_dues_paise INTEGER NOT NULL DEFAULT ${DEFAULT_ANNUAL_DUES_PAISE} CHECK (annual_dues_paise > 0);
     CREATE TABLE dues_payments (
@@ -387,7 +409,7 @@ function addMembershipDues(db: DatabaseSync) {
 // ---------------------------------------------------------------------------
 // v6 — P2 (#5): event status/club scope, tickets with 30-minute holds, door check-in
 // ---------------------------------------------------------------------------
-function addEventTickets(db: DatabaseSync) {
+function addEventTickets(db: SqlDatabase) {
   db.exec(`
     ALTER TABLE events ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
     ALTER TABLE events ADD COLUMN status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('draft', 'published', 'cancelled'));
@@ -427,7 +449,7 @@ function addEventTickets(db: DatabaseSync) {
 }
 
 // v9 — tasks, receipts and expenses; follows released merchandise schema v8.
-function addWorkspaceFlows(db: DatabaseSync, now: Date) {
+function addWorkspaceFlows(db: SqlDatabase, now: Date) {
   addColumnIfMissing(db, "transactions", "club_id", `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`);
   addColumnIfMissing(db, "transactions", "event_id", "event_id TEXT REFERENCES events(id)");
   addColumnIfMissing(db, "events", "fundraiser_goal_paise", "fundraiser_goal_paise INTEGER NOT NULL DEFAULT 0 CHECK (fundraiser_goal_paise >= 0)");
@@ -492,7 +514,7 @@ function addWorkspaceFlows(db: DatabaseSync, now: Date) {
 // ---------------------------------------------------------------------------
 // v8 — P3 (#6): size variants with their own stock, member orders with 30-minute holds
 // ---------------------------------------------------------------------------
-function addMerchandiseOrders(db: DatabaseSync) {
+function addMerchandiseOrders(db: SqlDatabase) {
   db.exec(`
     ALTER TABLE products ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
     ALTER TABLE products ADD COLUMN description TEXT NOT NULL DEFAULT '';
@@ -536,5 +558,90 @@ function addMerchandiseOrders(db: DatabaseSync) {
   const insert = db.prepare("INSERT INTO product_variants (id, club_id, product_id, size, stock) VALUES (?, ?, ?, 'ONE SIZE', ?)");
   for (const row of db.prepare("SELECT id, club_id, stock FROM products").all() as Array<{ id: string; club_id: string; stock: number }>) {
     insert.run(`${row.id}-one-size`, row.club_id, row.id, row.stock);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// v13 — hardening from docs/DB-AUDIT.md: club foreign keys, receipt and payment-reference
+// uniqueness, seeded-registration accounting, login throttling, purge and policy columns
+// ---------------------------------------------------------------------------
+const CLUB_SCOPED_TABLES_WITHOUT_FK = ["members", "events", "products", "tasks", "transactions", "announcements"] as const;
+
+/**
+ * SQLite cannot add a REFERENCES clause to an existing column, so the table is rebuilt in place
+ * (the documented procedure: create new, copy with rowid, drop old, rename, recreate indexes).
+ * Runs with foreign keys off; `migrate()` verifies `PRAGMA foreign_key_check` afterwards.
+ */
+function rebuildTable(db: SqlDatabase, table: string, transform: (sql: string) => string): void {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string } | undefined;
+  if (!row) throw new Error(`Cannot rebuild missing table ${table}.`);
+  const transformed = transform(row.sql);
+  if (transformed === row.sql) return; // already in the target shape (re-run on a downgraded test database)
+  const temp = `${table}__new`;
+  db.exec(transformed.replace(/^CREATE TABLE\s+"?[A-Za-z_][A-Za-z0-9_]*"?/i, `CREATE TABLE ${temp}`));
+  const columns = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => `"${c.name}"`).join(", ");
+  db.exec(`INSERT INTO ${temp} (rowid, ${columns}) SELECT rowid, ${columns} FROM ${table}`);
+  const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL").all(table) as Array<{ sql: string }>;
+  db.exec(`DROP TABLE ${table}`);
+  db.exec(`ALTER TABLE ${temp} RENAME TO ${table}`);
+  for (const index of indexes) db.exec(index.sql);
+}
+
+function postgresConstraintExists(db: SqlDatabase, table: string, constraint: string): boolean {
+  return db.prepare("SELECT 1 FROM information_schema.table_constraints WHERE table_schema = current_schema() AND table_name = ? AND constraint_name = ?").get(table, constraint) !== undefined;
+}
+
+/**
+ * Every step is idempotent and tolerant of partial historical databases (test fixtures recreate
+ * only the tables they need), so a re-run after a downgrade or a crash converges on the same shape.
+ */
+function hardenSchema(db: SqlDatabase) {
+  const postgres = db.dialect === "postgres";
+  const clubScoped = CLUB_SCOPED_TABLES_WITHOUT_FK.filter((table) => hasTable(db, table) && hasColumn(db, table, "club_id"));
+  // Orphans would make the new foreign keys fail half-way; refuse up front so the transaction rolls back cleanly.
+  for (const table of clubScoped) {
+    const orphans = Number((db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE club_id NOT IN (SELECT id FROM clubs)`).get() as { n: number }).n);
+    if (orphans) throw new Error(`${orphans} row(s) in ${table} reference a club that does not exist; migration rolled back for reconciliation.`);
+  }
+  if (hasTable(db, "events")) {
+    addColumnIfMissing(db, "events", "seeded_registrations", "seeded_registrations INTEGER NOT NULL DEFAULT 0 CHECK (seeded_registrations >= 0)");
+    // Registrations that predate the ticket table (the starter's 24 and 38) are recorded, so inventory reconciliation can tell them from drift.
+    if (hasTable(db, "tickets")) {
+      db.exec(`UPDATE events SET seeded_registrations = MAX(0, registered - (SELECT COUNT(*) FROM tickets t WHERE t.event_id = events.id AND t.status IN ('pending_payment', 'paid'))) WHERE seeded_registrations = 0`);
+    }
+  }
+  if (hasTable(db, "clubs")) addColumnIfMissing(db, "clubs", "require_separate_payer", "require_separate_payer INTEGER NOT NULL DEFAULT 0 CHECK (require_separate_payer IN (0, 1))");
+  // Audit #6: club_id foreign keys. Audit #20: reminders get a real primary key.
+  for (const table of clubScoped) {
+    if (postgres) {
+      if (!postgresConstraintExists(db, table, `${table}_club_id_fkey`)) db.exec(`ALTER TABLE ${table} ADD CONSTRAINT ${table}_club_id_fkey FOREIGN KEY (club_id) REFERENCES clubs(id)`);
+    } else {
+      rebuildTable(db, table, (sql) => sql.includes("REFERENCES clubs(id)") && /club_id TEXT NOT NULL DEFAULT '[^']+' REFERENCES clubs\(id\)/.test(sql)
+        ? sql
+        : sql.replace(`club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`, `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}' REFERENCES clubs(id)`));
+    }
+  }
+  if (hasTable(db, "membership_reminders")) {
+    if (postgres) {
+      if (!postgresConstraintExists(db, "membership_reminders", "membership_reminders_pkey")) db.exec("ALTER TABLE membership_reminders ADD PRIMARY KEY (member_id, expires_on)");
+    } else rebuildTable(db, "membership_reminders", (sql) => sql.replace("UNIQUE (member_id, expires_on)", "PRIMARY KEY (member_id, expires_on)"));
+  }
+  db.exec(`CREATE TABLE IF NOT EXISTS login_attempts (
+      email TEXT PRIMARY KEY,
+      failures INTEGER NOT NULL DEFAULT 0 CHECK (failures >= 0),
+      locked_until TEXT,
+      updated_at TEXT NOT NULL
+    )`);
+  const indexes: Array<[string, string[], string]> = [
+    ["expenses", ["receipt_id", "status"], "CREATE UNIQUE INDEX IF NOT EXISTS expenses_receipt_live_idx ON expenses (receipt_id) WHERE receipt_id IS NOT NULL AND status <> 'rejected'"],
+    ["tickets", ["club_id", "payment_reference"], "CREATE UNIQUE INDEX IF NOT EXISTS tickets_payment_reference_idx ON tickets (club_id, payment_reference) WHERE payment_reference IS NOT NULL"],
+    ["merch_orders", ["club_id", "payment_reference"], "CREATE UNIQUE INDEX IF NOT EXISTS merch_orders_payment_reference_idx ON merch_orders (club_id, payment_reference) WHERE payment_reference IS NOT NULL"],
+    ["expenses", ["club_id", "payment_reference"], "CREATE UNIQUE INDEX IF NOT EXISTS expenses_payment_reference_idx ON expenses (club_id, payment_reference) WHERE payment_reference IS NOT NULL"],
+    ["sessions", ["expires_at"], "CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions (expires_at)"],
+    ["outbox_messages", ["club_id", "created_at"], "CREATE INDEX IF NOT EXISTS outbox_messages_club_created_idx ON outbox_messages (club_id, created_at)"],
+    ["audit_events", ["club_id", "occurred_at"], "CREATE INDEX IF NOT EXISTS audit_events_club_time_idx ON audit_events (club_id, occurred_at)"],
+  ];
+  for (const [table, columns, sql] of indexes) {
+    if (hasTable(db, table) && columns.every((column) => hasColumn(db, table, column))) db.exec(sql);
   }
 }

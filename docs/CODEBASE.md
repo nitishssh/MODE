@@ -2,7 +2,7 @@
 
 This guide documents the pushed `main` snapshot of [nitishssh/MODE](https://github.com/nitishssh/MODE/tree/a62c6e27724eccfafe54f3d85c9ddf066fb7c033), commit `a62c6e27724eccfafe54f3d85c9ddf066fb7c033`, fetched on 10 October 2026. It covers the whole tracked application at that commit, including its web UI, APIs, persistence, configuration and tests. Other branches and unmerged work are outside this snapshot. Source links are pinned to this commit.
 
-This is a historical reference: the snapshot predates the Expo client and schema 12 now on `main`. Use the pinned source links or the fresh-checkout instructions below to reproduce it. For current setup and feature status, use the [root README](../README.md) and [client README](../client/README.md).
+This is a historical reference: the snapshot predates the Expo client and schema 13. Use the pinned source links or the fresh-checkout instructions below to reproduce it. For current setup and feature status, use the [root README](../README.md) and [client README](../client/README.md).
 
 ## Reading guide
 

@@ -13,13 +13,21 @@
     "start:lan": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "test:postgres": "tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:foundation": "node scripts/check-foundation.mjs",
     "check:contracts": "tsx scripts/check-contract-docs.ts",
+    "schema:dump": "tsx scripts/dump-schema.ts",
+    "schema:check": "tsx scripts/dump-schema.ts --check",
+    "postgres:export": "tsx scripts/export-postgres.ts",
+    "postgres:push": "tsx scripts/export-postgres.ts --replace --push",
+    "postgres:up": "docker compose -f docker-compose.postgres.yml up -d --wait",
+    "postgres:down": "docker compose -f docker-compose.postgres.yml down",
+    "db:purge": "tsx scripts/purge.ts",
     "sync:contracts": "node scripts/sync-contracts.mjs",
     "check:client-contracts": "node scripts/sync-contracts.mjs --check",
     "build:client": "npm run check:client-contracts && npm --prefix client run export:web && node scripts/stage-expo-web.mjs",
     "test:expo-web": "node scripts/check-expo-web.mjs",
-    "check": "npm run typecheck && npm run check:contracts && npm test && npm run build"
+    "check": "npm run typecheck && npm run check:contracts && npm run schema:check && npm test && npm run build"
   },
   "dependencies": {
     "@number-flow/react": "^0.6.2",
@@ -27,6 +35,7 @@
     "gsap": "^3.15.0",
     "motion": "^14.1.0",
     "next": "16.4.0",
+    "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -35,6 +44,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

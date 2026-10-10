@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { DEFAULT_CLUB_ID } from "../src/lib/db/migrations";
 import { test } from "node:test";
 import { fork } from "node:child_process";
 import { once } from "node:events";
@@ -15,7 +16,7 @@ import { GET as download } from "../src/app/api/receipts/[id]/route";
 import { POST as submit } from "../src/app/api/expenses/route";
 import { GET as csv } from "../src/app/api/ledger/export.csv/route";
 import { GET as source } from "../src/app/api/ledger/entries/[id]/source/route";
-import { DEMO, FIXED_NOW, actorFor, apiRequest, loginCookie, receiptFor, routeParams, withRouteDatabase } from "./helpers";
+import { DEMO, FIXED_NOW, actorFor, apiRequest, loginCookie, receiptFor, routeParams, withRouteDatabase, TEST_DATABASE_URL } from "./helpers";
 
 async function sendFile(cookie: string, bytes: Uint8Array, name = "receipt.exe", mime = "application/octet-stream") {
   const form = new FormData();
@@ -36,14 +37,14 @@ test("expense submission retry preserves the original claim before and after pay
     assert.equal(first.id, input.submissionId);
     assert.deepEqual(await (await send(input)).json(), first);
     db.approveExpense(reviewer, first.id); db.payExpense(reviewer, first.id, "RETRY-PAY");
-    const balance = db.ledger.balance(); const replay = await send(input); assert.equal(replay.status, 201);
+    const balance = db.ledger.balance(DEFAULT_CLUB_ID); const replay = await send(input); assert.equal(replay.status, 201);
     assert.equal((await replay.json()).status, "paid");
     for (const change of [{ amountPaise: 1235 }, { purpose: "Other reimbursement" }, { receiptReference: "OTHER" }, { eventId: "8d83cb21-a765-47d5-80bc-8eebec188520" }, { receiptId: "7f744bc5-68c0-4a01-85c3-845b6d676699" }]) assert.equal((await send({ ...input, ...change })).status, 409);
     assert.equal((await send(input, otherCookie)).status, 409);
     assert.equal((await send({ ...input, submissionId: "not-a-uuid" })).status, 400);
     assert.equal(db.getExpenses(member).filter(expense => expense.id === first.id).length, 1);
     assert.equal(db.getExpenses(member).length, claimsBefore + 1);
-    assert.equal(db.ledger.balance(), balance); assert.equal(db.ledger.list().filter(entry => entry.sourceId === first.id).length, 1);
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), balance); assert.equal(db.ledger.list(DEFAULT_CLUB_ID).filter(entry => entry.sourceId === first.id).length, 1);
   });
 });
 
@@ -54,7 +55,7 @@ test("simultaneous reimbursement confirmations on separate connections post once
   const member = actorFor(db, "active@example.com"), admin = actorFor(db, DEMO.admin);
   const claim = db.submitExpense(member, { receiptId: receiptFor(db, member), amountPaise: 12345, purpose: "Concurrent payment" });
   db.approveExpense(admin, claim.id);
-  const before = db.ledger.balance();
+  const before = db.ledger.balance(DEFAULT_CLUB_ID);
   const workers = [DEMO.admin, DEMO.treasurer].map(email => fork(
     fileURLToPath(new URL("./fixtures/reservation-worker.ts", import.meta.url)), [path, "expense", claim.id, email],
     { execArgv: ["--import", "tsx"], stdio: ["ignore", "ignore", "pipe", "ipc"] },
@@ -73,8 +74,8 @@ test("simultaneous reimbursement confirmations on separate connections post once
       });
     })));
     assert.deepEqual(results, ["reserved", "reserved"], "same reference succeeds as an idempotent retry");
-    assert.equal(db.ledger.balance(), before - 12345);
-    assert.equal(db.ledger.list().filter(e => e.sourceId === claim.id).length, 1);
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before - 12345);
+    assert.equal(db.ledger.list(DEFAULT_CLUB_ID).filter(e => e.sourceId === claim.id).length, 1);
     assert.deepEqual(db.ledger.reconcile().duplicates, []);
   } finally {
     for (const worker of workers) if (worker.exitCode === null) worker.kill();
@@ -141,9 +142,10 @@ test("v9 upgrade preserves extensionless receipts, IDs, ownership, claims and se
     const member = actorFor(db, "active@example.com"), payer = actorFor(db, DEMO.treasurer);
     const receiptId = receiptFor(db, member), contents = db.getReceiptFile(member, receiptId);
     const claim = db.submitExpense(member, { receiptId, amountPaise: 235, purpose: "Legacy invoice" });
-    const linkedClaim = db.submitExpense(member, { receiptId, amountPaise: 300, purpose: "Legacy linked claim" });
+    const linkedReceiptId = receiptFor(db, member);
+    const linkedClaim = db.submitExpense(member, { receiptId: linkedReceiptId, amountPaise: 300, purpose: "Legacy linked claim" });
     db.approveExpense(payer, claim.id); db.payExpense(payer, claim.id, "LEGACY-PAID");
-    const balance = db.ledger.balance();
+    const balance = db.ledger.balance(DEFAULT_CLUB_ID);
     db.close();
     renameSync(join(receipts, receiptId + ".pdf"), join(receipts, receiptId));
     const raw = new DatabaseSync(path);
@@ -161,18 +163,18 @@ test("v9 upgrade preserves extensionless receipts, IDs, ownership, claims and se
       assert.equal(db.getReceiptById(member, receiptId).uploaderId, member.memberId);
       assert.equal(db.getExpenseById(member, claim.id).status, "paid");
       assert.equal(db.getExpenseById(member, claim.id).receiptId, null, "history is preserved");
-      assert.equal(db.getExpenseById(member, linkedClaim.id).receiptId, receiptId, "existing claim links survive table rename");
-      assert.equal(db.ledger.balance(), balance);
+      assert.equal(db.getExpenseById(member, linkedClaim.id).receiptId, linkedReceiptId, "existing claim links survive table rename");
+      assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), balance);
       const check = new DatabaseSync(path);
       assert.deepEqual(check.prepare("PRAGMA foreign_key_check").all(), []);
       check.close();
       db.close();
     }
-    assert.deepEqual(readdirSync(receipts), [receiptId], "upgrade never moves or duplicates a legacy file");
+    assert.deepEqual(readdirSync(receipts).sort(), [receiptId, linkedReceiptId + ".pdf"].sort(), "upgrade never moves or duplicates a legacy file");
   } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("receipt insert failure removes its new file and leaves no metadata", async () => {
+test("receipt insert failure removes its new file and leaves no metadata", { skip: TEST_DATABASE_URL ? "edits the SQLite file directly" : false }, async () => {
   await withRouteDatabase(async () => {
     const db = getDatabase(), actor = actorFor(db, "active@example.com");
     const raw = new DatabaseSync(process.env.SQLITE_PATH!);
@@ -207,7 +209,7 @@ test("canonical CSV and source links retain exact IDs, officer names, escaped ce
     const receiptId = receiptFor(db, member);
     const purposes = ['=SUM(1,2) "test"', "+plus", "-minus", "@command", 'Text, with\n"quotes"'];
     for (const purpose of purposes) {
-      const expense = db.submitExpense(member, { amountPaise: 175, purpose, receiptId });
+      const expense = db.submitExpense(member, { amountPaise: 175, purpose, receiptId: receiptFor(db, member) });
       db.approveExpense(admin, expense.id); db.payExpense(admin, expense.id, "CSV-" + expense.id);
     }
     const dues = db.dues.recordDues(admin, { memberId: member.memberId, reference: "DUES-CSV" });

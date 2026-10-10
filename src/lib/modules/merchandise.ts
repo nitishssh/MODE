@@ -14,6 +14,8 @@ export const ORDER_HOLD_MINUTES = 30;
 export const ORDER_HOLD_MS = ORDER_HOLD_MINUTES * 60_000;
 /** A member may hold at most this many unpaid units of one size at a time. */
 export const MAX_PENDING_UNITS_PER_VARIANT = 2;
+/** …and at most this many unpaid units across every size and product (audit #21). */
+export const MAX_PENDING_UNITS_PER_MEMBER = 6;
 
 const variantSchema = z.object({ size: z.string().trim().min(1).max(20), stock: z.number().int().min(0).max(100_000) }).strict();
 export const createProductSchema = z
@@ -175,6 +177,13 @@ export function createMerchandiseModule(ctx: DbContext, identity: IdentityModule
     return released;
   }
 
+  /** Reads call this instead of opening a write transaction: the write lock is taken only when a hold has actually lapsed (audit #13). */
+  function releaseIfLapsed(): number {
+    const lapsed = db.prepare("SELECT 1 FROM merch_orders WHERE status = 'pending_payment' AND hold_expires_at <= ? LIMIT 1").get(ctx.now().toISOString());
+    if (!lapsed) return 0;
+    return transaction(ctx, () => releaseExpiredHolds());
+  }
+
   // ----- orders -------------------------------------------------------------
 
   function requireOrder(clubId: string, orderId: string): MerchOrder {
@@ -203,6 +212,12 @@ export function createMerchandiseModule(ctx: DbContext, identity: IdentityModule
       );
       if (pending + data.quantity > MAX_PENDING_UNITS_PER_VARIANT) {
         throw new ConflictError(`You already hold ${pending} unpaid unit(s) of this size; pay or cancel before ordering more.`, "pending_limit");
+      }
+      const pendingTotal = int(
+        (db.prepare("SELECT COALESCE(SUM(quantity), 0) AS units FROM merch_orders WHERE member_id = ? AND status = 'pending_payment'").get(actor.memberId) as Row).units,
+      );
+      if (pendingTotal + data.quantity > MAX_PENDING_UNITS_PER_MEMBER) {
+        throw new ConflictError(`You already hold ${pendingTotal} unpaid unit(s) in total; pay or cancel before ordering more.`, "pending_limit");
       }
       if (int(variant.stock) === 0) throw new ConflictError(`Size ${text(variant.size)} is out of stock.`, "out_of_stock");
       const taken = db.prepare("UPDATE product_variants SET stock = stock - ? WHERE id = ? AND stock >= ?").run(data.quantity, data.variantId, data.quantity);
@@ -241,16 +256,23 @@ export function createMerchandiseModule(ctx: DbContext, identity: IdentityModule
   function confirmOrder(actor: Actor, orderId: string, input: z.input<typeof confirmOrderSchema>): { order: MerchOrder; created: boolean } {
     assertPermission(actor, "payments:confirm");
     const data = parseInput(confirmOrderSchema, input);
+    const before = requireOrder(actor.clubId, orderId);
+    releaseIfLapsed(); // its own transaction, so a conflict below cannot roll the release back (audit #24)
     return transaction(ctx, () => {
-      const before = requireOrder(actor.clubId, orderId);
-      releaseExpiredHolds();
       const nowIso = ctx.now().toISOString();
+      // One external payment pays for one order (audit #3); the UNIQUE index is the backstop.
+      if (db.prepare("SELECT 1 FROM merch_orders WHERE club_id = ? AND payment_reference = ? AND id <> ?").get(actor.clubId, data.reference, orderId)) {
+        throw new ConflictError("This payment reference is already recorded against another order.", "payment_reference_reused");
+      }
       const moved = db
         .prepare("UPDATE merch_orders SET status = 'paid', paid_at = ?, payment_reference = ?, confirmed_by = ?, hold_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'pending_payment'")
         .run(nowIso, data.reference, actor.memberId, nowIso, orderId);
       if (Number(moved.changes) === 0) {
         const fresh = requireOrder(actor.clubId, orderId);
-        if (fresh.status === "paid" || fresh.status === "fulfilled") return { order: fresh, created: false };
+        if (fresh.status === "paid" || fresh.status === "fulfilled") {
+          if (fresh.paymentReference !== data.reference) throw new ConflictError("This order was already confirmed with a different payment reference.", "payment_reference_mismatch");
+          return { order: fresh, created: false };
+        }
         throw new ConflictError("Hold expired, reorder", "hold_expired");
       }
       postLedgerEntry(ctx, {
@@ -305,22 +327,18 @@ export function createMerchandiseModule(ctx: DbContext, identity: IdentityModule
   // ----- reads --------------------------------------------------------------
 
   function myOrders(actor: Actor): MerchOrder[] {
-    return transaction(ctx, () => {
-      releaseExpiredHolds();
-      return (db.prepare(`${ORDER_SELECT} WHERE o.club_id = ? AND o.member_id = ? ORDER BY o.created_at DESC, o.id`).all(actor.clubId, actor.memberId) as Row[]).map(mapOrder);
-    });
+    releaseIfLapsed();
+    return (db.prepare(`${ORDER_SELECT} WHERE o.club_id = ? AND o.member_id = ? ORDER BY o.created_at DESC, o.id`).all(actor.clubId, actor.memberId) as Row[]).map(mapOrder);
   }
 
   /** Officer list; `status` narrows (pending holds for the confirmation desk, paid for hand-over). */
   function listOrders(actor: Actor, status?: MerchOrder["status"]): MerchOrder[] {
     if (!hasPermission(actor.role, "payments:confirm") && !hasPermission(actor.role, "orders:fulfil")) throw new ForbiddenError();
-    return transaction(ctx, () => {
-      releaseExpiredHolds();
-      const rows = status
-        ? db.prepare(`${ORDER_SELECT} WHERE o.club_id = ? AND o.status = ? ORDER BY o.hold_expires_at, o.created_at, o.id`).all(actor.clubId, status)
-        : db.prepare(`${ORDER_SELECT} WHERE o.club_id = ? ORDER BY o.created_at DESC, o.id`).all(actor.clubId);
-      return (rows as Row[]).map(mapOrder);
-    });
+    releaseIfLapsed();
+    const rows = status
+      ? db.prepare(`${ORDER_SELECT} WHERE o.club_id = ? AND o.status = ? ORDER BY o.hold_expires_at, o.created_at, o.id`).all(actor.clubId, status)
+      : db.prepare(`${ORDER_SELECT} WHERE o.club_id = ? ORDER BY o.created_at DESC, o.id`).all(actor.clubId);
+    return (rows as Row[]).map(mapOrder);
   }
 
   return {
@@ -330,6 +348,7 @@ export function createMerchandiseModule(ctx: DbContext, identity: IdentityModule
     setVariantStock,
     setProductActive,
     releaseExpiredHolds,
+    releaseIfLapsed,
     createOrder,
     confirmOrder,
     cancelOrder,

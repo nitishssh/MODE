@@ -2,6 +2,8 @@
 
 Source snapshot: `a62c6e27724eccfafe54f3d85c9ddf066fb7c033`, schema **11**, 10 October 2026. The column/DDL appendix below was obtained by opening a new isolated database through this snapshot's `openClubDatabase()`, then reading SQLite PRAGMA metadata. It does not inspect or publish the working demo database or live member records.
 
+The complete current DDL is generated into [schema.sql](schema.sql) by `npm run schema:dump`; `npm run check` fails when it is stale. The same command writes the PostgreSQL translation to [schema.postgres.sql](schema.postgres.sql); see [POSTGRESQL.md](POSTGRESQL.md) for the mapping rules, the export/load tooling and the runtime migration plan, and [DB-AUDIT.md](DB-AUDIT.md) for the audited gaps in this schema.
+
 See [Architecture](CODEBASE.md), [HTTP API](HTTP-API.md), [code reference](CODE-REFERENCE.md) and [setup/backup instructions](DEVELOPMENT.md).
 
 ## Connection and storage
@@ -23,6 +25,8 @@ Writes use synchronous `BEGIN IMMEDIATE` transactions, with savepoints for nesti
 | 9 | Workspace tasks, receipts, expenses, ledger club/event attribution and event fundraiser goals |
 | 10 | Rename receipts to expense_receipts and preserve legacy UUID filenames in storage_name |
 | 11 | Announcement club/author/retry/audience fields and notification/outbox announcement links |
+| 12 | Legacy workspace normalisation and historical ledger imports |
+| 13 | Hardening ([DB-AUDIT.md](DB-AUDIT.md)): `club_id` foreign keys on six tables (SQLite table rebuild), receipt and payment-reference uniqueness, `events.seeded_registrations`, `clubs.require_separate_payer`, `login_attempts`, reminders primary key, purge/throttle indexes |
 
 Versions 5 and 7 are historical gaps; do not reuse them. Append migrations above the latest released version. v10 does not move/delete old receipt files; new uploads use UUID plus detected extension, while legacy extensionless/WebP downloads remain supported.
 

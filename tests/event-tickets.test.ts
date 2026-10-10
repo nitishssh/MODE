@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { DEFAULT_CLUB_ID } from "../src/lib/db/migrations";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -94,7 +95,7 @@ test("holds expire after 30 minutes and return the seat once; stale confirmation
     const organizer = actorFor(db, DEMO.organizer);
     const treasurer = actorFor(db, DEMO.treasurer);
     const event = db.events.createEvent(organizer, { ...EVENT, capacity: 2 });
-    const before = db.ledger.balance();
+    const before = db.ledger.balance(DEFAULT_CLUB_ID);
 
     const stale = db.events.bookTicket(actorFor(db, ACTIVE), event.id);
     assert.throws(() => db.events.confirmTicket(actorFor(db, DEMO.volunteer), stale.id, { reference: "CASH-1" }), ForbiddenError);
@@ -104,7 +105,7 @@ test("holds expire after 30 minutes and return the seat once; stale confirmation
     assert.deepEqual(db.events.pendingHolds(treasurer, event.id), [], "released at the boundary");
     assert.equal(db.events.requireEvent(organizer.clubId, event.id).available, 2, "seat returned");
     assert.throws(() => db.events.confirmTicket(treasurer, stale.id, { reference: "CASH-1" }), (e: unknown) => e instanceof ConflictError && e.code === "hold_expired" && e.message === "Hold expired, rebook");
-    assert.equal(db.ledger.balance(), before, "no income for an expired hold");
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before, "no income for an expired hold");
     assert.equal(db.events.myTickets(actorFor(db, ACTIVE)).find((t) => t.id === stale.id)?.status, "expired");
 
     // Rebooking after expiry gets a fresh hold and a fresh token.
@@ -113,14 +114,15 @@ test("holds expire after 30 minutes and return the seat once; stale confirmation
     assert.notEqual(fresh.qrToken, stale.qrToken);
     const confirmed = db.events.confirmTicket(treasurer, fresh.id, { reference: "CASH-2" });
     assert.deepEqual([confirmed.created, confirmed.ticket.status, confirmed.ticket.confirmedBy, confirmed.ticket.paymentReference], [true, "paid", treasurer.memberId, "CASH-2"]);
-    assert.equal(db.ledger.balance(), before + 5000);
-    const entry = db.ledger.list().find((e) => e.sourceType === "ticket" && e.sourceId === fresh.id)!;
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before + 5000);
+    const entry = db.ledger.list(DEFAULT_CLUB_ID).find((e) => e.sourceType === "ticket" && e.sourceId === fresh.id)!;
     assert.deepEqual([entry.kind, entry.amountPaise, entry.recordedBy], ["income", 5000, treasurer.memberId]);
 
-    const again = db.events.confirmTicket(organizer, fresh.id, { reference: "CASH-3" });
+    const again = db.events.confirmTicket(organizer, fresh.id, { reference: "CASH-2" });
     assert.deepEqual([again.created, again.ticket.paymentReference], [false, "CASH-2"], "duplicate confirmation returns the original, posts nothing");
-    assert.equal(db.ledger.balance(), before + 5000);
-    assert.equal(db.ledger.list().filter((e) => e.sourceId === fresh.id).length, 1);
+    assert.throws(() => db.events.confirmTicket(organizer, fresh.id, { reference: "CASH-3" }), (e: unknown) => e instanceof ConflictError && e.code === "payment_reference_mismatch", "a different reference is a disagreement, not a replay");
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before + 5000);
+    assert.equal(db.ledger.list(DEFAULT_CLUB_ID).filter((e) => e.sourceId === fresh.id).length, 1);
     assert.throws(() => db.events.cancelTicket(organizer, fresh.id), (e: unknown) => e instanceof ConflictError && e.code === "refunds_out_of_scope");
 
     // Cancellation: owner for their own pending hold, officer for anyone; repeat is a no-op; seat returned exactly once.

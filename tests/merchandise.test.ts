@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { DEFAULT_CLUB_ID } from "../src/lib/db/migrations";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -89,7 +90,7 @@ test("holds expire after 30 minutes and return stock once; stale and duplicate c
     const treasurer = actorFor(db, DEMO.treasurer);
     const product = db.merchandise.createProduct(organizer, { name: "Tee", pricePaise: 34900, memberPricePaise: 29900, variants: [{ size: "S", stock: 2 }] });
     const variantId = product.variants[0].id;
-    const before = db.ledger.balance();
+    const before = db.ledger.balance(DEFAULT_CLUB_ID);
 
     const stale = db.merchandise.createOrder(actorFor(db, ACTIVE), { variantId, quantity: 2 });
     assert.equal(db.merchandise.requireProduct(organizer.clubId, product.id).stock, 0);
@@ -100,7 +101,7 @@ test("holds expire after 30 minutes and return stock once; stale and duplicate c
     assert.deepEqual(db.merchandise.listOrders(treasurer, "pending_payment"), []);
     assert.equal(db.merchandise.requireProduct(organizer.clubId, product.id).stock, 2, "both units returned");
     assert.throws(() => db.merchandise.confirmOrder(treasurer, stale.id, { reference: "CASH-1" }), (e: unknown) => e instanceof ConflictError && e.code === "hold_expired" && e.message === "Hold expired, reorder");
-    assert.equal(db.ledger.balance(), before, "no income for an expired hold");
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before, "no income for an expired hold");
     assert.equal(db.merchandise.myOrders(actorFor(db, ACTIVE))[0].status, "expired");
     assert.throws(() => db.merchandise.cancelOrder(actorFor(db, ACTIVE), stale.id), (e: unknown) => e instanceof ConflictError && e.code === "hold_expired");
     assert.equal(db.merchandise.requireProduct(organizer.clubId, product.id).stock, 2, "expired hold cannot return stock a second time");
@@ -109,20 +110,21 @@ test("holds expire after 30 minutes and return stock once; stale and duplicate c
     assert.throws(() => db.merchandise.fulfilOrder(organizer, fresh.id), (e: unknown) => e instanceof ConflictError && e.code === "order_not_paid");
     const confirmed = db.merchandise.confirmOrder(treasurer, fresh.id, { reference: "UPI-2" });
     assert.deepEqual([confirmed.created, confirmed.order.status, confirmed.order.confirmedBy, confirmed.order.holdExpiresAt], [true, "paid", treasurer.memberId, null]);
-    assert.equal(db.ledger.balance(), before + 29900);
-    const entry = db.ledger.list().find((e) => e.sourceType === "merch_order" && e.sourceId === fresh.id)!;
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before + 29900);
+    const entry = db.ledger.list(DEFAULT_CLUB_ID).find((e) => e.sourceType === "merch_order" && e.sourceId === fresh.id)!;
     assert.deepEqual([entry.amountPaise, entry.recordedBy], [29900, treasurer.memberId]);
-    const again = db.merchandise.confirmOrder(organizer, fresh.id, { reference: "UPI-3" });
+    const again = db.merchandise.confirmOrder(organizer, fresh.id, { reference: "UPI-2" });
     assert.deepEqual([again.created, again.order.paymentReference], [false, "UPI-2"]);
-    assert.equal(db.ledger.list().filter((e) => e.sourceId === fresh.id).length, 1, "one ledger row per paid order");
+    assert.throws(() => db.merchandise.confirmOrder(organizer, fresh.id, { reference: "UPI-3" }), (e: unknown) => e instanceof ConflictError && e.code === "payment_reference_mismatch");
+    assert.equal(db.ledger.list(DEFAULT_CLUB_ID).filter((e) => e.sourceId === fresh.id).length, 1, "one ledger row per paid order");
     assert.throws(() => db.merchandise.cancelOrder(organizer, fresh.id), (e: unknown) => e instanceof ConflictError && e.code === "refunds_out_of_scope");
 
     assert.throws(() => db.merchandise.fulfilOrder(treasurer, fresh.id), ForbiddenError, "treasurer lacks orders:fulfil");
     const handed = db.merchandise.fulfilOrder(organizer, fresh.id);
     assert.deepEqual([handed.status, handed.fulfilledBy], ["fulfilled", organizer.memberId]);
     assert.equal(db.merchandise.fulfilOrder(organizer, fresh.id).fulfilledAt, handed.fulfilledAt, "repeat fulfilment is a no-op");
-    assert.equal(db.merchandise.confirmOrder(organizer, fresh.id, { reference: "UPI-4" }).created, false, "fulfilled orders stay paid");
-    assert.equal(db.ledger.balance(), before + 29900);
+    assert.equal(db.merchandise.confirmOrder(organizer, fresh.id, { reference: "UPI-2" }).created, false, "fulfilled orders stay paid");
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before + 29900);
 
     // Owner / officer cancellation and repeat cancellation return stock exactly once.
     const other = db.merchandise.createOrder(actorFor(db, EXPIRED), { variantId });
@@ -139,7 +141,7 @@ test("holds expire after 30 minutes and return stock once; stale and duplicate c
     const free = db.merchandise.createProduct(organizer, { name: "Sticker", pricePaise: 0, variants: [{ size: "ONE SIZE", stock: 5 }] });
     const sticker = db.merchandise.createOrder(actorFor(db, ACTIVE), { variantId: free.variants[0].id });
     assert.deepEqual([sticker.status, sticker.holdExpiresAt], ["paid", null], "free items are paid at order time and post no ledger row");
-    assert.equal(db.ledger.balance(), before + 29900);
+    assert.equal(db.ledger.balance(DEFAULT_CLUB_ID), before + 29900);
   } finally {
     db.close();
   }

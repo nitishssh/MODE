@@ -12,6 +12,7 @@ import {
 } from "../db/migrations";
 import {
   SQLITE_CONSTRAINT_UNIQUE,
+  int,
   isConstraintError,
   nullableText,
   text,
@@ -24,9 +25,16 @@ import {
   DuplicateMemberError,
   ForbiddenError,
   NotFoundError,
+  TooManyAttemptsError,
   UnauthorizedError,
   ValidationError,
 } from "../errors";
+
+/** Login throttling (audit #10): this many consecutive failures per email lock the account for the window. */
+export const LOGIN_MAX_FAILURES = 5;
+export const LOGIN_LOCKOUT_MS = 15 * 60_000;
+/** Simulated outbox rows older than this are purged. */
+export const OUTBOX_RETENTION_DAYS = 90;
 import { createMemberSchema } from "../member-validation";
 
 /** The authenticated caller. Every module scopes its queries to `clubId`. */
@@ -55,6 +63,9 @@ export const loginSchema = z
   .object({ email: z.string().trim().max(254).toLowerCase(), password: z.string().min(1).max(200) })
   .strict();
 export const roleSchema = z.object({ role: z.enum(ROLES) }).strict();
+export const changePasswordSchema = z
+  .object({ currentPassword: z.string().min(1).max(200), newPassword: passwordSchema })
+  .strict();
 
 export function mapMember(row: Row, date: string = clubDate(new Date())): Member {
   const expiresOn = nullableText(row.expires_on);
@@ -136,7 +147,12 @@ export function createIdentityModule(ctx: DbContext) {
     return member;
   }
 
-  const tokenExists = db.prepare("SELECT 1 FROM members WHERE qr_token = ? OR short_code = ?");
+  // A member pass must not collide with a ticket pass either: the scanner resolves tickets first (audit #15).
+  const tokenExists = {
+    get: (qrToken: string, shortCode: string) =>
+      db.prepare("SELECT 1 FROM members WHERE qr_token = ? OR short_code = ?").get(qrToken, shortCode) ??
+      db.prepare("SELECT 1 FROM tickets WHERE qr_token = ? OR short_code = ?").get(qrToken, shortCode),
+  };
 
   /** The member's own pass: QR token plus typed fallback and today's membership state. */
   function getPass(memberId: string) {
@@ -189,14 +205,65 @@ export function createIdentityModule(ctx: DbContext) {
     });
   }
 
+  function recordLoginFailure(email: string): void {
+    transaction(ctx, () => {
+      const now = ctx.now();
+      const previous = db.prepare("SELECT failures FROM login_attempts WHERE email = ?").get(email) as Row | undefined;
+      const failures = int(previous?.failures ?? 0) + 1;
+      const lock = failures >= LOGIN_MAX_FAILURES;
+      db.prepare(
+        "INSERT INTO login_attempts (email, failures, locked_until, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (email) DO UPDATE SET failures = excluded.failures, locked_until = excluded.locked_until, updated_at = excluded.updated_at",
+      ).run(email, lock ? 0 : failures, lock ? new Date(now.getTime() + LOGIN_LOCKOUT_MS).toISOString() : null, now.toISOString());
+    });
+  }
+
   function login(input: { email: string; password: string }): IssuedSession {
     const parsed = loginSchema.parse(input);
+    const nowIso = ctx.now().toISOString();
+    const attempt = db.prepare("SELECT locked_until FROM login_attempts WHERE email = ?").get(parsed.email) as Row | undefined;
+    const lockedUntil = nullableText(attempt?.locked_until ?? null);
+    if (lockedUntil && lockedUntil > nowIso) throw new TooManyAttemptsError(lockedUntil);
     const row = db.prepare("SELECT * FROM members WHERE email = ?").get(parsed.email) as Row | undefined;
-    // Same error for unknown email and wrong password.
+    // Same error for unknown email and wrong password; both count towards the lockout.
     if (!row || !verifyPassword(parsed.password, nullableText(row.password_hash))) {
+      recordLoginFailure(parsed.email);
       throw new UnauthorizedError("Incorrect email or password.");
     }
-    return transaction(ctx, () => issueSession(mapMember(row), text(row.club_id)));
+    return transaction(ctx, () => {
+      db.prepare("DELETE FROM login_attempts WHERE email = ?").run(parsed.email);
+      return issueSession(mapMember(row), text(row.club_id));
+    });
+  }
+
+  function revokeSessions(memberId: string, exceptSessionId?: string): number {
+    const nowIso = ctx.now().toISOString();
+    return exceptSessionId
+      ? Number(db.prepare("UPDATE sessions SET revoked_at = ? WHERE member_id = ? AND revoked_at IS NULL AND id <> ?").run(nowIso, memberId, exceptSessionId).changes)
+      : Number(db.prepare("UPDATE sessions SET revoked_at = ? WHERE member_id = ? AND revoked_at IS NULL").run(nowIso, memberId).changes);
+  }
+
+  /** Self-service password change (audit #9): proves the current password, keeps this session, signs out every other one. */
+  function changePassword(actor: Actor, input: { currentPassword: string; newPassword: string }): { revokedSessions: number } {
+    const parsed = changePasswordSchema.parse(input);
+    const row = db.prepare("SELECT password_hash FROM members WHERE id = ?").get(actor.memberId) as Row | undefined;
+    if (!row || !verifyPassword(parsed.currentPassword, nullableText(row.password_hash))) throw new UnauthorizedError("The current password is incorrect.");
+    return transaction(ctx, () => {
+      db.prepare("UPDATE members SET password_hash = ? WHERE id = ?").run(hashPassword(parsed.newPassword), actor.memberId);
+      const revokedSessions = revokeSessions(actor.memberId, actor.sessionId);
+      recordAudit(actor, "member.password_changed", "member", actor.memberId, { revokedSessions });
+      return { revokedSessions };
+    });
+  }
+
+  /** Maintenance (audit #12): expired/revoked sessions, stale login counters and old simulated outbox rows. */
+  function purge(): { sessions: number; loginAttempts: number; outbox: number } {
+    const now = ctx.now();
+    const nowIso = now.toISOString();
+    return transaction(ctx, () => ({
+      sessions: Number(db.prepare("DELETE FROM sessions WHERE expires_at <= ? OR revoked_at IS NOT NULL").run(nowIso).changes),
+      loginAttempts: Number(db.prepare("DELETE FROM login_attempts WHERE (locked_until IS NULL OR locked_until <= ?) AND updated_at <= ?").run(nowIso, new Date(now.getTime() - LOGIN_LOCKOUT_MS).toISOString()).changes),
+      outbox: Number(db.prepare("DELETE FROM outbox_messages WHERE status = 'simulated' AND created_at <= ?").run(new Date(now.getTime() - OUTBOX_RETENTION_DAYS * 86_400_000).toISOString()).changes),
+    }));
   }
 
   function logout(token: string | null): void {
@@ -270,7 +337,9 @@ export function createIdentityModule(ctx: DbContext) {
     transaction(ctx, () => {
       requireMember(actor.clubId, memberId);
       db.prepare("UPDATE members SET password_hash = ? WHERE id = ? AND club_id = ?").run(hashPassword(password), memberId, actor.clubId);
-      recordAudit(actor, "member.password_set", "member", memberId);
+      // A reset credential signs the member out everywhere (audit #8).
+      const revokedSessions = revokeSessions(memberId);
+      recordAudit(actor, "member.password_set", "member", memberId, { revokedSessions });
     });
   }
 
@@ -318,6 +387,8 @@ export function createIdentityModule(ctx: DbContext) {
     createMemberWithCredentials,
     register,
     login,
+    changePassword,
+    purge,
     logout,
     getActor,
     setRole,
