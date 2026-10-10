@@ -33,6 +33,10 @@ export function migrate(db: DatabaseSync, now: Date): void {
   try {
     const current = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
     if (current > SCHEMA_VERSION) throw new Error("Database schema is newer than this application supports.");
+    // The older workflow delivery also used version 2, before identity was
+    // introduced. Its tables are compatible, but it lacks the identity columns
+    // required by v3+. Upgrade that known legacy shape in place first.
+    if (current === 2 && !hasColumn(db, "members", "club_id")) addIdentityAndRoles(db, now);
     for (const migration of MIGRATIONS) {
       if (migration.version <= current) continue;
       migration.up(db, now);
@@ -43,6 +47,18 @@ export function migrate(db: DatabaseSync, now: Date): void {
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((entry) => entry.name === column);
+}
+
+function hasTable(db: DatabaseSync, table: string): boolean {
+  return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== undefined;
+}
+
+function addColumnIfMissing(db: DatabaseSync, table: string, column: string, definition: string): void {
+  if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -347,53 +363,42 @@ function addEventTickets(db: DatabaseSync) {
 
 // v9 — tasks, receipts and expenses; follows released merchandise schema v8.
 function addWorkspaceFlows(db: DatabaseSync, now: Date) {
-  db.exec(`
-    ALTER TABLE transactions ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
-    ALTER TABLE transactions ADD COLUMN event_id TEXT REFERENCES events(id);
-    ALTER TABLE events ADD COLUMN fundraiser_goal_paise INTEGER NOT NULL DEFAULT 0
-      CHECK (fundraiser_goal_paise >= 0);
-    ALTER TABLE tasks ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
-    ALTER TABLE tasks ADD COLUMN description TEXT;
-    ALTER TABLE tasks ADD COLUMN assignee_id TEXT REFERENCES members(id) ON DELETE SET NULL;
-    ALTER TABLE tasks ADD COLUMN event_id TEXT REFERENCES events(id) ON DELETE SET NULL;
-    ALTER TABLE tasks ADD COLUMN due_at TEXT;
-    ALTER TABLE tasks ADD COLUMN created_at TEXT;
-    UPDATE tasks
-       SET assignee_id = (SELECT id FROM members WHERE members.name = tasks.assignee LIMIT 1),
-           created_at = NULL;
-    CREATE INDEX tasks_club_idx ON tasks (club_id, created_at);
-
+  addColumnIfMissing(db, "transactions", "club_id", `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`);
+  addColumnIfMissing(db, "transactions", "event_id", "event_id TEXT REFERENCES events(id)");
+  addColumnIfMissing(db, "events", "fundraiser_goal_paise", "fundraiser_goal_paise INTEGER NOT NULL DEFAULT 0 CHECK (fundraiser_goal_paise >= 0)");
+  addColumnIfMissing(db, "tasks", "club_id", `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`);
+  addColumnIfMissing(db, "tasks", "description", "description TEXT");
+  addColumnIfMissing(db, "tasks", "assignee_id", "assignee_id TEXT REFERENCES members(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "event_id", "event_id TEXT REFERENCES events(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "due_at", "due_at TEXT");
+  addColumnIfMissing(db, "tasks", "created_at", "created_at TEXT");
+  if (hasColumn(db, "tasks", "assignee")) {
+    db.exec("UPDATE tasks SET assignee_id = COALESCE(assignee_id, (SELECT id FROM members WHERE members.name = tasks.assignee LIMIT 1))");
+  }
+  if (!hasTable(db, "receipts")) db.exec(`
     CREATE TABLE receipts (
-      id TEXT PRIMARY KEY,
-      club_id TEXT NOT NULL REFERENCES clubs(id),
-      uploader_id TEXT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
-      filename TEXT NOT NULL,
-      mime_type TEXT NOT NULL,
-      size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
-      uploaded_at TEXT NOT NULL
-    );
-    CREATE INDEX receipts_owner_idx ON receipts (club_id, uploader_id);
-
+      id TEXT PRIMARY KEY, club_id TEXT NOT NULL REFERENCES clubs(id), uploader_id TEXT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+      filename TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL CHECK (size_bytes > 0), uploaded_at TEXT NOT NULL
+    )
+  `);
+  else addColumnIfMissing(db, "receipts", "club_id", `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`);
+  if (!hasTable(db, "expenses")) db.exec(`
     CREATE TABLE expenses (
-      id TEXT PRIMARY KEY,
-      club_id TEXT NOT NULL REFERENCES clubs(id),
-      submitter_id TEXT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
-      amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
-      purpose TEXT NOT NULL,
-      receipt_id TEXT REFERENCES receipts(id),
-      receipt_reference TEXT,
-      event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
-      status TEXT NOT NULL CHECK (status IN ('submitted', 'approved', 'rejected', 'paid'))
-        DEFAULT 'submitted',
-      reviewer_id TEXT REFERENCES members(id),
-      rejection_note TEXT,
-      payment_reference TEXT,
-      submitted_at TEXT NOT NULL,
-      reviewed_at TEXT,
-      paid_at TEXT
-    );
-    CREATE INDEX expenses_club_status_idx ON expenses (club_id, status, submitted_at);
-    CREATE INDEX expenses_submitter_idx ON expenses (club_id, submitter_id, submitted_at);
+      id TEXT PRIMARY KEY, club_id TEXT NOT NULL REFERENCES clubs(id), submitter_id TEXT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+      amount_paise INTEGER NOT NULL CHECK (amount_paise > 0), purpose TEXT NOT NULL, receipt_id TEXT REFERENCES receipts(id), receipt_reference TEXT,
+      event_id TEXT REFERENCES events(id) ON DELETE SET NULL, status TEXT NOT NULL CHECK (status IN ('submitted', 'approved', 'rejected', 'paid')) DEFAULT 'submitted',
+      reviewer_id TEXT REFERENCES members(id), rejection_note TEXT, payment_reference TEXT, submitted_at TEXT NOT NULL, reviewed_at TEXT, paid_at TEXT
+    )
+  `);
+  else {
+    addColumnIfMissing(db, "expenses", "club_id", `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`);
+    addColumnIfMissing(db, "expenses", "reviewer_id", "reviewer_id TEXT REFERENCES members(id)");
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS tasks_club_idx ON tasks (club_id, created_at);
+    CREATE INDEX IF NOT EXISTS receipts_owner_idx ON receipts (club_id, uploader_id);
+    CREATE INDEX IF NOT EXISTS expenses_club_status_idx ON expenses (club_id, status, submitted_at);
+    CREATE INDEX IF NOT EXISTS expenses_submitter_idx ON expenses (club_id, submitter_id, submitted_at);
   `);
   db.prepare("UPDATE tasks SET created_at = ? WHERE created_at IS NULL").run(now.toISOString());
   db.exec(`
