@@ -44,7 +44,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
       pricePaise: int(row.price_paise),
       stock: int(row.stock),
     }));
-    const tasks: Task[] = (db.prepare("SELECT * FROM tasks ORDER BY id").all() as Row[]).map((row) => ({
+    const tasks: Task[] = (db.prepare("SELECT * FROM tasks WHERE club_id = ? ORDER BY CASE status WHEN 'in_progress' THEN 0 WHEN 'todo' THEN 1 ELSE 2 END, COALESCE(due_at, '9999'), created_at, id").all(clubId) as Row[]).map((row) => ({
       id: text(row.id),
       title: text(row.title),
       assignee: text(row.assignee),

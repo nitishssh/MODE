@@ -11,6 +11,7 @@ import { createLedgerModule } from "./modules/ledger";
 import { createMembershipModule } from "./modules/membership";
 import { createMerchandiseModule } from "./modules/merchandise";
 import { createOutboxModule } from "./modules/outbox";
+import { createTasksModule } from "./modules/tasks";
 import { createTreasuryModule } from "./modules/treasury";
 
 export { DuplicateMemberError } from "./errors";
@@ -43,6 +44,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date; 
   const receiptDirectory = options.receiptDirectory ?? (path === ":memory:" ? resolve(".data", "receipts-memory") : join(dirname(path), "receipts"));
   const treasury = createTreasuryModule(ctx, identity, ledger, { receiptDirectory });
   const announcements = createAnnouncementsModule(ctx, identity, membership, outbox);
+  const tasks = createTasksModule(ctx, identity);
   let closed = false;
 
   return {
@@ -55,6 +57,7 @@ export function openClubDatabase(filename: string, options: { now?: () => Date; 
     merchandise,
     treasury,
     announcements,
+    tasks,
     health: () => {
       db.prepare("SELECT 1").get();
       return { status: "ok" as const, database: "sqlite" as const, schemaVersion: SCHEMA_VERSION };
