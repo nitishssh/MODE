@@ -102,7 +102,7 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
   function updateTaskStatus(actor: Actor, id: string, status: TaskDetails["status"]) {
     return transaction(ctx, () => {
       const task = getTaskById(actor, id);
-      if (!hasPermission(actor.role, "tasks:write") && task.assigneeId !== actor.memberId && actor.role !== "volunteer") throw new ForbiddenError();
+      if (!hasPermission(actor.role, "tasks:write") && task.assigneeId !== actor.memberId) throw new ForbiddenError();
       db.prepare("UPDATE tasks SET status = ? WHERE id = ? AND club_id = ?").run(status, id, actor.clubId);
       identity.recordAudit(actor, "task.status_updated", "task", id, { status });
       return getTaskById(actor, id);
@@ -121,8 +121,8 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     writeFileSync(join(receiptsDir, id), input.data, { flag: "wx" });
     try {
       return transaction(ctx, () => {
-        db.prepare("INSERT INTO receipts (id, club_id, uploader_id, filename, mime_type, size_bytes, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-          .run(id, actor.clubId, actor.memberId, input.filename, input.mimeType, input.sizeBytes, now().toISOString());
+        db.prepare("INSERT INTO receipts (id, club_id, uploader_id, uploader_name, filename, mime_type, size_bytes, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(id, actor.clubId, actor.memberId, actor.name, input.filename, input.mimeType, input.sizeBytes, now().toISOString());
         return getReceiptById(actor, id);
       });
     } catch (error) { unlinkSync(join(receiptsDir, id)); throw error; }

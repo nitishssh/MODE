@@ -47,6 +47,13 @@ test("tasks enforce club boundaries, assignment permissions and normalized deadl
     assert.equal(task.dueAt,"2026-10-10T08:30:00.000Z"); assert.equal(task.overdue,false);
     assert.equal(db.getTasks(volunteer,{mine:true}).some(t=>t.id===task.id),true);
     assert.throws(()=>db.updateTaskStatus(member,task.id,"done"),ForbiddenError);
+    const someoneElsesTask = db.createTask(organizer, { title: "Member's task", assigneeId: member.memberId });
+    const unassignedTask = db.createTask(organizer, { title: "Unassigned task" });
+    for (const otherTask of [someoneElsesTask, unassignedTask]) {
+      assert.throws(() => db.updateTaskStatus(volunteer, otherTask.id, "done"), ForbiddenError);
+      assert.equal(db.getTaskById(organizer, otherTask.id).status, "todo");
+    }
+    assert.equal(db.getDashboard(volunteer).tasks.find(row => row.id === task.id)?.assigneeId, volunteer.memberId);
     assert.equal(db.updateTaskStatus(volunteer,task.id,"done").status,"done");
     assert.throws(()=>db.patchTask(volunteer,task.id,{title:"Changed"}),ForbiddenError);
     const clubId=db.createClub("Other club");
@@ -128,14 +135,14 @@ test("schema v8 upgrades preserve members, passes, sessions, merchandise and ope
     db.merchandise.confirmOrder(other,order.id,{reference:"MIGRATED-MERCH"});
     const pass=db.getPass(session.member.id),balance=db.ledger.balance(),count=db.getMembers().length;
     db.close();
-    // Reconstruct the released v8 shape by removing only v9's additive schema.
+    // Reconstruct the released v8 shape by removing later additive schema.
     const raw=new DatabaseSync(path);
-    raw.exec("DROP TABLE expenses; DROP TABLE receipts; DROP INDEX tasks_club_idx;");
+    raw.exec("DROP TABLE legacy_ledger_imports; DROP TABLE expenses; DROP TABLE receipts; DROP INDEX tasks_club_idx;");
     for(const column of ["club_id","description","assignee_id","event_id","due_at","created_at"])raw.exec("ALTER TABLE tasks DROP COLUMN "+column);
     for(const column of ["club_id","event_id"])raw.exec("ALTER TABLE transactions DROP COLUMN "+column);
     raw.exec("ALTER TABLE events DROP COLUMN fundraiser_goal_paise; PRAGMA user_version=8;");raw.close();
     db=openClubDatabase(path,{now:()=>FIXED_NOW});
-    assert.equal(db.health().schemaVersion,9);assert.equal(db.getMembers().length,count);
+    assert.equal(db.health().schemaVersion,10);assert.equal(db.getMembers().length,count);
     assert.equal(db.ledger.balance(),balance);assert.deepEqual(db.getPass(session.member.id),pass);
     assert.equal(db.getActor(session.token)?.memberId,session.member.id);
     assert.equal(db.getTasks(db.getActor(session.token)!).length,3);

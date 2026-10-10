@@ -205,10 +205,16 @@ Payment and notification adapters must expose pending, succeeded and failed stat
 
 `MODE_DEMO_NOW=<ISO timestamp>` freezes the server clock so expiry, reminders and deadlines can be demonstrated deterministically. Tests use an injected clock instead of this variable.
 
-## Tasks, expenses and receipts (schema v9)
+## Tasks, expenses and receipts (schema v10)
 
 All endpoints below require a session. Cookie mutations also enforce same-origin requests; valid bearer sessions retain the native authentication contract.
 Identity and club scope come from the session, never from request-body member IDs.
+
+Dashboard `Task` now includes `assigneeId: string | null` so clients can show task actions using the same assignment rule as the server. A volunteer role alone does not authorize updates to another member's or an unassigned task. `AuthMeResponse` names the existing `/api/auth/me` shape: `{ user: SessionUser, pass: MemberPass }`.
+
+`npm run sync:contracts` generates `client/src/generated/contracts.ts` directly from `src/lib/contracts.ts`; `npm run check:client-contracts` fails when it drifts. Do not edit the generated file. Web uses relative `/api` requests with same-origin cookies and never stores the login response token. Native uses one SecureStore session token and omits cookies. Neither client implements a refresh-token protocol. A 401 clears the session; 403 retains identity and shows the permission error. Failed logout retains the current workspace with a retryable error; stale request completions cannot alter a newer session.
+
+Version 10 preserves legacy workflow-v2 tasks and receipt metadata, and imports historical `ledger_entries` into the current ledger. The two known copied seed incomes are matched by their fixed identities, amount and date, so they are not counted twice. Paid expenses match by purpose, amount, event, payment reference and date. Unknown historical payers remain null with explicit `legacy_ledger_imports` evidence; new payments still require an officer. Ambiguous or unmatched paid sources abort the entire migration rather than guess. Keep a database backup before upgrading; resolve the reported historical inconsistency before retrying.
 
 | Method | Path | Access | Response |
 |---|---|---|---|

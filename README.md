@@ -13,7 +13,7 @@ npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 9 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
+Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 10 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
 
 Optional configuration is documented in `.env.example`; copy it to `.env.local` if needed. Never commit `.env.local` or the local database. To try a separate dataset without changing the existing one, set `SQLITE_PATH` to a new filename.
 
@@ -30,6 +30,9 @@ Member creation requires an organizer or admin session in both development and p
 Native API clients can log in without browser Origin headers and use the returned `token` as `Authorization: Bearer <token>`. For development browser API access, optionally set `MODE_CORS_ORIGINS` to exact comma-separated origins in `.env.local`; this permits reads and bearer requests, while browser login and cookie mutations remain same-origin. Production ignores this allowlist. See [the CORS contract](docs/API.md#development-cors).
 
 ## What works today
+
+- SDK 57 Expo shell in `client/`: cookie-based web login, SecureStore native bearer sessions, permission-driven navigation, membership pass details, task updates and treasury totals. See [the Expo walkthrough](docs/DEMO.md#expo-shell-and-same-origin-web).
+- Optional same-origin Expo export at `/`, with the existing business workspace at `/legacy`. Full scanner, holds and native business screens remain work for #11–#13; bundle compilation does not establish physical-device acceptance.
 
 - Responsive dashboard and navigation for all six club areas.
 - Browser sign-in/sign-out, task editing, receipt-backed expenses, treasury review and ledger CSV export.

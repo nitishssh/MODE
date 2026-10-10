@@ -23,6 +23,7 @@ const MIGRATIONS: Migration[] = [
   // v7 is reserved for Nitish's P5 (#8).
   { version: 8, up: addMerchandiseOrders },
   { version: 9, up: addWorkspaceFlows },
+  { version: 10, up: normalizeLegacyWorkspace },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -59,6 +60,50 @@ function hasTable(db: DatabaseSync, table: string): boolean {
 
 function addColumnIfMissing(db: DatabaseSync, table: string, column: string, definition: string): void {
   if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+}
+
+// Preserve the workflow-v2 tables, including evidence that historical payers
+// were never recorded. Also repairs databases already upgraded by version 9.
+function normalizeLegacyWorkspace(db: DatabaseSync) {
+  addColumnIfMissing(db, "tasks", "assignee", "assignee TEXT NOT NULL DEFAULT 'Unassigned'");
+  db.exec("UPDATE tasks SET assignee = COALESCE((SELECT name FROM members WHERE id = tasks.assignee_id), assignee)");
+  addColumnIfMissing(db, "receipts", "uploader_name", "uploader_name TEXT NOT NULL DEFAULT ''");
+  db.exec("UPDATE receipts SET uploader_name = COALESCE((SELECT name FROM members WHERE id = receipts.uploader_id), '') WHERE uploader_name = ''");
+  db.exec(`CREATE TABLE legacy_ledger_imports (
+    legacy_id TEXT PRIMARY KEY,
+    transaction_id TEXT NOT NULL UNIQUE REFERENCES transactions(id),
+    unknown_payer INTEGER NOT NULL CHECK (unknown_payer IN (0, 1))
+  )`);
+  if (!hasTable(db, "ledger_entries")) return;
+  const insert = db.prepare(`INSERT INTO transactions
+    (id, description, kind, amount_paise, occurred_at, source_type, source_id, recorded_by, club_id, event_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`);
+  const record = db.prepare("INSERT INTO legacy_ledger_imports VALUES (?, ?, ?)");
+  for (const row of db.prepare("SELECT * FROM ledger_entries ORDER BY id").all()) {
+    // The old seed copied these two starter incomes under different labels.
+    // Match the immutable IDs, direction, amount and date, never amount alone.
+    const starterId = row.id === 'demo-ledger-1' ? 'demo-transaction-1' : row.id === 'demo-ledger-2' ? 'demo-transaction-2' : null;
+    const starter = starterId && db.prepare("SELECT * FROM transactions WHERE id = ? AND kind = 'income' AND amount_paise = ? AND occurred_at = ? AND source_type = 'opening_balance'").get(starterId, row.amount_paise, row.occurred_at);
+    if (starter && row.type === 'income') {
+      db.prepare("UPDATE transactions SET event_id = ? WHERE id = ?").run(row.event_id, starterId);
+      record.run(row.id, starterId, 0);
+      continue;
+    }
+    const matches = row.type === 'expense_paid' ? db.prepare(`SELECT id, club_id FROM expenses
+      WHERE status = 'paid' AND purpose = ? AND amount_paise = ? AND event_id IS ?
+        AND payment_reference IS ? AND paid_at = ?`).all(row.description, row.amount_paise, row.event_id, row.reference, row.occurred_at) : [];
+    if (matches.length > 1) throw new Error(`Ambiguous historical expense ${row.id}; migration rolled back for reconciliation.`);
+    const expense = matches[0];
+    const id = `legacy-entry-${row.id}`;
+    insert.run(id, row.description, row.type === 'income' ? 'income' : 'expense', row.amount_paise,
+      row.occurred_at, expense ? 'expense' : 'opening_balance', expense?.id ?? id,
+      expense?.club_id ?? DEFAULT_CLUB_ID, row.event_id);
+    record.run(row.id, id, expense ? 1 : 0);
+  }
+  // An unmatched paid source cannot be silently dropped or counted twice.
+  if (db.prepare("SELECT 1 FROM expenses e WHERE status = 'paid' AND NOT EXISTS (SELECT 1 FROM transactions t WHERE t.source_type = 'expense' AND t.source_id = e.id)").get()) {
+    throw new Error('Historical paid expense has no matching ledger entry; migration rolled back for reconciliation.');
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -83,3 +83,29 @@ The default development password for these synthetic accounts is mode-demo-2026;
 4. Repeat the export without signing in and expect 401. A signed-in ordinary member receives 403. Reports for another club are unavailable.
 
 For LAN setup and home-screen limitations, follow [the README](../README.md#lan-and-home-screen-access). This walkthrough describes checks to perform; it is not a claim that hosted or physical-device checks have passed.
+
+## Expo shell and same-origin web
+
+From the repository root, install both packages and stage the web export:
+
+```sh
+npm ci
+npm ci --prefix client
+npm run check:client-contracts
+npm --prefix client run typecheck
+npm --prefix client run lint
+npm --prefix client test
+npm run build:client
+```
+
+In PowerShell, set `$env:MODE_EXPO_WEB='1'` and `$env:MODE_DEMO_PASSWORD='your-private-demo-password'`, then run `npm run build` and `npm start`. POSIX shells use `export MODE_EXPO_WEB=1` and `export MODE_DEMO_PASSWORD=your-private-demo-password`. Both build and start need the flag. Open `http://127.0.0.1:3000`; `/api` remains on this same origin, `/t/{token}` remains the guest ticket page, and `/legacy` retains the existing workflow UI. Without the flag, `/` remains the original workspace. Enabling the flag without a staged export fails with a setup message.
+
+1. Sign in as `lead@example.com` using the configured password. Open Tasks, update a task, refresh and confirm the saved status. Treasury should be visible.
+2. Sign out, then sign in as `active@example.com`. Treasury must be absent; a direct `/treasury` visit must not expose its data. Ordinary members can update only tasks assigned to them.
+3. Refresh `/tasks` and `/pass` directly. Confirm cookie restoration, honest loading/error states, and timestamps after refresh. Test both phone-width bottom tabs and a wide left navigation.
+4. Open `/legacy` and verify the current task/receipt/expense workflows remain available. The new shell is not evidence that the scanner, pending holds or full native treasury flows are finished.
+5. Run `npm run test:expo-web` after the Expo-enabled Next build. It starts its own temporary server/database and checks deep links, assets, guest/API exclusions, PWA icons and cookie login/logout.
+6. For Android/iOS, set `client/.env` as described in `client/README.md`, run the backend on LAN and start Expo. Verify login, app restart, assigned-task actions, role navigation, session expiry and logout on each actual target. `npx expo export --platform android --platform ios --output-dir dist-native` checks bundle compilation only.
+7. For Windows installation, serve via HTTPS or localhost and install using Edge/Chrome's app menu. Confirm the installed window opens, signs in and survives a restart. LAN HTTP alone does not establish PWA installation acceptance. Authenticated API data is not cached for offline use.
+
+Local automated checks and web-browser checks are recorded in the implementation review. Physical Expo Go and installed Windows PWA checks remain pending until performed on those devices. Do not close #10 on scaffold/build evidence alone.

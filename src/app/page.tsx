@@ -1720,7 +1720,9 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
-  const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+  const [savingTaskIds, setSavingTaskIds] = useState<string[]>([]);
+  const pendingTaskIds = useRef(new Set<string>());
+  const [taskErrors, setTaskErrors] = useState<Record<string, string>>({});
   const nameInput = useRef<HTMLInputElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -1834,68 +1836,28 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
     }
   }
 
-  function toggleDashboardTask(task: Dashboard["tasks"][number]) {
-    const nextStatus: Dashboard["tasks"][number]["status"] = task.status === "done" ? "todo" : "done";
-
-    if (nextStatus === "done") {
-      setCompletingTaskId(task.id);
-    }
-
-    const persist = async () => {
-      setData((current) => current ? {
-        ...current,
-        tasks: current.tasks.map((item) => item.id === task.id ? { ...item, status: nextStatus } : item),
-      } : current);
-      try {
-        const response = await fetch(`/api/tasks/${task.id}/status`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: nextStatus }),
-        });
-        if (!response.ok) await load();
-      } catch {
-        await load();
-      } finally {
-        setCompletingTaskId(null);
-      }
-    };
-
-    if (nextStatus === "done") {
-      window.setTimeout(() => void persist(), 420);
-    } else {
-      void persist();
+  async function moveDashboardTask(task: Dashboard["tasks"][number], status: Dashboard["tasks"][number]["status"]) {
+    if (task.status === status || pendingTaskIds.current.has(task.id)) return;
+    if (!user.permissions.includes("tasks:write") && task.assigneeId !== user.id) return;
+    pendingTaskIds.current.add(task.id);
+    setSavingTaskIds([...pendingTaskIds.current]);
+    setTaskErrors(current => ({ ...current, [task.id]: "" }));
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Task could not be saved. Please retry.");
+      setData(current => current ? { ...current, tasks: current.tasks.map(item => item.id === task.id ? { ...item, status: result.status } : item) } : current);
+    } catch (error) {
+      setTaskErrors(current => ({ ...current, [task.id]: error instanceof Error ? error.message : "Task could not be saved. Please retry." }));
+    } finally {
+      pendingTaskIds.current.delete(task.id);
+      setSavingTaskIds([...pendingTaskIds.current]);
     }
   }
-
-  function moveDashboardTask(task: Dashboard["tasks"][number], status: Dashboard["tasks"][number]["status"]) {
-    if (task.status === status) return;
-
-    const persist = async () => {
-      setData((current) => current ? {
-        ...current,
-        tasks: current.tasks.map((item) => item.id === task.id ? { ...item, status } : item),
-      } : current);
-      setCompletingTaskId(null);
-      try {
-        const response = await fetch(`/api/tasks/${task.id}/status`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status }),
-        });
-        if (!response.ok) await load();
-      } catch {
-        await load();
-      }
-    };
-
-    if (status === "done" && task.status !== "done") {
-      setCompletingTaskId(task.id);
-      window.setTimeout(() => void persist(), 480);
-    } else {
-      void persist();
-    }
-  }
-
   function dropDashboardTask(event: DragEvent<HTMLElement>, status: Dashboard["tasks"][number]["status"]) {
     event.preventDefault();
     const taskId = event.dataTransfer.getData("text/plain") || draggedTaskId;
@@ -2241,7 +2203,7 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
                             return <section className={`dashboard-kanban-column ${status} ${draggedTaskId ? "is-drop-target" : ""}`} key={status} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropDashboardTask(event, status)}>
                               <header><span className={`status-dot ${status}`} aria-hidden="true" /><span>{taskLabel[status]}</span><b>{tasks.length}</b></header>
                               <div className="dashboard-kanban-cards">
-                                {tasks.length ? tasks.map((task) => <button type="button" draggable key={task.id} className={`dashboard-task-card ${task.status === "done" ? "completed" : ""} ${completingTaskId === task.id ? "completing" : ""}`} onClick={() => moveDashboardTask(task, task.status === "done" ? "todo" : "done")} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", task.id); setDraggedTaskId(task.id); }} onDragEnd={() => setDraggedTaskId(null)} title="Drag to a lane, or click to toggle completion"><span className="dashboard-task-title">{task.title}</span><span className="dashboard-task-assignee">{task.assignee || "Unassigned"}</span></button>) : <p className="dashboard-kanban-empty">Drop tasks here</p>}
+                                {tasks.length ? tasks.map((task) => <div key={task.id}><button type="button" disabled={savingTaskIds.includes(task.id) || (!user.permissions.includes("tasks:write") && task.assigneeId !== user.id)} draggable={!savingTaskIds.includes(task.id) && (user.permissions.includes("tasks:write") || task.assigneeId === user.id)} className={`dashboard-task-card ${task.status === "done" ? "completed" : ""} ${savingTaskIds.includes(task.id) ? "completing" : ""}`} onClick={() => moveDashboardTask(task, task.status === "done" ? "todo" : "done")} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", task.id); setDraggedTaskId(task.id); }} onDragEnd={() => setDraggedTaskId(null)} title="Drag to a lane, or click to toggle completion"><span className="dashboard-task-title">{task.title}</span><span className="dashboard-task-assignee">{savingTaskIds.includes(task.id) ? "Saving…" : task.assignee || "Unassigned"}</span></button>{taskErrors[task.id] && <p role="alert" className="error-text">{taskErrors[task.id]}</p>}</div>) : <p className="dashboard-kanban-empty">Drop tasks here</p>}
                               </div>
                             </section>;
                           })}
