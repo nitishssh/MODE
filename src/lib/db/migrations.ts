@@ -18,6 +18,7 @@ const MIGRATIONS: Migration[] = [
   { version: 1, up: createStarterSchema },
   { version: 2, up: addIdentityAndRoles },
   { version: 3, up: addLedgerSourcesAndMemberPasses },
+  { version: 4, up: addWorkflowSchema },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -28,6 +29,10 @@ export function migrate(db: DatabaseSync, now: Date): void {
   try {
     const current = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
     if (current > SCHEMA_VERSION) throw new Error("Database schema is newer than this application supports.");
+    // The delivery branch used schema version 2 for workflow tables before the
+    // upstream identity migration was introduced. Upgrade that shape in place
+    // before applying v3, rather than treating version numbers as compatible.
+    if (current === 2 && !hasColumn(db, "members", "club_id")) ensureIdentitySchema(db, now);
     for (const migration of MIGRATIONS) {
       if (migration.version <= current) continue;
       migration.up(db, now);
@@ -197,6 +202,39 @@ function addIdentityAndRoles(db: DatabaseSync, now: Date) {
   }
 }
 
+function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((entry) => entry.name === column);
+}
+
+function addColumnIfMissing(db: DatabaseSync, table: string, column: string, definition: string): void {
+  if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+}
+
+/** Idempotent identity upgrade used for databases created by the prior workflow schema. */
+function ensureIdentitySchema(db: DatabaseSync, now: Date): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS clubs (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, created_at TEXT NOT NULL);`);
+  addColumnIfMissing(db, "members", "club_id", `club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}'`);
+  addColumnIfMissing(db, "members", "role", "role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member', 'volunteer', 'organizer', 'treasurer', 'admin'))");
+  addColumnIfMissing(db, "members", "password_hash", "password_hash TEXT");
+  db.exec("CREATE INDEX IF NOT EXISTS members_club_idx ON members (club_id);");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY, club_id TEXT NOT NULL REFERENCES clubs(id), member_id TEXT NOT NULL REFERENCES members(id),
+      token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS sessions_member_idx ON sessions (member_id);
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY, club_id TEXT NOT NULL REFERENCES clubs(id), actor_id TEXT REFERENCES members(id), action TEXT NOT NULL,
+      entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details TEXT, occurred_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS audit_events_entity_idx ON audit_events (club_id, entity_type, entity_id);
+  `);
+  db.prepare("INSERT OR IGNORE INTO clubs VALUES (?, ?, ?, ?)").run(DEFAULT_CLUB_ID, "Sample Student Club", "Fictional demo data for the MODE student organization starter.", now.toISOString());
+  const passwordHash = hashPassword(demoPassword());
+  const insertOfficer = db.prepare("INSERT OR IGNORE INTO members (id, name, email, joined_at, expires_on, dues_status, club_id, role, password_hash) VALUES (?, ?, ?, ?, NULL, 'unpaid', ?, ?, ?)");
+  for (const officer of DEMO_OFFICERS) insertOfficer.run(officer.id, officer.name, officer.email, now.toISOString(), DEFAULT_CLUB_ID, officer.role, passwordHash);
+}
+
 // ---------------------------------------------------------------------------
 // v3 — P0 foundations (#2): ledger sources, opening balances, member passes, demo members
 // ---------------------------------------------------------------------------
@@ -241,5 +279,49 @@ function addLedgerSourcesAndMemberPasses(db: DatabaseSync, now: Date) {
   db.exec(`
     CREATE UNIQUE INDEX members_qr_token_idx ON members (qr_token);
     CREATE UNIQUE INDEX members_short_code_idx ON members (short_code);
+  `);
+}
+
+// ---------------------------------------------------------------------------
+// v4 — task, receipt, reimbursement and finance-workspace compatibility
+// ---------------------------------------------------------------------------
+function addWorkflowSchema(db: DatabaseSync, now: Date) {
+  ensureIdentitySchema(db, now);
+  addColumnIfMissing(db, "events", "fundraiser_goal_paise", "fundraiser_goal_paise INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "tasks", "assignee", "assignee TEXT");
+  addColumnIfMissing(db, "tasks", "description", "description TEXT");
+  addColumnIfMissing(db, "tasks", "assignee_id", "assignee_id TEXT REFERENCES members(id)");
+  addColumnIfMissing(db, "tasks", "event_id", "event_id TEXT REFERENCES events(id)");
+  addColumnIfMissing(db, "tasks", "due_at", "due_at TEXT");
+  addColumnIfMissing(db, "tasks", "created_at", "created_at TEXT");
+  db.prepare("UPDATE tasks SET assignee = COALESCE((SELECT name FROM members WHERE id = tasks.assignee_id), 'Unassigned') WHERE assignee IS NULL").run();
+  db.prepare("UPDATE tasks SET created_at = ? WHERE created_at IS NULL").run(now.toISOString());
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS receipts (
+      id TEXT PRIMARY KEY,
+      uploader_id TEXT NOT NULL REFERENCES members(id),
+      uploader_name TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+      uploaded_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS expenses (
+      id TEXT PRIMARY KEY,
+      submitter_id TEXT NOT NULL REFERENCES members(id),
+      amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
+      purpose TEXT NOT NULL,
+      receipt_id TEXT REFERENCES receipts(id),
+      receipt_reference TEXT,
+      event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+      status TEXT NOT NULL CHECK (status IN ('submitted', 'approved', 'rejected', 'paid')),
+      rejection_note TEXT,
+      payment_reference TEXT,
+      submitted_at TEXT NOT NULL,
+      reviewed_at TEXT,
+      paid_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS expenses_submitter_idx ON expenses (submitter_id, submitted_at DESC);
+    CREATE INDEX IF NOT EXISTS expenses_status_idx ON expenses (status, submitted_at DESC);
   `);
 }

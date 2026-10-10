@@ -13,11 +13,20 @@ export function hashSessionToken(token: string): string {
 }
 
 export function readSessionToken(request: Request): string | null {
+  // The presence of Authorization selects bearer authentication, even when
+  // malformed. Never fall back to an ambient browser cookie.
+  const authorization = request.headers.get("authorization");
+  if (authorization !== null) {
+    return /^Bearer ([A-Za-z0-9_-]{43})$/i.exec(authorization)?.[1] ?? null;
+  }
   const header = request.headers.get("cookie");
   if (!header) return null;
   for (const part of header.split(";")) {
     const [name, ...rest] = part.trim().split("=");
-    if (name === SESSION_COOKIE) return decodeURIComponent(rest.join("="));
+    if (name === SESSION_COOKIE) {
+      try { return decodeURIComponent(rest.join("=")); }
+      catch { return null; }
+    }
   }
   return null;
 }

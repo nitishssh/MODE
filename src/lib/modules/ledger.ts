@@ -25,6 +25,11 @@ export function mapLedgerEntry(row: Row): LedgerEntry {
     sourceType: nullableText(row.source_type),
     sourceId: nullableText(row.source_id),
     recordedBy: nullableText(row.recorded_by),
+    type: row.kind === "income" ? "income" : "expense_paid",
+    category: null,
+    eventId: null,
+    eventTitle: null,
+    reference: null,
   };
 }
 

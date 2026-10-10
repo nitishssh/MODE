@@ -18,7 +18,7 @@ test("CORS only accepts explicitly configured, valid origins", () => {
   assert.equal(headers["Access-Control-Allow-Credentials"], "true");
 });
 
-test("API proxy handles allowed preflight and rejects unlisted browser origins", () => {
+test("API proxy remains CORS-disabled outside development", () => {
   const priorOrigins = process.env.MODE_CORS_ORIGINS;
   process.env.MODE_CORS_ORIGINS = "https://mobile.example";
   try {
@@ -26,15 +26,15 @@ test("API proxy handles allowed preflight and rejects unlisted browser origins",
       method: "OPTIONS",
       headers: { Origin: "https://mobile.example" },
     }));
-    assert.equal(allowed.status, 204);
-    assert.equal(allowed.headers.get("Access-Control-Allow-Origin"), "https://mobile.example");
-    assert.match(allowed.headers.get("Access-Control-Allow-Methods") ?? "", /PATCH/);
+    assert.equal(allowed.status, 200);
+    assert.equal(allowed.headers.get("Access-Control-Allow-Origin"), null);
 
     const blocked = proxy(new NextRequest("http://localhost:3000/api/tasks", {
       method: "OPTIONS",
       headers: { Origin: "https://unlisted.example" },
     }));
-    assert.equal(blocked.status, 403);
+    assert.equal(blocked.status, 200);
+    assert.equal(blocked.headers.get("Access-Control-Allow-Origin"), null);
   } finally {
     if (priorOrigins === undefined) delete process.env.MODE_CORS_ORIGINS;
     else process.env.MODE_CORS_ORIGINS = priorOrigins;

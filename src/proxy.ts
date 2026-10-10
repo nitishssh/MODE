@@ -1,23 +1,50 @@
-import { NextRequest, NextResponse } from "next/server";
-import { corsHeaders, isAllowedCorsOrigin } from "@/lib/cors";
+import { NextResponse } from "next/server";
 
-/**
- * Cross-origin API access is opt-in. Normal same-origin browser requests have
- * no Origin header and continue straight to their route handlers.
- */
-export function proxy(request: NextRequest) {
+const allowedMethods = ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"];
+const allowedHeaders = ["content-type", "authorization"];
+
+function isAllowedOrigin(origin: string | null): origin is string {
+  if (!origin) return false;
+  // Only serialized HTTP(S) origins are accepted: no wildcards, paths or null.
+  try {
+    const url = new URL(origin);
+    if (!["http:", "https:"].includes(url.protocol) || url.origin !== origin) return false;
+  } catch { return false; }
+  return (process.env.MODE_CORS_ORIGINS ?? "").split(",").some(value => value.trim() === origin);
+}
+
+/** Development browser access only. Authentication and CSRF remain in the routes. */
+export function proxy(request: Request) {
+  if (process.env.NODE_ENV !== "development") return NextResponse.next();
+
   const origin = request.headers.get("origin");
-  if (origin === null) return NextResponse.next();
+  const requestedMethod = request.headers.get("access-control-request-method");
+  const preflight = request.method === "OPTIONS" && requestedMethod !== null;
+  const allowed = isAllowedOrigin(origin);
+  const vary = "Origin, Access-Control-Request-Method, Access-Control-Request-Headers";
 
-  if (!isAllowedCorsOrigin(origin)) {
-    return NextResponse.json({ error: "Origin is not allowed." }, { status: 403, headers: { Vary: "Origin" } });
+  if (preflight) {
+    const requestedHeaders = (request.headers.get("access-control-request-headers") ?? "")
+      .split(",").map(header => header.trim().toLowerCase()).filter(Boolean);
+    if (!allowed || !allowedMethods.includes(requestedMethod) || requestedHeaders.some(header => !allowedHeaders.includes(header))) {
+      return new NextResponse(null, { status: 403, headers: { Vary: vary, "Cache-Control": "no-store" } });
+    }
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Methods": allowedMethods.join(", "),
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Cache-Control": "no-store",
+        Vary: vary,
+      },
+    });
   }
 
-  const headers = corsHeaders(origin);
-  if (request.method === "OPTIONS") return new NextResponse(null, { status: 204, headers });
-
   const response = NextResponse.next();
-  for (const [key, value] of Object.entries(headers)) response.headers.set(key, value);
+  response.headers.set("Vary", "Origin");
+  if (allowed) response.headers.set("Access-Control-Allow-Origin", origin);
+  // No Allow-Credentials: browser cookies are for the same-origin web app.
   return response;
 }
 

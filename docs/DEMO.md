@@ -33,13 +33,13 @@ No hosted URL, cloud credentials, or persistent deployment volume are configured
 
 1. Use Node 24, run `npm ci`, then `npm run dev`.
 2. Open http://127.0.0.1:3000. Confirm the fictional-data notice and dashboard records load.
-3. Open Members, add a fictional name/email, and verify the new unpaid member appears.
-4. Refresh and restart the server: the member remains present.
-5. Submit the same email again: show a useful duplicate error without adding another record.
-6. Check invalid name/email handling. Navigate all six areas and confirm unfinished flows are marked as previews.
-7. Visit `/api/health`; it returns 200 and reports SQLite schema version 1.
+3. Log in as the synthetic organizer through `POST /api/auth/login`, then create a fictional name/email through `POST /api/members` using its cookie or bearer token; see [API contracts](API.md). The starter web UI has no sign-in flow yet.
+4. Read `GET /api/members` with that session, restart the server, and read again: the new unpaid member remains present.
+5. Submit the same email again through the authorized API: expect 409 without adding another record.
+6. Check invalid name/email handling through the authorized API. Navigate all six web areas and confirm unfinished flows are marked as previews.
+7. Visit `/api/health`; it returns 200 and reports SQLite schema version 3.
 8. Run `npm run typecheck`, `npm test`, `npm run build`.
-9. Run `npm start`: reads work; writes return 403 by default. Demo opt-in is only for a trusted private/local instance.
+9. Set `MODE_DEMO_PASSWORD` before seeding a new production database, then run `npm start`. Public reads work; member creation requires an organizer/admin session. Verify missing authentication returns 401, insufficient permissions return 403, and cross-origin cookie writes return 403. Production ignores `MODE_CORS_ORIGINS`.
 
 ## Full MVP acceptance — future tickets
 
