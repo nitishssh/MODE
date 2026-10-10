@@ -5,9 +5,11 @@ import { POST as logout } from "../src/app/api/auth/logout/route";
 import { GET as me } from "../src/app/api/auth/me/route";
 import { POST as register } from "../src/app/api/auth/register/route";
 import { GET as dashboard } from "../src/app/api/dashboard/route";
+import { POST as createMember } from "../src/app/api/members/route";
 import { PATCH as changeRole } from "../src/app/api/members/[id]/role/route";
 import { ROLES, hasPermission } from "../src/lib/auth/permissions";
 import { SESSION_TTL_MS } from "../src/lib/auth/session";
+import { optionalActor, requireActor } from "../src/lib/auth/authorize";
 import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from "../src/lib/errors";
 import { demoPassword } from "../src/lib/db/migrations";
 import { DEMO, actorFor, apiRequest, cookieFrom, loginCookie, memoryDatabase, routeParams, withRouteDatabase } from "./helpers";
@@ -152,4 +154,86 @@ test("role route and dashboard enforce 401/403 and hide personal and finance dat
 test("unauthenticated and forbidden errors map to 401 and 403 consistently", () => {
   assert.equal(new UnauthorizedError().status, 401);
   assert.equal(new ForbiddenError().status, 403);
+});
+
+test("native login returns the same session as the cookie and bearer writes still enforce roles", async () => {
+  await withRouteDatabase(async () => {
+    const response = await login(apiRequest("/api/auth/login", {
+      origin: null,
+      body: { email: DEMO.organizer, password: demoPassword() },
+    }));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const { token } = await response.json();
+    assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+    const cookie = cookieFrom(response);
+    assert.equal(cookie, `mode_session=${token}`);
+    const authorization = `Bearer ${token}`;
+    const native = await me(apiRequest("/api/auth/me", { authorization, origin: null }));
+    assert.equal(native.status, 200);
+    assert.equal((await native.json()).user.email, DEMO.organizer);
+
+    const payload = { name: "Native Student", email: "native@example.com" };
+    assert.equal((await createMember(apiRequest("/api/members", {
+      body: payload, cookie, origin: "https://other.example",
+    }))).status, 403);
+    const bearerWrite = apiRequest("/api/members", {
+      body: payload, authorization, origin: "https://other.example",
+    });
+    bearerWrite.headers.set("sec-fetch-site", "cross-site");
+    assert.equal((await createMember(bearerWrite)).status, 201);
+
+    const volunteer = await login(apiRequest("/api/auth/login", {
+      body: { email: DEMO.volunteer, password: demoPassword() },
+    }));
+    const volunteerToken = (await volunteer.json()).token;
+    const selected = await me(apiRequest("/api/auth/me", { cookie, authorization: `bearer ${volunteerToken}` }));
+    assert.equal((await selected.json()).user.email, DEMO.volunteer, "bearer selects the identity even with another cookie");
+    assert.equal((await createMember(apiRequest("/api/members", {
+      body: { name: "Denied Student", email: "denied@example.com" }, cookie,
+      authorization: `Bearer ${volunteerToken}`, origin: "https://other.example",
+    }))).status, 403, "organizer cookie must not grant volunteer permission");
+
+    assert.equal((await logout(apiRequest("/api/auth/logout", {
+      method: "POST", authorization, cookie: cookieFrom(volunteer), origin: "https://other.example",
+    }))).status, 200);
+    assert.equal((await me(apiRequest("/api/auth/me", { authorization }))).status, 401);
+    assert.equal((await me(apiRequest("/api/auth/me", { cookie }))).status, 401, "logout revokes both transports for that session");
+    assert.equal((await me(apiRequest("/api/auth/me", { cookie: cookieFrom(volunteer) }))).status, 200, "unselected session is not revoked");
+  });
+});
+
+test("invalid Authorization never falls back to cookies on protected, public or logout routes", async () => {
+  await withRouteDatabase(async () => {
+    const cookie = await loginCookie(DEMO.organizer);
+    for (const authorization of ["", "Basic abc", "Bearer", "Bearer bad", `Bearer ${"a".repeat(43)}`, `Bearer ${"a".repeat(43)}, Bearer ${"b".repeat(43)}`]) {
+      const options = { cookie, authorization, origin: "https://other.example" };
+      assert.equal((await me(apiRequest("/api/auth/me", options))).status, 401, authorization);
+      assert.equal((await dashboard(apiRequest("/api/dashboard", options))).status, 401, authorization);
+      assert.equal((await createMember(apiRequest("/api/members", {
+        ...options, body: { name: "Denied Student", email: "denied@example.com" },
+      }))).status, 401, authorization);
+      assert.equal((await logout(apiRequest("/api/auth/logout", { ...options, method: "POST" }))).status, 401, authorization);
+    }
+    assert.equal((await me(apiRequest("/api/auth/me", { cookie }))).status, 200);
+    assert.equal((await me(apiRequest("/api/auth/me", { cookie: "mode_session=%ZZ" }))).status, 401);
+    assert.equal((await dashboard(apiRequest("/api/dashboard", { cookie: "mode_session=%ZZ" }))).status, 200);
+  });
+});
+
+test("expired and revoked bearer sessions cannot use a still-valid cookie", () => {
+  const { db, clock } = memoryDatabase();
+  try {
+    const expired = db.login({ email: DEMO.organizer, password: demoPassword() });
+    clock.now = new Date(clock.now.getTime() + SESSION_TTL_MS);
+    const current = db.login({ email: DEMO.organizer, password: demoPassword() });
+    const revoked = db.login({ email: DEMO.organizer, password: demoPassword() });
+    db.logout(revoked.token);
+    for (const token of [expired.token, revoked.token]) {
+      const request = apiRequest("/api/dashboard", { cookie: `mode_session=${current.token}`, authorization: `Bearer ${token}` });
+      assert.throws(() => optionalActor(request, db), UnauthorizedError);
+      assert.throws(() => requireActor(request, db, { mutation: true }), UnauthorizedError);
+    }
+    assert.ok(db.getActor(current.token));
+  } finally { db.close(); }
 });

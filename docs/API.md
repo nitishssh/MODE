@@ -7,18 +7,30 @@ The implemented types are authoritative in `src/lib/contracts.ts`. The backend o
 - All routes run on Node.js and read/write SQLite through `src/lib/database.ts`. Responses carry `Cache-Control: no-store`.
 - Money fields ending in `Paise` are integer paise. ISO timestamps are UTC; date-only fields (`expiresOn`) are club calendar days in Asia/Kolkata.
 - Errors are `{error:string, code?:string, details?:[{field,message}]}`. No database paths or stack traces reach the client.
-- `401 unauthenticated` means no valid session cookie. `403 forbidden` means the session exists but the role lacks the permission, or a state-changing request arrived cross-origin.
-- Every state-changing request (POST/PATCH/DELETE) must be same-origin: the `Origin` header has to match the request host and `Sec-Fetch-Site` must not be `cross-site`. Browsers send these automatically for `fetch` calls from the app.
+- `401 unauthenticated` means no valid selected session. `403 forbidden` means the session exists but the role lacks the permission, or a cookie-authenticated write arrived cross-origin.
+- Cookie-authenticated writes (POST/PATCH/DELETE) enforce same-origin: an `Origin` header, when present, must match the request host and `Sec-Fetch-Site` must not be `cross-site`. Only an authenticated bearer request bypasses this check. Login and registration always enforce the same-origin check; native clients omit browser origin headers.
 
 ## Identity and roles (#3)
 
 Authentication is a server-side session referenced by the `mode_session` cookie (`HttpOnly; SameSite=Lax; Path=/`, `Secure` on HTTPS). Sessions last 7 days, are stored hashed, and can be revoked by logout. Passwords are stored as salted scrypt hashes. Every member belongs to exactly one club; all reads and writes are scoped to the caller's club.
 
+Native clients may instead send `Authorization: Bearer <token>` using the token returned by login or registration. This references the same session row as the cookie. Whenever `Authorization` is present, the cookie is ignored: malformed, unknown, expired and revoked bearer tokens return 401, including on the optional-auth dashboard and logout. Valid bearer requests still enforce role permissions. Logout revokes only the selected session; the token and cookie for that session both stop working.
+
+Web clients use the HttpOnly cookie and do not persist the response token in browser storage. The planned native client will use `expo-secure-store`. Expo web hosting remains part of #10/#14.
+
+### Development CORS
+
+`src/proxy.ts` applies to `/api/:path*`. Only `NODE_ENV=development` enables the optional `MODE_CORS_ORIGINS` comma-separated allowlist of exact HTTP(S) origins, for example `http://localhost:8081,http://127.0.0.1:8081`. Paths, trailing slashes, wildcards and `null` origins are not accepted. Production ignores this configuration.
+
+An allowed preflight returns 204 and advertises GET, HEAD, POST, PATCH, DELETE and OPTIONS with Content-Type/Authorization headers. Denied origins, methods or headers get 403 without ACAO. Actual responses grant ACAO only to allowed origins and vary by Origin; credentialed cross-origin cookies are not enabled. Native requests without Origin continue normally.
+
+CORS does not authorize a request or relax cookie CSRF protection. Even an allowlisted browser origin cannot log in or perform cookie-authenticated mutations cross-origin. Native clients obtain a token through login without browser origin headers; cross-origin bearer API calls still require that valid token and the route's permission. The Expo web app uses same-origin login/cookies when served by the Next host.
+
 | Method | Path | Permission | Success | Failure |
 |---|---|---|---|---|
 | POST | `/api/auth/register` | public | 201 `AuthResponse` + cookie | 400 invalid; 403 cross-origin; 409 duplicate email |
 | POST | `/api/auth/login` | public | 200 `AuthResponse` + cookie | 400 invalid; 401 wrong email/password (same message for both); 403 cross-origin |
-| POST | `/api/auth/logout` | public | 200 `{ok:true}` + cleared cookie | 403 cross-origin |
+| POST | `/api/auth/logout` | cookie logout is idempotent; bearer must be valid | 200 `{ok:true}` + cleared cookie | 401 invalid bearer; 403 cross-origin cookie request |
 | GET | `/api/auth/me` | signed in | 200 `{user:SessionUser}` | 401 |
 | PATCH | `/api/members/{id}/role` | `roles:manage` | 200 `{member:Member}` | 400 unknown role; 401; 403; 404 not in this club; 409 changing own role |
 | POST | `/api/members/{id}/password` | `roles:manage` | 200 `{ok:true}` | 400 password under 8 or over 200 characters; 401; 403 (also cross-origin); 404 not in this club |
@@ -31,7 +43,7 @@ Request bodies:
 {"role":"treasurer"}
 ```
 
-`SessionUser` is `{id,name,email,role,clubId,permissions:string[]}`. The UI should drive navigation from `permissions`, not from role names, so the matrix can evolve without screen changes. `AuthResponse` is `{user:SessionUser, expiresAt}`.
+`SessionUser` is `{id,name,email,role,clubId,permissions:string[]}`. The UI should drive navigation from `permissions`, not from role names, so the matrix can evolve without screen changes. `AuthResponse` is `{user:SessionUser, expiresAt, token}`. Auth responses use `Cache-Control: no-store`.
 
 ### Role matrix
 
@@ -70,7 +82,7 @@ Schema v2 seeds four synthetic officer accounts in the sample club: `lead@exampl
 | Method | Path | Permission | Success | Failure |
 |---|---|---|---|---|
 | GET | `/api/health` | public | 200 `{status:"ok",database:"sqlite",schemaVersion:number}` | 503 `{status:"error",error}` |
-| GET | `/api/dashboard` | public, richer when signed in | 200 `Dashboard` | 500 |
+| GET | `/api/dashboard` | public, richer when signed in | 200 `Dashboard` | 401 invalid bearer; 500 |
 | GET | `/api/members` | `members:read` | 200 `{members:Member[]}` | 401; 403; 500 |
 | POST | `/api/members` | `members:create` | 201 `{member:Member}` | 400 invalid/malformed; 401; 403; 409 duplicate email; 500 |
 
@@ -82,7 +94,7 @@ Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 charact
 
 - Schema changes are versioned migrations in `src/lib/db/migrations.ts`, applied in one write transaction and recorded in `PRAGMA user_version`. `GET /api/health` reports the current version.
 - Member email has a case-insensitive UNIQUE constraint. API validation is also enforced at the store boundary.
-- Sessions store only a SHA-256 hash of the cookie token with `expires_at`/`revoked_at`.
+- Sessions store only a SHA-256 hash of the session token with `expires_at`/`revoked_at`.
 - `audit_events` records who changed what (`member.created`, `member.role_changed`, `member.password_set`, and future finance decisions).
 - A sample event's `registered` count cannot exceed capacity. The starter has no booking operation yet.
 - Ledger amounts are positive integer paise; `kind` determines income versus expense. Balance is calculated on the server.

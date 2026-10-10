@@ -176,7 +176,7 @@ export function createIdentityModule(ctx: DbContext) {
     );
   }
 
-  /** Resolve a cookie token to an actor; expired or revoked sessions are treated as signed out. */
+  /** Resolve a session token to an actor; expired or revoked sessions are treated as signed out. */
   function getActor(token: string | null): Actor | null {
     if (!token) return null;
     const row = db
