@@ -1,16 +1,11 @@
 "use client";
 
 import { LanguageSwitcher } from "@/i18n/client";
+import { LandingTimeline } from "@/components/landing-timeline";
 
 type LandingPageProps = {
   onSignIn: () => void;
 };
-
-const milestones = [
-  { number: "01", title: "Plan together", copy: "Keep events, people and responsibilities in one shared register." },
-  { number: "02", title: "Move work forward", copy: "Turn volunteer work into clear, visible tasks with an honest next step." },
-  { number: "03", title: "Close the loop", copy: "Record approvals and balances so the team can see what happened." },
-];
 
 const capabilities = [
   ["MEMBERSHIP", "A member pass, dues status and club identity in one place."],
@@ -61,12 +56,7 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
       </div>
     </section>
 
-    <section className="landing-timeline" id="how-it-works" aria-labelledby="flow-title">
-      <div className="landing-section-heading"><p>ONE SHARED RHYTHM</p><h2 id="flow-title">Small steps make the <em>whole club</em> move.</h2><span>Scroll the story</span></div>
-      <div className="landing-timeline-track" role="list">
-        {milestones.map((item) => <article className="landing-timeline-item" key={item.number} role="listitem"><span className="landing-timeline-stem" aria-hidden="true"><i /></span><p>{item.number}</p><h3>{item.title}</h3><span>{item.copy}</span></article>)}
-      </div>
-    </section>
+    <LandingTimeline />
 
     <section className="landing-capabilities" id="built-for-clubs" aria-labelledby="capabilities-title">
       <div><p className="landing-kicker"><span aria-hidden="true" /> Built around the work, not the paperwork</p><h2 id="capabilities-title">Every club has moving parts.<br /><em>MODE keeps them legible.</em></h2></div>
