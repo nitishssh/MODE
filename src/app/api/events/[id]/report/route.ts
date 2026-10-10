@@ -1,18 +1,8 @@
-import { getDatabase, NotFoundError } from "@/lib/database";
-
+import { getDatabase } from "@/lib/database";
+import { requireActor } from "@/lib/auth/authorize";
+import { json, readJson, route } from "@/lib/http";
+import { z } from "zod";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params;
-    const report = getDatabase().getEventReport(id);
-    return Response.json(report, { headers: { "Cache-Control": "no-store" } });
-  } catch (error) {
-    if (error instanceof NotFoundError) {
-      return Response.json({ error: "Event not found." }, { status: 404 });
-    }
-    console.error("MODE event report failed", error);
-    return Response.json({ error: "Unable to load the event report. Please try again." }, { status: 500 });
-  }
-}
+export const GET=route<{id:string}>("event report",(request,{id})=>{const db=getDatabase();return json(db.getEventReport(requireActor(request,db,{permission:"events:report"}),id));});

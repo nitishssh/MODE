@@ -1,14 +1,8 @@
 import { getDatabase } from "@/lib/database";
-
+import { requireActor } from "@/lib/auth/authorize";
+import { json, readJson, route } from "@/lib/http";
+import { z } from "zod";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  try {
-    const entries = getDatabase().getLedgerEntries();
-    return Response.json(entries, { headers: { "Cache-Control": "no-store" } });
-  } catch (error) {
-    console.error("MODE ledger entries failed", error);
-    return Response.json({ error: "Unable to load ledger entries. Please try again." }, { status: 500 });
-  }
-}
+export const GET=route("ledger entries",request=>{const db=getDatabase();return json(db.getLedgerEntries(requireActor(request,db,{permission:"ledger:read"})));});

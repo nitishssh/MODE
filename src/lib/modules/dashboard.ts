@@ -20,7 +20,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
     const members = identity.getMembers(clubId);
     const club = db.prepare("SELECT name, description FROM clubs WHERE id = ?").get(clubId) as Row | undefined;
 
-    const events: Event[] = (db.prepare("SELECT * FROM events ORDER BY starts_at, id").all() as Row[]).map((row) => ({
+    const events: Event[] = (db.prepare("SELECT * FROM events WHERE club_id = ? ORDER BY starts_at, id").all(clubId) as Row[]).map((row) => ({
       id: text(row.id),
       title: text(row.title),
       startsAt: text(row.starts_at),
@@ -44,14 +44,14 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
       pricePaise: int(row.price_paise),
       stock: int(row.stock),
     }));
-    const tasks: Task[] = (db.prepare("SELECT * FROM tasks ORDER BY id").all() as Row[]).map((row) => ({
+    const tasks: Task[] = (db.prepare("SELECT * FROM tasks WHERE club_id = ? ORDER BY id").all(clubId) as Row[]).map((row) => ({
       id: text(row.id),
       title: text(row.title),
       assignee: text(row.assignee),
       status: row.status as Task["status"],
     }));
     const transactions: Transaction[] = (
-      db.prepare("SELECT * FROM transactions ORDER BY occurred_at DESC, id").all() as Row[]
+      db.prepare("SELECT * FROM transactions WHERE club_id = ? ORDER BY occurred_at DESC, id").all(clubId) as Row[]
     ).map((row) => ({
       id: text(row.id),
       description: text(row.description),
@@ -61,9 +61,9 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule) 
     }));
     const balance = db
       .prepare(
-        "SELECT COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_paise ELSE -amount_paise END), 0) AS balance FROM transactions",
+        "SELECT COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_paise ELSE -amount_paise END), 0) AS balance FROM transactions WHERE club_id = ?",
       )
-      .get() as Row | undefined;
+      .get(clubId) as Row | undefined;
 
     return {
       club: {

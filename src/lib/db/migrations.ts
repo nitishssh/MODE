@@ -18,6 +18,7 @@ const MIGRATIONS: Migration[] = [
   { version: 1, up: createStarterSchema },
   { version: 2, up: addIdentityAndRoles },
   { version: 3, up: addLedgerSourcesAndMemberPasses },
+  { version: 4, up: addWorkspaceFlows },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -242,4 +243,61 @@ function addLedgerSourcesAndMemberPasses(db: DatabaseSync, now: Date) {
     CREATE UNIQUE INDEX members_qr_token_idx ON members (qr_token);
     CREATE UNIQUE INDEX members_short_code_idx ON members (short_code);
   `);
+}
+
+// ---------------------------------------------------------------------------
+// v4 — volunteer tasks, receipts and reimbursements (#7, #9, #13)
+// ---------------------------------------------------------------------------
+function addWorkspaceFlows(db: DatabaseSync, now: Date) {
+  db.exec(`
+    ALTER TABLE events ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
+    ALTER TABLE transactions ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
+    ALTER TABLE transactions ADD COLUMN event_id TEXT REFERENCES events(id);
+    ALTER TABLE events ADD COLUMN fundraiser_goal_paise INTEGER NOT NULL DEFAULT 0
+      CHECK (fundraiser_goal_paise >= 0);
+    ALTER TABLE tasks ADD COLUMN club_id TEXT NOT NULL DEFAULT '${DEFAULT_CLUB_ID}';
+    ALTER TABLE tasks ADD COLUMN description TEXT;
+    ALTER TABLE tasks ADD COLUMN assignee_id TEXT REFERENCES members(id) ON DELETE SET NULL;
+    ALTER TABLE tasks ADD COLUMN event_id TEXT REFERENCES events(id) ON DELETE SET NULL;
+    ALTER TABLE tasks ADD COLUMN due_at TEXT;
+    ALTER TABLE tasks ADD COLUMN created_at TEXT;
+    UPDATE tasks
+       SET assignee_id = (SELECT id FROM members WHERE members.name = tasks.assignee LIMIT 1),
+           created_at = '${now.toISOString()}';
+    CREATE INDEX tasks_club_idx ON tasks (club_id, created_at);
+
+    CREATE TABLE receipts (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      uploader_id TEXT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+      filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+      uploaded_at TEXT NOT NULL
+    );
+    CREATE INDEX receipts_owner_idx ON receipts (club_id, uploader_id);
+
+    CREATE TABLE expenses (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      submitter_id TEXT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+      amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
+      purpose TEXT NOT NULL,
+      receipt_id TEXT REFERENCES receipts(id),
+      receipt_reference TEXT,
+      event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+      status TEXT NOT NULL CHECK (status IN ('submitted', 'approved', 'rejected', 'paid'))
+        DEFAULT 'submitted',
+      reviewer_id TEXT REFERENCES members(id),
+      rejection_note TEXT,
+      payment_reference TEXT,
+      submitted_at TEXT NOT NULL,
+      reviewed_at TEXT,
+      paid_at TEXT
+    );
+    CREATE INDEX expenses_club_status_idx ON expenses (club_id, status, submitted_at);
+    CREATE INDEX expenses_submitter_idx ON expenses (club_id, submitter_id, submitted_at);
+  `);
+  db.prepare("UPDATE events SET fundraiser_goal_paise = ? WHERE id = ?").run(500000, "demo-event-1");
+  db.prepare("UPDATE events SET fundraiser_goal_paise = ? WHERE id = ?").run(1000000, "demo-event-2");
 }

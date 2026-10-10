@@ -496,3 +496,7 @@ th{background:#faf7f2;border-color:#eee7df;color:#746c64}td{color:#716a63;border
 .not-found-shortcut-item span{font-size:10px;color:var(--muted)}
 @media(max-width:600px){.not-found-header{padding:0 18px}.not-found-card{padding:28px 20px}.not-found-title{font-size:30px}.not-found-shortcut-grid{grid-template-columns:1fr}}
 
+.auth-screen { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+.auth-card { width: min(100%, 420px); padding: 32px; border: 1px solid #d7dce2; border-radius: 18px; background: white; color: #18202b; }
+.auth-card form { display: grid; gap: 12px; margin-top: 24px; }
+.auth-card input { width: 100%; padding: 12px; border: 1px solid #a6afba; border-radius: 8px; font: inherit; }

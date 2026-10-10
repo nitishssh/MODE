@@ -9,7 +9,7 @@ export function parseCorsOrigins(value = process.env.MODE_CORS_ORIGINS): Set<str
     if (!candidate) continue;
     try {
       const url = new URL(candidate);
-      if ((url.protocol !== "http:" && url.protocol !== "https:") || url.pathname !== "/" || url.search || url.hash) continue;
+      if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password || url.pathname !== "/" || url.search || url.hash) continue;
       origins.add(url.origin);
     } catch {
       // Invalid configuration never becomes a permissive origin.

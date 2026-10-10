@@ -4,6 +4,20 @@ import { apiUrl, ApiUrlConfigurationError, resolveExpoApiUrl } from "../src/lib/
 import { corsHeaders, isAllowedCorsOrigin, parseCorsOrigins } from "../src/lib/cors";
 import { proxy } from "../src/proxy";
 import { NextRequest } from "next/server";
+import { localDateTimeValue } from "../src/lib/local-datetime";
+
+test("editing a local deadline preserves its instant in non-UTC time zones", () => {
+  const previous = process.env.TZ;
+  try {
+    for (const zone of ["Asia/Kolkata", "America/New_York", "UTC"]) {
+      process.env.TZ = zone;
+      const instant = "2026-10-10T08:30:00.000Z";
+      assert.equal(new Date(localDateTimeValue(instant)).toISOString(), instant);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous;
+  }
+});
 
 test("CORS only accepts explicitly configured, valid origins", () => {
   const configured = "http://192.168.1.50:8081, https://mode.example, *, invalid";
@@ -19,6 +33,12 @@ test("CORS only accepts explicitly configured, valid origins", () => {
 });
 
 test("API proxy handles allowed preflight and rejects unlisted browser origins", () => {
+  for (const host of ["localhost:3000", "192.168.1.50:3000"]) {
+    const response = proxy(new NextRequest("http://localhost:3000/api/auth/login", {
+      method: "POST", headers: { Host: host, Origin: "http://" + host },
+    }));
+    assert.equal(response.status, 200, "same-origin POST must reach its handler");
+  }
   const priorOrigins = process.env.MODE_CORS_ORIGINS;
   process.env.MODE_CORS_ORIGINS = "https://mobile.example";
   try {

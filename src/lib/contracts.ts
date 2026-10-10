@@ -1,4 +1,6 @@
 /** Public API shapes. Money is stored and returned as integer paise. */
+export type Role = "member" | "volunteer" | "organizer" | "treasurer" | "admin";
+
 export interface Member {
   id: string;
   name: string;
@@ -6,6 +8,9 @@ export interface Member {
   joinedAt: string;
   expiresOn: string | null;
   duesStatus: "paid" | "unpaid";
+  role: Role;
+  membership: "active" | "expired" | "none";
+  shortCode: string;
 }
 
 export interface Event {
@@ -137,7 +142,7 @@ export interface LedgerSummary {
   byEvent: { eventId: string; eventTitle: string; inflowPaise: number; outflowPaise: number }[];
 }
 
-export interface LedgerEntry {
+export interface ExpenseLedgerEntry {
   id: string;
   type: "income" | "expense_paid";
   description: string;
@@ -186,9 +191,42 @@ export interface Dashboard {
   products: Product[];
   tasks: Task[];
   transactions: Transaction[];
+  access: { members: boolean; finance: boolean };
 }
 
 export interface CreateMemberInput {
   name: string;
   email: string;
+}
+
+export interface SessionUser {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  clubId: string;
+  permissions: string[];
+}
+
+export interface AuthResponse {
+  user: SessionUser;
+  expiresAt: string;
+  token?: string;
+}
+
+export interface RegisterInput {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
+export interface LedgerEntry extends Transaction {
+  sourceType: string | null;
+  sourceId: string | null;
+  recordedBy: string | null;
 }
