@@ -35,19 +35,20 @@
   -webkit-font-smoothing: antialiased;
 }
 .mx-app *, .mx-app *::before, .mx-app *::after { box-sizing: border-box; }
-.mx-app main { padding: 0; max-width: none; margin: 0; }
-.mx-app h1, .mx-app h2, .mx-app h3, .mx-app h4, .mx-app p { margin: 0; font-size: inherit; line-height: inherit; letter-spacing: 0; font-weight: inherit; }
-.mx-app h1 span { color: inherit; }
-.mx-app small { font-size: 12px; }
-.mx-app a { color: inherit; text-decoration: none; }
-.mx-app button { font: inherit; color: inherit; cursor: pointer; transition: none; }
-.mx-app button:hover:not(:disabled) { filter: none; }
-.mx-app button:disabled { cursor: not-allowed; opacity: .55; }
-.mx-app input, .mx-app select, .mx-app textarea { font: inherit; color: inherit; }
-.mx-app :focus-visible { outline: 2px solid var(--mx-accent); outline-offset: 2px; }
-.mx-app table { border-collapse: collapse; width: 100%; text-align: left; white-space: normal; }
-.mx-app img { max-width: 100%; display: block; }
-.mx-app code { font-family: var(--mx-mono); }
+/* Element resets use :where() so they win over the legacy globals by order but never over mx- classes. */
+:where(.mx-app) main { padding: 0; max-width: none; margin: 0; }
+:where(.mx-app) :is(h1, h2, h3, h4, p) { margin: 0; font-size: inherit; line-height: inherit; letter-spacing: 0; font-weight: inherit; }
+:where(.mx-app) h1 span { color: inherit; }
+:where(.mx-app) small { font-size: 12px; }
+:where(.mx-app) a { color: inherit; text-decoration: none; }
+:where(.mx-app) button { font: inherit; color: inherit; cursor: pointer; transition: none; }
+:where(.mx-app) button:hover:not(:disabled) { filter: none; }
+:where(.mx-app) button:disabled { cursor: not-allowed; opacity: .55; }
+:where(.mx-app) :is(input, select, textarea) { font: inherit; color: inherit; }
+:where(.mx-app) :focus-visible { outline: 2px solid var(--mx-accent); outline-offset: 2px; }
+:where(.mx-app) table { border-collapse: collapse; width: 100%; text-align: left; white-space: normal; }
+:where(.mx-app) img { max-width: 100%; display: block; }
+:where(.mx-app) code { font-family: var(--mx-mono); }
 
 /* ── Typography ───────────────────────────────────────────── */
 .mx-h1 { font-family: var(--mx-display); font-size: 34px; line-height: 1.1; font-weight: 600; letter-spacing: -.4px; color: var(--mx-ink); }

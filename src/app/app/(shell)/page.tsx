@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Dashboard, Notification, TaskDetails } from "@/lib/contracts";
 import { api, useLoad } from "../_lib/api";
 import { useSession } from "../_lib/session";
-import { dateTime, longDate, money, plural, relative } from "../_lib/format";
+import { amount, dateTime, longDate, money, plural, relative } from "../_lib/format";
 import { Badge, Card, EmptyState, ErrorState, LinkButton, PageHead, Skeleton, Stat, StatusBadge, When } from "../_components/ui";
 import { Icon } from "../_components/icons";
 
@@ -52,7 +52,7 @@ export default function OverviewPage() {
         <Stat label="Upcoming events" value={data ? data.metrics.upcomingEvents : "—"} hint="Published and still ahead" tone="accent" />
         <Stat label="Your open tasks" value={myTasks.data ? openTasks.length : "—"} hint={openTasks.some((t) => t.overdue) ? `${openTasks.filter((t) => t.overdue).length} overdue` : "Nothing overdue"} tone="green" />
         {data?.access.finance
-          ? <Stat label="Club balance" value={money(data.metrics.balancePaise)} hint="Income minus paid expenses" tone="amber" />
+          ? <Stat label="Club balance" value={amount(data.metrics.balancePaise)} hint="Income minus paid expenses" tone="amber" />
           : <Stat label="Unread notices" value={notifications.data ? unread.length : "—"} hint="Announcements and reminders" tone="amber" />}
       </div>
 
