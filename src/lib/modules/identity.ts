@@ -277,7 +277,7 @@ export function createIdentityModule(ctx: DbContext) {
   /** Test and tooling helper; the starter runs a single club. */
   function createClub(name: string): string {
     const id = `club-${randomUUID()}`;
-    db.prepare("INSERT INTO clubs VALUES (?, ?, ?, ?)").run(id, name, "", ctx.now().toISOString());
+    db.prepare("INSERT INTO clubs (id, name, description, created_at) VALUES (?, ?, ?, ?)").run(id, name, "", ctx.now().toISOString());
     return id;
   }
 
