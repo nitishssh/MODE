@@ -72,6 +72,9 @@ test("the last seat cannot be sold twice and cancelling releases it", () => {
     assert.equal(db.events.requireEvent(organizer.clubId, event.id).available, 1);
     assert.equal(db.events.bookEvent(second, event.id).status, "reserved");
     assert.throws(() => db.events.updateEvent(organizer, event.id, { capacity: 0 }), ValidationError, "capacity cannot drop below held seats");
+    const draft = sampleEvent(db, organizer, { status: "draft", description: "Keep me" });
+    const renamed = db.events.updateEvent(organizer, draft.id, { title: "Renamed draft" });
+    assert.deepEqual([renamed.status, renamed.description], ["draft", "Keep me"], "omitted fields are not reset by a partial update");
   } finally {
     db.close();
   }

@@ -17,7 +17,15 @@ export const announcementInputSchema = z
     audience: z.enum(["all", "active"]).default("all"),
   })
   .strict();
-export const announcementUpdateSchema = announcementInputSchema.partial().strict();
+/** Update schema has no defaults: an omitted field must leave the stored value unchanged. */
+export const announcementUpdateSchema = z
+  .object({
+    title: z.string().trim().min(3).max(160),
+    body: z.string().trim().min(1).max(10000),
+    audience: z.enum(["all", "active"]),
+  })
+  .partial()
+  .strict();
 export const publishSchema = z.object({ audience: z.enum(["all", "active"]).optional() }).strict();
 
 function mapDetails(row: Row): AnnouncementDetails {

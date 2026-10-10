@@ -24,7 +24,20 @@ export const eventInputSchema = z
   })
   .strict();
 
-export const eventUpdateSchema = eventInputSchema.partial().strict();
+/** Update schema has no defaults: an omitted field must leave the stored value unchanged. */
+export const eventUpdateSchema = z
+  .object({
+    title: z.string().trim().min(3).max(140),
+    description: z.string().trim().max(2000),
+    startsAt: z.string().datetime({ offset: true }),
+    venue: z.string().trim().min(2).max(200),
+    capacity: z.number().int().min(0).max(100000),
+    memberPricePaise: z.number().int().min(0),
+    guestPricePaise: z.number().int().min(0),
+    status: z.enum(["draft", "published", "cancelled"]),
+  })
+  .partial()
+  .strict();
 
 export const confirmBookingSchema = z
   .object({ paymentReference: z.string().trim().min(3).max(120), amountPaise: z.number().int().positive() })

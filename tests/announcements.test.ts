@@ -79,6 +79,7 @@ test("audience 'active' targets only members with a current membership", () => {
     db.membership.recordDues(organizer, { memberId: fresh.id, planId: PLAN_ANNUAL_ID, paymentReference: "A-1", amountPaise: 50000 });
 
     const draft = db.announcements.createDraft(organizer, { title: "Members-only social", body: "Paid members welcome.", audience: "active" });
+    assert.equal(db.announcements.updateDraft(organizer, draft.id, { title: "Members-only social!" }).audience, "active", "omitted audience is preserved");
     const published = db.announcements.publish(organizer, draft.id);
     assert.equal(published.queued, 3);
     assert.deepEqual(db.announcements.eligibleRecipients(clubId, "active").map((r) => r.id).sort(), [...active.map((m) => m.id), fresh.id].sort());
