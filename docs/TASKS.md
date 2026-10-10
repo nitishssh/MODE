@@ -6,7 +6,7 @@ The GitHub issues and board were updated and verified against the approved phase
 
 | Ticket | Owner | Area | Dependencies |
 |---|---|---|---|
-| [#1 [Foundation] Publish the runnable MODE starter and quality checks](https://github.com/nitishssh/MODE/issues/1) | @nitishssh | platform | None |
+| [#1 Completed foundation starter and quality checks](https://github.com/nitishssh/MODE/issues/1) | @nitishssh | platform | None; [verification evidence](FOUNDATION.md#acceptance-evidence) |
 | [#2 P0 shared membership, ledger and native-auth foundations](https://github.com/nitishssh/MODE/issues/2) | @DIVYANK-BHARDWAJ; @nitishssh integration | foundation | #1, completed #3 |
 | [#3 Completed base authentication and roles](https://github.com/nitishssh/MODE/issues/3) | @DIVYANK-BHARDWAJ | backend | Closed; extensions in #2 |
 | [#4 P1 dues, renewals and reminders](https://github.com/nitishssh/MODE/issues/4) | @DIVYANK-BHARDWAJ | backend | #2, #3 |

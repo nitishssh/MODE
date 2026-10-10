@@ -36,4 +36,12 @@ The automated HTTP check verifies server behavior, not responsive rendering. The
 | Typecheck, tests and production build | `npm run check` and GitHub Actions |
 | CI, environment example and setup docs committed | `.github/workflows/ci.yml`, `.env.example`, README and this guide |
 
-The PR for #1 records the actual verification results. CI run links provide the commit-specific Linux result; a passing local Windows run does not imply physical-device or hosted-deployment verification.
+Foundation acceptance completed on 10 October 2026 in [PR #26](https://github.com/nitishssh/MODE/pull/26), merged as [`c9c157b`](https://github.com/nitishssh/MODE/commit/c9c157bc78d21fb55b921f1f18a665a67ed0efe8). [Merged-main quality checks](https://github.com/nitishssh/MODE/actions/runs/38048522264) passed, including the new restart check.
+
+Verified for that release:
+
+- Windows, Node v24.21.0: `npm ci` passed in a fresh worktree; `npm run check` passed typecheck, contracts for 8 route families, all 60 domain/API tests and the production build.
+- `npm run test:foundation` passed member/session persistence across a real server restart and duplicate, invalid and malformed submission rejection without extra rows.
+- The development server passed organizer sign-in, member creation and duplicate rejection with an isolated synthetic dataset. Desktop (1280×900) and mobile (375×812) dashboard layout and navigation were checked in a browser.
+
+These results describe the foundation release, not later commits or full MVP completion. Physical-device installation and hosted deployment remain separate checks.
