@@ -5,6 +5,12 @@ import { canVisit } from '../src/lib/navigation';
 import type { SessionUser } from '../src/generated/contracts';
 const user: SessionUser = { id: 'member-1', clubId: 'club-1', name: 'Test member', email: 'member@example.com', role: 'member', permissions: [] };
 const token = 'a'.repeat(43);
+test('door navigation follows check-in permission rather than event reporting', () => {
+  assert.equal(canVisit({ ...user, role: 'volunteer', permissions: ['tickets:check_in'] }, 'door'), true);
+  assert.equal(canVisit({ ...user, role: 'treasurer', permissions: ['events:report', 'ledger:read'] }, 'door'), false);
+  assert.equal(canVisit(user, 'door'), false);
+  for (const name of ['events', 'shop', 'announcements', 'tasks']) assert.equal(canVisit(user, name), true);
+});
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 function setup(platform: 'web' | 'native', handler: (url: string, init: RequestInit) => Response | Promise<Response>, saved: string | null = null) {
   const store = { value: saved, reads: 0, writes: 0, clears: 0,
@@ -107,4 +113,78 @@ test('old logout cannot unlock or overwrite a login started after a concurrent 4
   assert.equal(client.snapshot().busy, true); assert.equal(client.snapshot().error, null);
   pending.get('/api/auth/login')!(json({ user })); await login;
   assert.equal(client.snapshot().status, 'signedIn'); assert.equal(client.snapshot().error, null);
+});
+
+// Value: protects=Private downloads use platform authentication and preserve binary bytes; fails_when=Download drops bearer or leaks credentials or parses bytes as JSON; why_new=Existing request tests exercise JSON only; seam=none
+test('private binary downloads use native bearer or same-origin cookies and expire on 401', async () => {
+  for (const platform of ['native', 'web'] as const) {
+    let status = 200;
+    const bytes = new Uint8Array([0, 255, 13, 10, 37, 80, 68, 70]);
+    const { client, store } = setup(platform, (url, init) => {
+      assert.equal(init.credentials, platform === 'native' ? 'omit' : 'same-origin');
+      assert.equal(new Headers(init.headers).get('Authorization'), platform === 'native' ? `Bearer ${token}` : null);
+      if (url.endsWith('/me')) return json({ user });
+      assert.equal(url, `${platform === 'native' ? 'http://192.168.1.10:3000' : ''}/api/receipts/private`);
+      return status === 200 ? new Response(bytes, { headers: { 'Content-Type': 'application/pdf' } }) : json({ error: 'Denied' }, status);
+    }, platform === 'native' ? token : null);
+    await client.bootstrap();
+    const blob = await client.download('/api/receipts/private');
+    assert.equal(blob.type, 'application/pdf'); assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), bytes);
+    status = 403; await assert.rejects(client.download('/api/receipts/private'), (error: unknown) => error instanceof ApiError && error.status === 403);
+    assert.equal(client.snapshot().status, 'signedIn');
+    status = 401; await assert.rejects(client.download('/api/receipts/private'), ApiError);
+    assert.equal(client.snapshot().status, 'signedOut'); assert.equal(store.value, null);
+  }
+});
+
+// Value: protects=Private downloaded bytes cannot cross login identities; fails_when=Late download resolves after account replacement or clears new identity; why_new=JSON generation tests do not exercise binary download; seam=none
+test('old binary success and 401 cannot cross or clear a newer login', async () => {
+  const pending: ((response: Response) => void)[] = [];
+  const { client } = setup('web', url => url.endsWith('/login') ? json({ user }) : new Promise(resolve => pending.push(resolve)));
+  await client.signIn(user.email, 'first');
+  const success = client.download('/api/receipts/old'); const failure = client.download('/api/receipts/expired');
+  await client.signIn(user.email, 'second');
+  pending[0](new Response('private')); pending[1](json({ error: 'Old session' }, 401));
+  await assert.rejects(success, SessionChangedError); await assert.rejects(failure, ApiError);
+  assert.equal(client.snapshot().status, 'signedIn');
+});
+
+// Value: protects=Lost native credentials remove cached authenticated identity; fails_when=Restore sets signedOut but keeps the old user visible; why_new=Existing restoration tests start without an authenticated user; seam=none
+test('native resume clears the authenticated user when secure storage no longer has a token', async () => {
+  let calls = 0;
+  const { client, store } = setup('native', () => { calls++; return json({ user }); }, token);
+  await client.bootstrap(); assert.equal(client.snapshot().user?.id, user.id);
+  store.value = null; await client.bootstrap();
+  assert.equal(client.snapshot().status, 'signedOut'); assert.equal(client.snapshot().user, null);
+  assert.equal(calls, 1, 'missing credentials must not issue another authenticated request');
+});
+
+// Value: protects=Native registration stores its bearer and resume preserves mounted identity until validation; fails_when=Signup omits token storage or picker resume tears down private drafts; why_new=Login tests do not cover registration or authenticated resume; seam=none
+test('native signup stores its token and authenticated resume retains identity while validation is pending', async () => {
+  let resolveMe: ((response: Response) => void) | undefined;
+  const { client, store } = setup('native', (url, init) => {
+    if (url.endsWith('/register')) {
+      assert.equal(new Headers(init.headers).get('Authorization'), null);
+      assert.deepEqual(JSON.parse(String(init.body)), { name: 'New Member', email: user.email, password: 'password' });
+      return json({ user, token }, 201);
+    }
+    assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`);
+    return new Promise(resolve => { resolveMe = resolve; });
+  });
+  await client.signUp(' New Member ', ` ${user.email} `, 'password');
+  assert.equal(store.value, token); assert.equal(store.writes, 1); assert.equal(client.snapshot().status, 'signedIn');
+  const priorUser = client.snapshot().user; const resume = client.bootstrap();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(client.snapshot().status, 'signedIn'); assert.equal(client.snapshot().user, priorUser);
+  assert.ok(resolveMe); resolveMe(json({ user })); await resume;
+  assert.equal(client.snapshot().status, 'signedIn'); assert.equal(client.snapshot().user?.id, user.id);
+  const offlineResume = client.bootstrap();
+  await new Promise(resolve => setImmediate(resolve));
+  resolveMe(json({ error: 'Temporary outage' }, 503)); await offlineResume;
+  assert.equal(client.snapshot().status, 'signedIn'); assert.equal(client.snapshot().user?.id, user.id);
+  assert.match(client.snapshot().error ?? '', /revalidate/);
+  const revokedResume = client.bootstrap();
+  await new Promise(resolve => setImmediate(resolve));
+  resolveMe(json({ error: 'Revoked' }, 401)); await revokedResume;
+  assert.equal(client.snapshot().status, 'signedOut'); assert.equal(client.snapshot().user, null);
 });

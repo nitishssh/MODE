@@ -23,6 +23,30 @@ async function sendFile(cookie: string, bytes: Uint8Array, name = "receipt.exe",
   return upload(new Request("http://localhost:3000/api/receipts", { method: "POST", headers: { Cookie: cookie, Origin: "http://localhost:3000" }, body: form }));
 }
 
+// Value: protects=Uncertain expense retries cannot create duplicate claims or change ownership; fails_when=Same submission key inserts twice or accepts altered payload; why_new=Payment replay tests do not cover initial claim submission; seam=none
+test("expense submission retry preserves the original claim before and after payment and rejects key collisions", async () => {
+  await withRouteDatabase(async () => {
+    const db = getDatabase(); const member = actorFor(db, "active@example.com"); const reviewer = actorFor(db, DEMO.treasurer);
+    const cookie = await loginCookie("active@example.com"); const otherCookie = await loginCookie(DEMO.volunteer);
+    const receiptId = receiptFor(db, member);
+    const claimsBefore = db.getExpenses(member).length;
+    const input = { submissionId: "dac10352-c13e-4b96-a10c-94741e5d3344", receiptId, purpose: "Travel reimbursement", amountPaise: 1234 };
+    const send = (body: unknown, session = cookie) => submit(apiRequest('/api/expenses', { body, cookie: session }));
+    const created = await send(input); assert.equal(created.status, 201); const first = await created.json();
+    assert.equal(first.id, input.submissionId);
+    assert.deepEqual(await (await send(input)).json(), first);
+    db.approveExpense(reviewer, first.id); db.payExpense(reviewer, first.id, "RETRY-PAY");
+    const balance = db.ledger.balance(); const replay = await send(input); assert.equal(replay.status, 201);
+    assert.equal((await replay.json()).status, "paid");
+    for (const change of [{ amountPaise: 1235 }, { purpose: "Other reimbursement" }, { receiptReference: "OTHER" }, { eventId: "8d83cb21-a765-47d5-80bc-8eebec188520" }, { receiptId: "7f744bc5-68c0-4a01-85c3-845b6d676699" }]) assert.equal((await send({ ...input, ...change })).status, 409);
+    assert.equal((await send(input, otherCookie)).status, 409);
+    assert.equal((await send({ ...input, submissionId: "not-a-uuid" })).status, 400);
+    assert.equal(db.getExpenses(member).filter(expense => expense.id === first.id).length, 1);
+    assert.equal(db.getExpenses(member).length, claimsBefore + 1);
+    assert.equal(db.ledger.balance(), balance); assert.equal(db.ledger.list().filter(entry => entry.sourceId === first.id).length, 1);
+  });
+});
+
 test("simultaneous reimbursement confirmations on separate connections post once", { timeout: 15000 }, async () => {
   const directory = mkdtempSync(join(tmpdir(), "mode-payment-race-"));
   const path = join(directory, "race.sqlite");
