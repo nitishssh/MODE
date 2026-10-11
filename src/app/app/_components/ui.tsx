@@ -5,7 +5,8 @@ import Link from "next/link";
 import ShinyButton from "@/components/ui/shiny-button";
 import { Icon, type IconName } from "./icons";
 import { amount, countdown, dateTime, money, titleCase } from "../_lib/format";
-import { describeError } from "../_lib/api";
+import type { AppKey } from "@/i18n/app";
+import { useT } from "../_lib/i18n";
 
 /*
  * Every component here renders the legacy workspace's own markup and class
@@ -88,6 +89,7 @@ export function Card({ title, kicker, actions, children, className = "", flush, 
 /** A `.panel.task-create-panel` inline form with the `.form-heading` and close button, like the legacy "Add member" / "New task" panels. */
 export function FormPanel({ title, description, onClose, children, id }: { title: ReactNode; description?: ReactNode; onClose?: () => void; children: ReactNode; id?: string }) {
   const headingId = useId();
+  const { t } = useT();
   return (
     <section className="panel task-create-panel" aria-labelledby={id ?? headingId}>
       <div className="form-heading">
@@ -95,7 +97,7 @@ export function FormPanel({ title, description, onClose, children, id }: { title
           <h2 id={id ?? headingId}>{title}</h2>
           {description ? <p>{description}</p> : null}
         </div>
-        {onClose ? <button type="button" className="icon-button" aria-label="Close" onClick={onClose}><Icon name="close" /></button> : null}
+        {onClose ? <button type="button" className="icon-button" aria-label={t("action.close")} onClick={onClose}><Icon name="close" /></button> : null}
       </div>
       {children}
     </section>
@@ -123,27 +125,30 @@ export function Stat({ label, value, hint, tone = "blue", icon }: { label: strin
 // ── Feedback ─────────────────────────────────────────────────────────────────
 
 export function Alert({ tone = "info", children, onRetry, onDismiss }: { tone?: "error" | "success" | "info" | "warning"; children: ReactNode; onRetry?: () => void; onDismiss?: () => void }) {
+  const { t } = useT();
   if (tone === "success") {
-    return <div className="success-message" role="status"><Icon name="check" size={18} /><span style={{ flex: 1 }}>{children}</span>{onDismiss ? <button type="button" className="text-button" onClick={onDismiss}>Dismiss</button> : null}</div>;
+    return <div className="success-message" role="status"><Icon name="check" size={18} /><span style={{ flex: 1 }}>{children}</span>{onDismiss ? <button type="button" className="text-button" onClick={onDismiss}>{t("action.dismiss")}</button> : null}</div>;
   }
   if (tone === "error") {
-    return <div className="error-inline" role="alert"><span>{children}</span>{onRetry ? <button className="text-button" type="button" onClick={onRetry}>Retry</button> : onDismiss ? <button className="text-button" type="button" onClick={onDismiss}>Dismiss</button> : null}</div>;
+    return <div className="error-inline" role="alert"><span>{children}</span>{onRetry ? <button className="text-button" type="button" onClick={onRetry}>{t("action.retry")}</button> : onDismiss ? <button className="text-button" type="button" onClick={onDismiss}>{t("action.dismiss")}</button> : null}</div>;
   }
   return (
     <div className="outstanding-notice" role="status">
       <div className="mx-row" style={{ flexWrap: "nowrap", alignItems: "flex-start" }}><Icon name={tone === "warning" ? "alert" : "coin"} size={16} /><div>{children}</div></div>
-      {onRetry ? <button className="text-button" type="button" onClick={onRetry}>Retry</button> : onDismiss ? <button className="text-button" type="button" onClick={onDismiss}>Dismiss</button> : null}
+      {onRetry ? <button className="text-button" type="button" onClick={onRetry}>{t("action.retry")}</button> : onDismiss ? <button className="text-button" type="button" onClick={onDismiss}>{t("action.dismiss")}</button> : null}
     </div>
   );
 }
 
 /** Full `.error-state` block for a page that could not load. */
-export function ErrorState({ error, onRetry, fallback, title = "Something did not load" }: { error: unknown; onRetry?: () => void; fallback?: string; title?: string }) {
+/** `fallback` is a dictionary key used when the error carries no message of its own. */
+export function ErrorState({ error, onRetry, fallback, title }: { error: unknown; onRetry?: () => void; fallback?: AppKey; title?: string }) {
+  const { t, apiError } = useT();
   return (
     <div className="error-state" role="alert">
-      <h2>{title}</h2>
-      <p>{describeError(error, fallback)}</p>
-      {onRetry ? <Button variant="primary" onClick={onRetry}>Try again</Button> : null}
+      <h2>{title ?? t("state.errorTitle")}</h2>
+      <p>{apiError(error, fallback)}</p>
+      {onRetry ? <Button variant="primary" onClick={onRetry}>{t("action.tryAgain")}</Button> : null}
     </div>
   );
 }
@@ -159,13 +164,15 @@ export function EmptyState({ title, children, action, icon = "grid" }: { title: 
   );
 }
 
-export function Loading({ label = "Loading…" }: { label?: string }) {
-  return <div className="loading-state" role="status" aria-live="polite"><span className="loader" /><span>{label}</span></div>;
+export function Loading({ label }: { label?: string }) {
+  const { t } = useT();
+  return <div className="loading-state" role="status" aria-live="polite"><span className="loader" /><span>{label ?? t("state.loading")}</span></div>;
 }
 
 export function Skeleton({ rows = 4 }: { rows?: number }) {
+  const { t } = useT();
   return (
-    <div className="mx-stack-sm" aria-busy="true" aria-label="Loading" style={{ padding: "4px 0" }}>
+    <div className="mx-stack-sm" aria-busy="true" aria-label={t("state.loading")} style={{ padding: "4px 0" }}>
       {Array.from({ length: rows }, (_, i) => <span key={i} className="skeleton" style={{ width: `${90 - (i % 3) * 18}%`, height: 14 }} />)}
     </div>
   );
@@ -192,8 +199,22 @@ export function Badge({ tone = "neutral", children }: { tone?: Tone; children: R
   return <span className={`badge ${TONE_CLASS[tone]}`}>{children}</span>;
 }
 
+/** Translated status label; roles and statuses live in common.ts. Unknown statuses fall back to Title Case. */
+export function useStatusLabel() {
+  const { t } = useT();
+  return (status: string) => {
+    for (const prefix of ["status", "role"] as const) {
+      const key = `${prefix}.${status}` as AppKey;
+      const value = t(key);
+      if (value !== key) return value;
+    }
+    return titleCase(status);
+  };
+}
+
 export function StatusBadge({ status, label }: { status: string; label?: string }) {
-  return <Badge tone={STATUS_TONES[status] ?? "neutral"}>{label ?? titleCase(status)}</Badge>;
+  const statusLabel = useStatusLabel();
+  return <Badge tone={STATUS_TONES[status] ?? "neutral"}>{label ?? statusLabel(status)}</Badge>;
 }
 
 // ── Forms ────────────────────────────────────────────────────────────────────
@@ -238,6 +259,7 @@ export function TextareaField({ label, hint, error, ...rest }: TextareaHTMLAttri
 // ── Modal ────────────────────────────────────────────────────────────────────
 
 export function Modal({ open, title, onClose, children, wide, description }: { open: boolean; title: string; onClose: () => void; children: ReactNode; wide?: boolean; description?: ReactNode }) {
+  const { t } = useT();
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -255,7 +277,7 @@ export function Modal({ open, title, onClose, children, wide, description }: { o
             <h2>{title}</h2>
             {description ? <p>{description}</p> : null}
           </div>
-          <button type="button" className="icon-button" aria-label="Close" onClick={onClose}><Icon name="close" /></button>
+          <button type="button" className="icon-button" aria-label={t("action.close")} onClick={onClose}><Icon name="close" /></button>
         </div>
         {children}
       </div>
@@ -330,6 +352,7 @@ export function KeyValue({ items }: { items: { label: ReactNode; value: ReactNod
 
 /** Live "mm:ss" until a hold expires. Renders "expired" once passed and calls onExpire once. */
 export function Countdown({ until, onExpire }: { until: string | null | undefined; onExpire?: () => void }) {
+  const { t } = useT();
   const [now, setNow] = useState(() => Date.now());
   const [fired, setFired] = useState(false);
   useEffect(() => {
@@ -342,7 +365,7 @@ export function Countdown({ until, onExpire }: { until: string | null | undefine
     if (until && !left && !fired) { setFired(true); onExpire?.(); }
   }, [until, left, fired, onExpire]);
   if (!until) return null;
-  return <span className="mx-countdown">{left || "expired"}</span>;
+  return <span className="mx-countdown">{left || t("state.expired")}</span>;
 }
 
 /** The legacy `.capacity-bar`. */
@@ -353,7 +376,8 @@ export function Progress({ value, tone }: { value: number; tone?: "accent" }) {
 
 /** The legacy footnote strip under a panel. */
 export function PreviewNote({ children }: { children: ReactNode }) {
-  return <div className="preview-note"><span className="badge neutral">Note</span><p>{children}</p></div>;
+  const { t } = useT();
+  return <div className="preview-note"><span className="badge neutral">{t("state.noteBadge")}</span><p>{children}</p></div>;
 }
 
 /** Permission-gated wrapper: renders nothing when the viewer lacks it. */

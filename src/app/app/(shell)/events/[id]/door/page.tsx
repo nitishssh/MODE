@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import jsQR from "jsqr";
 import type { EventDetails, ScanOutcome, ScanResult } from "@/lib/contracts";
-import { api, describeError, useLoad } from "../../../../_lib/api";
+import { api, useLoad } from "../../../../_lib/api";
 import { useSession } from "../../../../_lib/session";
-import { dateTime, time } from "../../../../_lib/format";
+import { useT } from "../../../../_lib/i18n";
 import { Alert, Button, Card, EmptyState, ErrorState, LinkButton, PageHead, Skeleton } from "../../../../_components/ui";
 import { Icon } from "../../../../_components/icons";
+import { credentialFromScan } from "../../../../_components/qr";
 
 type Tone = "ok" | "warn" | "bad";
 const TONE: Record<ScanOutcome, Tone> = {
@@ -20,15 +21,8 @@ const TONE: Record<ScanOutcome, Tone> = {
   no_ticket_membership_expired: "warn",
   not_valid: "bad",
 };
-const HINT: Record<ScanOutcome, string> = {
-  admitted: "Let them in.",
-  already_checked_in: "This ticket was already used. Do not admit twice.",
-  payment_pending: "Send them to the desk to confirm payment first.",
-  member_no_ticket: "Active member, but no ticket for this event. They can book at the desk if seats remain.",
-  no_ticket_membership_expired: "No ticket, and membership has lapsed. Guest price applies at the desk.",
-  not_valid: "Unknown code, wrong event, or a cancelled/expired ticket.",
-};
 const BADGE: Record<Tone, string> = { ok: "green", warn: "amber", bad: "red" };
+const MEMBERSHIP_KEY = { active: "status.active", expired: "status.expired", none: "status.none", guest: "status.guest" } as const;
 
 interface LogEntry { at: string; credential: string; outcome: ScanOutcome; name?: string }
 
@@ -37,11 +31,13 @@ function mask(value: string): string {
 }
 
 export default function DoorPage() {
+  const { t, fmt, apiError } = useT();
   const { id } = useParams<{ id: string }>();
   const { can } = useSession();
   const event = useLoad(() => api.get<{ event: EventDetails }>(`/api/events/${encodeURIComponent(id)}`), [id]);
 
   const [credential, setCredential] = useState("");
+  const prefilled = useRef(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState("");
@@ -63,18 +59,28 @@ export default function DoorPage() {
     setBusy(true);
     setError("");
     try {
-      const outcome = await api.post<ScanResult>(`/api/events/${encodeURIComponent(id)}/scan`, { credential: trimmed });
+      const outcome = await api.post<ScanResult>(`/api/events/${encodeURIComponent(id)}/scan`, { credential: credentialFromScan(trimmed) });
       setResult(outcome);
       setLog((current) => [{ at: new Date().toISOString(), credential: mask(trimmed), outcome: outcome.outcome, name: outcome.attendee?.name }, ...current].slice(0, 20));
       setCredential("");
     } catch (caught) {
-      setError(describeError(caught, "The scan could not be checked. Try again."));
+      setError(apiError(caught, "events.door.scanFailed"));
     } finally {
       submitting.current = false;
       setBusy(false);
       inputRef.current?.focus();
     }
-  }, [id]);
+  }, [id, apiError]);
+
+  // A member-pass QR encodes /app/door?credential=…; once the officer picks the event we arrive here with it.
+  useEffect(() => {
+    if (prefilled.current) return;
+    const fromUrl = new URLSearchParams(window.location.search).get("credential");
+    if (!fromUrl) return;
+    prefilled.current = true;
+    setCredential(fromUrl);
+    void scan(fromUrl);
+  }, [scan]);
 
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -90,7 +96,7 @@ export default function DoorPage() {
     setCameraError("");
     const video = videoRef.current;
     if (!video || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError("Camera access is not available in this browser. Type the code instead.");
+      setCameraError(t("events.door.cameraUnavailable"));
       setCamera(false);
       return;
     }
@@ -119,28 +125,28 @@ export default function DoorPage() {
 
     navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
       .then((stream) => {
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        if (cancelled) { stream.getTracks().forEach((track) => track.stop()); return; }
         streamRef.current = stream;
         video.srcObject = stream;
         return video.play().then(() => { frameRef.current = requestAnimationFrame(tick); });
       })
       .catch(() => {
-        if (!cancelled) { setCameraError("Could not start the camera. Check permissions, or type the code."); setCamera(false); }
+        if (!cancelled) { setCameraError(t("events.door.cameraFailed")); setCamera(false); }
       });
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(frameRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       if (video) video.srcObject = null;
     };
-  }, [camera, scan]);
+  }, [camera, scan, t]);
 
   if (!can("tickets:check_in")) {
     return (
       <section className="panel">
-        <EmptyState title="Door volunteers only" icon="door" action={<LinkButton href={`/app/events/${id}`}>Back to event</LinkButton>}>Scanning needs the tickets:check_in permission.</EmptyState>
+        <EmptyState title={t("events.door.volunteersOnly")} icon="door" action={<LinkButton href={`/app/events/${id}`}>{t("events.edit.backToEvent")}</LinkButton>}>{t("events.door.needsPermission")}</EmptyState>
       </section>
     );
   }
@@ -151,12 +157,12 @@ export default function DoorPage() {
   return (
     <>
       <PageHead
-        eyebrow={<><Link href={`/app/events/${id}`}>EVENT</Link> <span>/</span> DOOR SCANNER</>}
-        title={e ? e.title : "Door scanner"}
-        description={e ? `${dateTime(e.startsAt)} · ${e.venue}. Scan a ticket or member pass; admission needs a paid ticket for this event.` : undefined}
-        actions={<Button variant={camera ? "default" : "primary"} onClick={() => setCamera((v) => !v)}><Icon name="scan" size={18} />{camera ? "Stop camera" : "Use camera"}</Button>}
+        eyebrow={<><Link href={`/app/events/${id}`}>{t("events.door.eventEyebrow")}</Link> <span>/</span> {t("events.door.eyebrow")}</>}
+        title={e ? e.title : t("events.door.title")}
+        description={e ? t("events.door.description", { when: fmt.dateTime(e.startsAt), venue: e.venue }) : undefined}
+        actions={<Button variant={camera ? "default" : "primary"} onClick={() => setCamera((v) => !v)}><Icon name="scan" size={18} />{camera ? t("events.door.stopCamera") : t("events.door.useCamera")}</Button>}
       />
-      {event.error ? <ErrorState error={event.error} onRetry={event.reload} title="The event could not load" /> : null}
+      {event.error ? <ErrorState error={event.error} onRetry={event.reload} title={t("events.door.eventLoadFailed")} /> : null}
       {cameraError ? <Alert tone="warning" onDismiss={() => setCameraError("")}>{cameraError}</Alert> : null}
 
       <div className="overview-grid">
@@ -168,36 +174,36 @@ export default function DoorPage() {
                 ref={inputRef}
                 value={credential}
                 onChange={(ev) => setCredential(ev.target.value)}
-                placeholder="Type the 10-character code or paste a QR token"
-                aria-label="Ticket or pass credential"
+                placeholder={t("events.door.placeholder")}
+                aria-label={t("events.door.inputLabel")}
                 autoComplete="off"
                 autoCapitalize="characters"
                 spellCheck={false}
                 style={{ height: 52, fontSize: 18, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", letterSpacing: 2 }}
               />
-              <Button type="submit" variant="primary" loading={busy} disabled={!credential.trim()}>Scan</Button>
+              <Button type="submit" variant="primary" loading={busy} disabled={!credential.trim()}>{t("events.door.scan")}</Button>
             </form>
             {error ? <p className="form-error" role="alert">{error}</p> : null}
           </section>
 
           {camera ? (
-            <Card kicker="CAMERA" title="Point at the QR">
+            <Card kicker={t("events.door.cameraKicker")} title={t("events.door.cameraTitle")}>
               <video ref={videoRef} playsInline muted style={{ width: "100%", maxHeight: 360, borderRadius: 10, background: "#000", objectFit: "cover" }} />
-              <p className="mx-muted mx-small" style={{ marginTop: 8 }}>Hold the QR steady inside the frame. Each code is checked once, then the camera pauses briefly.</p>
+              <p className="mx-muted mx-small" style={{ marginTop: 8 }}>{t("events.door.cameraHint")}</p>
             </Card>
           ) : null}
 
           {result && tone ? (
             <div className={`mx-scan-result ${tone}`} role="status" aria-live="assertive">
-              <div className="eyebrow" style={{ color: "inherit", opacity: .85 }}>{result.admitted ? "ADMIT" : "DO NOT ADMIT"}</div>
-              <h2 style={{ marginTop: 6 }}>{result.message}</h2>
-              {result.attendee ? <p style={{ fontSize: 18, marginTop: 10 }}>{result.attendee.name} <span style={{ opacity: .8 }}>· membership {result.attendee.membership}</span></p> : null}
-              {result.outcome === "already_checked_in" && result.checkedInAt ? <p style={{ marginTop: 8, opacity: .9 }}>First checked in at {dateTime(result.checkedInAt)}</p> : null}
-              <p style={{ marginTop: 12, opacity: .9 }}>{HINT[result.outcome]}</p>
+              <div className="eyebrow" style={{ color: "inherit", opacity: .85 }}>{result.admitted ? t("events.door.admit") : t("events.door.doNotAdmit")}</div>
+              <h2 style={{ marginTop: 6 }}>{t(`events.door.outcome.${result.outcome}`)}</h2>
+              {result.attendee ? <p style={{ fontSize: 18, marginTop: 10 }}>{result.attendee.name} <span style={{ opacity: .8 }}>{t("events.door.attendeeMembership", { state: t(MEMBERSHIP_KEY[result.attendee.membership]) })}</span></p> : null}
+              {result.outcome === "already_checked_in" && result.checkedInAt ? <p style={{ marginTop: 8, opacity: .9 }}>{t("events.door.firstCheckedIn", { time: fmt.dateTime(result.checkedInAt) })}</p> : null}
+              <p style={{ marginTop: 12, opacity: .9 }}>{t(`events.door.hint.${result.outcome}`)}</p>
             </div>
           ) : (
             <section className="panel">
-              <EmptyState title="Ready to scan" icon="scan">Scan or type a code to see the door decision here.</EmptyState>
+              <EmptyState title={t("events.door.readyTitle")} icon="scan">{t("events.door.readyBody")}</EmptyState>
             </section>
           )}
         </div>
@@ -205,19 +211,19 @@ export default function DoorPage() {
         <div className="mx-stack">
           <section className="panel">
             <div className="panel-heading">
-              <div><div className="eyebrow">AT THE DOOR</div><h2>This session</h2></div>
-              {log.length ? <button type="button" className="text-button" onClick={() => setLog([])}>Clear<Icon name="close" size={14} /></button> : null}
+              <div><div className="eyebrow">{t("events.door.sessionKicker")}</div><h2>{t("events.door.sessionTitle")}</h2></div>
+              {log.length ? <button type="button" className="text-button" onClick={() => setLog([])}>{t("events.door.clear")}<Icon name="close" size={14} /></button> : null}
             </div>
-            {!log.length ? <EmptyState title="No scans yet" icon="clock">The last 20 scans show here.</EmptyState> : (
+            {!log.length ? <EmptyState title={t("events.door.noScans")} icon="clock">{t("events.door.noScansBody")}</EmptyState> : (
               <div className="table-scroll">
                 <table>
-                  <thead><tr><th scope="col">Who</th><th scope="col">Time</th><th scope="col">Outcome</th></tr></thead>
+                  <thead><tr><th scope="col">{t("events.door.colWho")}</th><th scope="col">{t("events.door.colTime")}</th><th scope="col">{t("events.door.colOutcome")}</th></tr></thead>
                   <tbody>
                     {log.map((entry, i) => (
                       <tr key={`${entry.at}-${i}`}>
                         <td><strong>{entry.name ?? entry.credential}</strong>{entry.name ? <span className="subtext">{entry.credential}</span> : null}</td>
-                        <td>{time(entry.at)}</td>
-                        <td><span className={`badge ${BADGE[TONE[entry.outcome]]}`}>{entry.outcome.replace(/_/g, " ")}</span></td>
+                        <td>{fmt.dateTime(entry.at)}</td>
+                        <td><span className={`badge ${BADGE[TONE[entry.outcome]]}`}>{t(`events.door.outcome.${entry.outcome}`)}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -227,13 +233,9 @@ export default function DoorPage() {
           </section>
           <article className="notice-card">
             <span className="notice-icon"><Icon name="door" size={20} /></span>
-            <div className="eyebrow">DOOR RULES</div>
-            <h2>Admit on green only.</h2>
-            {!e && event.loading ? <Skeleton rows={3} /> : (
-              <p>
-                A member pass resolves to that member&apos;s ticket for this event. Pending payment goes to the desk, never through the door. Repeat scans never admit twice.
-              </p>
-            )}
+            <div className="eyebrow">{t("events.door.rulesKicker")}</div>
+            <h2>{t("events.door.rulesTitle")}</h2>
+            {!e && event.loading ? <Skeleton rows={3} /> : <p>{t("events.door.rulesBody")}</p>}
           </article>
         </div>
       </div>

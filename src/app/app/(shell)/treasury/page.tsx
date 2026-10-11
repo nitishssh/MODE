@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import type { ExpenseLedgerEntry, LedgerSource, LedgerSummary } from "@/lib/contracts";
-import { api, ApiError, describeError, useLoad } from "../../_lib/api";
+import { api, ApiError, useLoad } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
-import { amount, date, dateTime, titleCase } from "../../_lib/format";
+import { useT } from "../../_lib/i18n";
+import { titleCase } from "../../_lib/format";
 import { Alert, Card, EmptyState, ErrorState, KeyValue, Loading, Modal, PageHead, PreviewNote, Stat, Tabs } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
 
@@ -15,12 +16,14 @@ type Tab = "overview" | "register" | "export";
 type KindFilter = "all" | "income" | "expense";
 
 function Signed({ entry }: { entry: ExpenseLedgerEntry }) {
+  const { fmt } = useT();
   const income = entry.kind === "income";
-  return <span className={income ? "positive" : undefined}>{income ? "+" : "−"}{amount(entry.amountPaise)}</span>;
+  return <span className={income ? "positive" : undefined}>{income ? "+" : "−"}{fmt.currency(entry.amountPaise)}</span>;
 }
 
 export default function TreasuryPage() {
   const { can } = useSession();
+  const { t, fmt, apiError } = useT();
   const allowed = can("ledger:read");
 
   const summary = useLoad(() => (allowed ? api.get<LedgerSummary>("/api/ledger/summary") : Promise.resolve(null)), [allowed]);
@@ -59,15 +62,17 @@ export default function TreasuryPage() {
       setSource({ entry, loading: false, data, error: "", notFound: false });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 404) setSource({ entry, loading: false, data: null, error: "", notFound: true });
-      else setSource({ entry, loading: false, data: null, error: describeError(caught), notFound: false });
+      else setSource({ entry, loading: false, data: null, error: apiError(caught), notFound: false });
     }
   }
+
+  const eyebrow = <>{t("treasury.eyebrowClub")} <span>/</span> {t("treasury.eyebrow")}</>;
 
   if (!allowed) {
     return (
       <>
-        <PageHead eyebrow={<>CLUB <span>/</span> TREASURY</>} title="Treasury" />
-        <section className="panel"><EmptyState title="Treasurer access only" icon="wallet">The ledger, summary and export are visible to treasurers and the club lead.</EmptyState></section>
+        <PageHead eyebrow={eyebrow} title={t("treasury.title")} />
+        <section className="panel"><EmptyState title={t("treasury.onlyTitle")} icon="wallet">{t("treasury.onlyBody")}</EmptyState></section>
       </>
     );
   }
@@ -76,44 +81,40 @@ export default function TreasuryPage() {
 
   return (
     <>
-      <PageHead
-        eyebrow={<>CLUB <span>/</span> TREASURY</>}
-        title="Treasury"
-        description="One ledger for dues, tickets, merchandise and reimbursements. Balances are computed on the server."
-      />
+      <PageHead eyebrow={eyebrow} title={t("treasury.title")} description={t("treasury.description")} />
 
-      {summary.error ? <ErrorState error={summary.error} onRetry={summary.reload} title="The summary could not load" /> : null}
+      {summary.error ? <ErrorState error={summary.error} onRetry={summary.reload} title={t("treasury.summaryErrorTitle")} /> : null}
 
-      <section className="metrics-grid treasury-metrics" aria-label="Treasury summary">
-        <Stat label="Club balance" value={s ? amount(s.balancePaise) : "—"} hint="Recorded income minus expenses" tone="dark" icon="wallet" />
-        <Stat label="Inflow" value={s ? amount(s.inflowPaise) : "—"} hint="Dues, tickets, orders" tone="green" icon="coin" />
-        <Stat label="Outflow" value={s ? amount(s.outflowPaise) : "—"} hint="Reimbursements paid" tone="accent" icon="receipt" />
-        <Stat label="Approved, unpaid" value={s ? amount(s.approvedUnpaidPaise) : "—"} hint="Committed but not yet paid out" tone="amber" icon="clock" />
+      <section className="metrics-grid treasury-metrics" aria-label={t("treasury.summary.ariaLabel")}>
+        <Stat label={t("treasury.summary.balance")} value={s ? fmt.currency(s.balancePaise) : "—"} hint={t("treasury.summary.balanceHint")} tone="dark" icon="wallet" />
+        <Stat label={t("treasury.summary.inflow")} value={s ? fmt.currency(s.inflowPaise) : "—"} hint={t("treasury.summary.inflowHint")} tone="green" icon="coin" />
+        <Stat label={t("treasury.summary.outflow")} value={s ? fmt.currency(s.outflowPaise) : "—"} hint={t("treasury.summary.outflowHint")} tone="accent" icon="receipt" />
+        <Stat label={t("treasury.summary.approvedUnpaid")} value={s ? fmt.currency(s.approvedUnpaidPaise) : "—"} hint={t("treasury.summary.approvedUnpaidHint")} tone="amber" icon="clock" />
       </section>
 
-      <Tabs value={tab} onChange={setTab} items={[{ value: "overview", label: "Overview" }, { value: "register", label: "Register", count: list.length }, { value: "export", label: "Export" }]} />
+      <Tabs value={tab} onChange={setTab} items={[{ value: "overview", label: t("treasury.tab.overview") }, { value: "register", label: t("treasury.tab.register"), count: list.length }, { value: "export", label: t("treasury.tab.export") }]} />
 
       {tab === "overview" ? (
         <div>
           {s && s.approvedUnpaidPaise > 0 ? (
             <div className="outstanding-notice">
               <Icon name="alert" size={16} />
-              <div><strong>Outstanding liabilities</strong><p>{amount(s.approvedUnpaidPaise)} in approved claims is still to be paid out.</p></div>
+              <div><strong>{t("treasury.liabilities.title")}</strong><p>{t("treasury.liabilities.body", { amount: fmt.currency(s.approvedUnpaidPaise) })}</p></div>
             </div>
           ) : null}
           <div className="treasury-overview-grid">
-            <Card kicker="WHERE THE MONEY MOVES" title="By category" flush>
-              {summary.loading && !s ? <Loading label="Loading…" /> : !s?.byCategory.length ? <EmptyState title="No entries yet" icon="wallet">Income and expenses will be grouped here.</EmptyState> : (
+            <Card kicker={t("treasury.byCategory.kicker")} title={t("treasury.byCategory.title")} flush>
+              {summary.loading && !s ? <Loading label={t("state.loading")} /> : !s?.byCategory.length ? <EmptyState title={t("treasury.byCategory.emptyTitle")} icon="wallet">{t("treasury.byCategory.emptyBody")}</EmptyState> : (
                 <div className="table-scroll">
                   <table>
-                    <thead><tr><th scope="col">Category</th><th scope="col" className="amount-cell">Inflow</th><th scope="col" className="amount-cell">Outflow</th><th scope="col" className="amount-cell">Net</th></tr></thead>
+                    <thead><tr><th scope="col">{t("col.category")}</th><th scope="col" className="amount-cell">{t("treasury.col.inflow")}</th><th scope="col" className="amount-cell">{t("treasury.col.outflow")}</th><th scope="col" className="amount-cell">{t("treasury.col.net")}</th></tr></thead>
                     <tbody>
                       {s.byCategory.map((cat) => (
                         <tr key={cat.category}>
                           <td><strong>{titleCase(cat.category)}</strong></td>
-                          <td className="amount-cell positive">+{amount(cat.inflowPaise)}</td>
-                          <td className="amount-cell">{cat.outflowPaise > 0 ? `−${amount(cat.outflowPaise)}` : "—"}</td>
-                          <td className={`amount-cell ${cat.inflowPaise - cat.outflowPaise >= 0 ? "positive" : ""}`.trim()}>{amount(cat.inflowPaise - cat.outflowPaise)}</td>
+                          <td className="amount-cell positive">+{fmt.currency(cat.inflowPaise)}</td>
+                          <td className="amount-cell">{cat.outflowPaise > 0 ? `−${fmt.currency(cat.outflowPaise)}` : "—"}</td>
+                          <td className={`amount-cell ${cat.inflowPaise - cat.outflowPaise >= 0 ? "positive" : ""}`.trim()}>{fmt.currency(cat.inflowPaise - cat.outflowPaise)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -121,17 +122,17 @@ export default function TreasuryPage() {
                 </div>
               )}
             </Card>
-            <Card kicker="BY EVENT" title="Event breakdown" flush>
-              {summary.loading && !s ? <Loading label="Loading…" /> : !s?.byEvent.length ? <EmptyState title="No event money yet" icon="calendar">Ticket income and event expenses will appear here.</EmptyState> : (
+            <Card kicker={t("treasury.byEvent.kicker")} title={t("treasury.byEvent.title")} flush>
+              {summary.loading && !s ? <Loading label={t("state.loading")} /> : !s?.byEvent.length ? <EmptyState title={t("treasury.byEvent.emptyTitle")} icon="calendar">{t("treasury.byEvent.emptyBody")}</EmptyState> : (
                 <div className="table-scroll">
                   <table>
-                    <thead><tr><th scope="col">Event</th><th scope="col" className="amount-cell">Inflow</th><th scope="col" className="amount-cell">Outflow</th></tr></thead>
+                    <thead><tr><th scope="col">{t("col.event")}</th><th scope="col" className="amount-cell">{t("treasury.col.inflow")}</th><th scope="col" className="amount-cell">{t("treasury.col.outflow")}</th></tr></thead>
                     <tbody>
                       {s.byEvent.map((ev) => (
                         <tr key={ev.eventId}>
                           <td><strong>{ev.eventTitle}</strong></td>
-                          <td className="amount-cell positive">+{amount(ev.inflowPaise)}</td>
-                          <td className="amount-cell">{ev.outflowPaise > 0 ? `−${amount(ev.outflowPaise)}` : "—"}</td>
+                          <td className="amount-cell positive">+{fmt.currency(ev.inflowPaise)}</td>
+                          <td className="amount-cell">{ev.outflowPaise > 0 ? `−${fmt.currency(ev.outflowPaise)}` : "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -146,30 +147,30 @@ export default function TreasuryPage() {
       {tab === "register" ? (
         <div>
           <div className="ledger-actions" style={{ marginBottom: 20 }}>
-            <input className="ledger-search" type="search" placeholder="Search description, reference, officer…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search entries" />
-            <select className="filter-select" value={kind} onChange={(e) => setKind(e.target.value as KindFilter)} aria-label="Filter by kind">
-              <option value="all">Income and expense</option>
-              <option value="income">Income only</option>
-              <option value="expense">Expense only</option>
+            <input className="ledger-search" type="search" placeholder={t("treasury.register.searchPlaceholder")} value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t("treasury.register.searchAria")} />
+            <select className="filter-select" value={kind} onChange={(e) => setKind(e.target.value as KindFilter)} aria-label={t("treasury.register.filterKind")}>
+              <option value="all">{t("treasury.register.kindAll")}</option>
+              <option value="income">{t("treasury.register.kindIncome")}</option>
+              <option value="expense">{t("treasury.register.kindExpense")}</option>
             </select>
-            <select className="filter-select" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)} aria-label="Filter by event">
-              <option value="">All events</option>
+            <select className="filter-select" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)} aria-label={t("treasury.register.filterEvent")}>
+              <option value="">{t("treasury.register.allEvents")}</option>
               {eventOptions.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
             </select>
-            <a className="button secondary" href="/api/ledger/export.csv" download><Icon name="download" size={16} />Export CSV</a>
+            <a className="button secondary" href="/api/ledger/export.csv" download><Icon name="download" size={16} />{t("treasury.register.exportCsv")}</a>
           </div>
-          <Card kicker="LEDGER" title="Register" flush actions={<span className="subtext" style={{ margin: 0 }}>{rows.length} of {list.length} entries</span>}>
-            {entries.error ? <ErrorState error={entries.error} onRetry={entries.reload} /> : entries.loading && !entries.data ? <Loading label="Loading entries…" /> : !rows.length ? (
-              <EmptyState title="No entries" icon="wallet">{list.length ? "Nothing matches these filters." : "The ledger is empty."}</EmptyState>
+          <Card kicker={t("treasury.register.kicker")} title={t("treasury.register.title")} flush actions={<span className="subtext" style={{ margin: 0 }}>{t("treasury.register.count", { count: rows.length, total: list.length })}</span>}>
+            {entries.error ? <ErrorState error={entries.error} onRetry={entries.reload} /> : entries.loading && !entries.data ? <Loading label={t("treasury.register.loading")} /> : !rows.length ? (
+              <EmptyState title={t("treasury.register.emptyTitle")} icon="wallet">{list.length ? t("treasury.register.emptyFiltered") : t("treasury.register.emptyLedger")}</EmptyState>
             ) : (
               <div className="table-scroll">
                 <table>
-                  <thead><tr><th scope="col">Date</th><th scope="col">Kind</th><th scope="col">Description</th><th scope="col">Category</th><th scope="col">Event</th><th scope="col" className="amount-cell">Amount</th><th scope="col">Recorded by</th><th scope="col">Reference</th></tr></thead>
+                  <thead><tr><th scope="col">{t("col.date")}</th><th scope="col">{t("treasury.col.kind")}</th><th scope="col">{t("col.description")}</th><th scope="col">{t("col.category")}</th><th scope="col">{t("col.event")}</th><th scope="col" className="amount-cell">{t("col.amount")}</th><th scope="col">{t("col.recordedBy")}</th><th scope="col">{t("col.reference")}</th></tr></thead>
                   <tbody>
                     {rows.map((entry) => (
-                      <tr key={entry.id} onClick={() => void openSource(entry)} title="Show source record" style={{ cursor: "pointer" }}>
-                        <td>{date(entry.occurredAt)}</td>
-                        <td><span className={`badge ${entry.kind === "income" ? "green" : "red"}`}>{entry.kind === "income" ? "Income" : "Expense"}</span></td>
+                      <tr key={entry.id} onClick={() => void openSource(entry)} title={t("treasury.register.showSource")} style={{ cursor: "pointer" }}>
+                        <td>{fmt.date(entry.occurredAt)}</td>
+                        <td><span className={`badge ${entry.kind === "income" ? "green" : "red"}`}>{entry.kind === "income" ? t("status.income") : t("status.expense")}</span></td>
                         <td><strong>{entry.description}</strong><span className="subtext">{titleCase(entry.sourceType)}</span></td>
                         <td>{entry.category ? titleCase(entry.category) : "—"}</td>
                         <td>{entry.eventTitle ?? "—"}</td>
@@ -187,28 +188,28 @@ export default function TreasuryPage() {
       ) : null}
 
       {tab === "export" ? (
-        <Card kicker="TAKE IT WITH YOU" title="Export the ledger">
-          <p className="mx-muted mx-small" style={{ marginBottom: 16, lineHeight: 1.7 }}>Download the canonical seven-column register as CSV: date, kind, amount, source type, source id, description, recorded by. Amounts are positive rupees; kind supplies the direction, so summing income and expense rows reproduces the balance above.</p>
+        <Card kicker={t("treasury.export.kicker")} title={t("treasury.export.title")}>
+          <p className="mx-muted mx-small" style={{ marginBottom: 16, lineHeight: 1.7 }}>{t("treasury.export.body")}</p>
           <div className="ledger-actions">
-            <a className="button primary" href="/api/ledger/export.csv" download><Icon name="download" size={16} />Export CSV</a>
-            <a className="button secondary" href="/api/ledger/export" download>Legacy export</a>
+            <a className="button primary" href="/api/ledger/export.csv" download><Icon name="download" size={16} />{t("treasury.register.exportCsv")}</a>
+            <a className="button secondary" href="/api/ledger/export" download>{t("treasury.export.legacy")}</a>
           </div>
         </Card>
       ) : null}
 
-      <PreviewNote>Every entry links back to its source: a dues payment, ticket, merchandise order or paid expense. Opening balances were recorded before MODE and have no source record.</PreviewNote>
+      <PreviewNote>{t("treasury.note")}</PreviewNote>
 
-      <Modal open={source !== null} title={source?.data?.title ?? source?.entry.description ?? "Source"} description={source ? `${titleCase(source.entry.sourceType)} · ${dateTime(source.entry.occurredAt)}` : undefined} onClose={() => setSource(null)}>
-        {source?.loading ? <Loading label="Loading source record…" /> : null}
+      <Modal open={source !== null} title={source?.data?.title ?? source?.entry.description ?? t("treasury.source.title")} description={source ? `${titleCase(source.entry.sourceType)} · ${fmt.dateTime(source.entry.occurredAt)}` : undefined} onClose={() => setSource(null)}>
+        {source?.loading ? <Loading label={t("treasury.source.loading")} /> : null}
         {source?.error ? <Alert tone="error">{source.error}</Alert> : null}
-        {source?.notFound ? <Alert tone="info">No source record. Opening balances and historical imports have no linked transaction.</Alert> : null}
+        {source?.notFound ? <Alert tone="info">{t("treasury.source.notFound")}</Alert> : null}
         {source?.data ? (
           <div className="mx-stack-sm">
             <KeyValue items={[
-              { label: "Amount", value: <Signed entry={source.entry} /> },
+              { label: t("col.amount"), value: <Signed entry={source.entry} /> },
               ...source.data.details.map((d) => ({ label: d.label, value: d.value })),
             ]} />
-            {source.data.receiptId ? <div className="form-actions"><a className="button secondary" href={`/api/receipts/${encodeURIComponent(source.data.receiptId)}`} target="_blank" rel="noopener noreferrer"><Icon name="receipt" size={16} />Open receipt</a></div> : null}
+            {source.data.receiptId ? <div className="form-actions"><a className="button secondary" href={`/api/receipts/${encodeURIComponent(source.data.receiptId)}`} target="_blank" rel="noopener noreferrer"><Icon name="receipt" size={16} />{t("treasury.source.openReceipt")}</a></div> : null}
           </div>
         ) : null}
       </Modal>

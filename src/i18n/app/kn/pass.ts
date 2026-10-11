@@ -1,0 +1,38 @@
+import type en from "../en/pass";
+
+const pass: Record<keyof typeof en, string> = {
+  "pass.kicker": "ಸದಸ್ಯತ್ವ",
+  "pass.kickerSection": "ಡೋರ್ ಪ್ರವೇಶ",
+  "pass.title": "ನನ್ನ ಸದಸ್ಯ ಪಾಸ್",
+  "pass.lede": "ಬಾಗಿಲಲ್ಲಿ ಇದನ್ನು ತೋರಿಸಿ. ಪ್ರವೇಶ ಸ್ವಯಂಸೇವಕರು ಆಯ್ಕೆಮಾಡಿದ ಈವೆಂಟ್‌ಗೆ ಪಾವತಿಸಿದ ಟಿಕೆಟ್ ಅನ್ನು ಅವಲಂಬಿಸಿದೆ, ಸದಸ್ಯತ್ವವನ್ನು ಮಾತ್ರವಲ್ಲ.",
+  "pass.refresh": "ಸದಸ್ಯತ್ವ ರಿಫ್ರೆಶ್ ಮಾಡಿ",
+  "pass.cardKicker": "MODE · ಸದಸ್ಯ ಪಾಸ್",
+  "pass.notJoined": "ಸೇರಿಲ್ಲ",
+  "pass.membership.active": "ಸಕ್ರಿಯ ಸದಸ್ಯತ್ವ",
+  "pass.membership.expired": "ಸದಸ್ಯತ್ವದ ಅವಧಿ ಮುಗಿದಿದೆ. ಅಧಿಕಾರಿಯೊಂದಿಗೆ ನವೀಕರಿಸಿ.",
+  "pass.membership.none": "ಇನ್ನೂ ಪಾವತಿಸಿದ ಸದಸ್ಯರಲ್ಲ. ಶುಲ್ಕದ ಬಗ್ಗೆ ಅಧಿಕಾರಿಯನ್ನು ಕೇಳಿ.",
+  "pass.doorCode": "ಡೋರ್ ಕೋಡ್",
+  "pass.scan.kicker": "ಸದಸ್ಯತ್ವ / ಡೋರ್ ಪ್ರವೇಶ",
+  "pass.scan.title": "ಸ್ಕ್ಯಾನ್ ಮಾಡಿ ಅಥವಾ ಟೈಪ್ ಮಾಡಿ",
+  "pass.scan.qrAlt": "ಸದಸ್ಯ ಪಾಸ್ QR ಕೋಡ್. ಟೈಪ್ ಮಾಡುವ ಪರ್ಯಾಯ: {code}",
+  "pass.scan.body1": "ಸ್ವಯಂಸೇವಕರು ಈ QR ಸ್ಕ್ಯಾನ್ ಮಾಡುತ್ತಾರೆ, ಅಥವಾ ನಿಮ್ಮ ಡೋರ್ ಕೋಡ್ ಟೈಪ್ ಮಾಡುತ್ತಾರೆ",
+  "pass.scan.body2": "ಸದಸ್ಯ ಪಾಸ್ ಆಯ್ಕೆಮಾಡಿದ ಈವೆಂಟ್‌ಗೆ ನಿಮ್ಮ ಒಂದೇ ಸಕ್ರಿಯ ಟಿಕೆಟ್ ಅನ್ನು ಗುರುತಿಸುತ್ತದೆ. ಟಿಕೆಟ್ ಇಲ್ಲದಿದ್ದರೆ ಡೋರ್ ಹಾಗೆ ಹೇಳುತ್ತದೆ; ಮೊದಲು ಈವೆಂಟ್‌ಗಳಲ್ಲಿ ಒಂದನ್ನು ಬುಕ್ ಮಾಡಿ.",
+  "pass.scan.body3": "ನಿಮ್ಮ ಪಾಸ್ ಎಂದಿಗೂ ಬದಲಾಗುವುದಿಲ್ಲ. ಅಧಿಕಾರಿ ನಿಮ್ಮ ಶುಲ್ಕ ದಾಖಲಿಸಿದ ನಂತರ ಹೊಸ ಮುಕ್ತಾಯ ನೋಡಲು ರಿಫ್ರೆಶ್ ಮಾಡಿ.",
+  "pass.tickets.kicker": "ಈವೆಂಟ್ ರಿಜಿಸ್ಟರ್",
+  "pass.tickets.title": "ನಿಮ್ಮ ಟಿಕೆಟ್‌ಗಳು",
+  "pass.tickets.all": "ಎಲ್ಲಾ ಟಿಕೆಟ್‌ಗಳು",
+  "pass.tickets.empty": "ಇನ್ನೂ ಟಿಕೆಟ್‌ಗಳಿಲ್ಲ.",
+  "pass.tickets.findEvent": "ಈವೆಂಟ್ ಹುಡುಕಿ",
+  "pass.tickets.line": "{pricing} ಟಿಕೆಟ್ · {price}",
+  "pass.tickets.holdUntil": "{time} ವರೆಗೆ ಹೋಲ್ಡ್",
+  "pass.tickets.checkedIn": "{time} ಕ್ಕೆ ಚೆಕ್-ಇನ್",
+  "pass.tickets.footnote": "ಅಧಿಕಾರಿ ಡೆಸ್ಕ್‌ನಲ್ಲಿ ನಿಮ್ಮ ಪಾವತಿ ದೃಢೀಕರಿಸುತ್ತಾರೆ; ನಂತರ ನಿಮ್ಮ QR ಬಾಗಿಲಲ್ಲಿ ನಿಮಗೆ ಪ್ರವೇಶ ನೀಡುತ್ತದೆ.",
+  "pass.orders.kicker": "ಕ್ಲಬ್ ಶಾಪ್",
+  "pass.orders.title": "ನಿಮ್ಮ ಆರ್ಡರ್‌ಗಳು",
+  "pass.orders.all": "ಎಲ್ಲಾ ಆರ್ಡರ್‌ಗಳು",
+  "pass.orders.empty": "ಇನ್ನೂ ಮರ್ಚಂಡೈಸ್ ಆರ್ಡರ್‌ಗಳಿಲ್ಲ.",
+  "pass.orders.openShop": "ಶಾಪ್ ತೆರೆಯಿರಿ",
+  "pass.previewNote": "ಡೋರ್ ಸ್ಕ್ಯಾನಿಂಗ್ ನಿಮ್ಮ ಪಾಸ್ ಅನ್ನು QR ಟೋಕನ್ ಅಥವಾ ಟೈಪ್ ಮಾಡಿದ ಕೋಡ್ ಮೂಲಕ ಗುರುತಿಸುತ್ತದೆ, ಖಾತೆ ID ಮೂಲಕ ಎಂದಿಗೂ ಅಲ್ಲ.",
+};
+
+export default pass;

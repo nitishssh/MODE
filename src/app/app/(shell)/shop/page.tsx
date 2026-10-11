@@ -2,6 +2,7 @@
 
 import MerchandiseShop from "@/components/merchandise-shop";
 import { useSession } from "../../_lib/session";
+import { useT } from "../../_lib/i18n";
 import { PageHead } from "../../_components/ui";
 import { ShopNav } from "./_nav";
 
@@ -12,10 +13,11 @@ import { ShopNav } from "./_nav";
 
 export default function ShopPage() {
   const { user, can } = useSession();
+  const { t } = useT();
   if (!user) return null;
   return (
     <>
-      <PageHead eyebrow={<>CLUB <span>/</span> MERCHANDISE</>} title="Merchandise" description="Club essentials, with orders and stock in one place." />
+      <PageHead eyebrow={<>{t("shop.eyebrowClub")} <span>/</span> {t("shop.eyebrow")}</>} title={t("shop.title")} description={t("shop.description")} />
       {can("products:write") || can("payments:confirm") || can("orders:fulfil") ? <ShopNav active="shop" /> : null}
       <MerchandiseShop user={user} />
     </>

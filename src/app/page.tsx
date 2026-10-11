@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import type { DragEvent, FormEvent, ReactNode } from "react";
 import { WorkspaceMainSkeleton } from "./skeleton";
 import { LandingPage } from "@/components/landing-page";
@@ -2638,6 +2639,7 @@ function Workspace({ user, onLogout }: { user: SessionUser; onLogout: () => void
 
 export default function Home() {
   const { t } = useI18n();
+  const pathname = usePathname();
   const messages = useRequestMessages();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2659,6 +2661,8 @@ export default function Home() {
     } catch (error) { setError(error instanceof Error ? error.message : t("auth.signOutFailed")); }
   }
   if (loading) return <main className="loading-state" role="status">{t("auth.loading")}</main>;
+  // Signed-in visitors at the site root use the role-aware workspace at /app; /legacy keeps this one.
+  if (user && pathname === "/") { window.location.replace("/app"); return <main className="loading-state" role="status">{t("auth.loading")}</main>; }
   if (user) return <>{error && <p role="alert">{error}</p>}<Workspace key={user.id} user={user} onLogout={() => void signOut()} /></>;
   return <LandingPage onSignIn={() => { window.location.href = "/app/login"; }} />;
 }

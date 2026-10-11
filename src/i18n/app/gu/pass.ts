@@ -1,0 +1,38 @@
+import type en from "../en/pass";
+
+const pass: Record<keyof typeof en, string> = {
+  "pass.kicker": "સભ્યપદ",
+  "pass.kickerSection": "ડોર ઍક્સેસ",
+  "pass.title": "મારો સભ્ય પાસ",
+  "pass.lede": "આ દરવાજે બતાવો. પ્રવેશ સ્વયંસેવકે પસંદ કરેલી ઇવેન્ટની ચૂકવેલી ટિકિટ પર આધારિત છે, ફક્ત સભ્યપદ પર નહીં.",
+  "pass.refresh": "સભ્યપદ રિફ્રેશ કરો",
+  "pass.cardKicker": "MODE · સભ્ય પાસ",
+  "pass.notJoined": "જોડાયા નથી",
+  "pass.membership.active": "સક્રિય સભ્યપદ",
+  "pass.membership.expired": "સભ્યપદ સમાપ્ત. અધિકારી પાસે નવીકરણ કરાવો.",
+  "pass.membership.none": "હજી ફી ચૂકવેલ સભ્ય નથી. ફી વિશે અધિકારીને પૂછો.",
+  "pass.doorCode": "ડોર કોડ",
+  "pass.scan.kicker": "સભ્યપદ / ડોર ઍક્સેસ",
+  "pass.scan.title": "સ્કેન કરો અથવા ટાઇપ કરો",
+  "pass.scan.qrAlt": "સભ્ય પાસ QR કોડ. ટાઇપ કરવાનો વિકલ્પ: {code}",
+  "pass.scan.body1": "સ્વયંસેવક આ QR સ્કેન કરે છે, અથવા તમારો ડોર કોડ ટાઇપ કરે છે",
+  "pass.scan.body2": "સભ્ય પાસ પસંદ કરેલી ઇવેન્ટ માટે તમારી એકમાત્ર લાઇવ ટિકિટ સાથે જોડાય છે. તમારી પાસે ટિકિટ ન હોય તો દરવાજે તેમ કહેવાશે; પહેલાં ઇવેન્ટ્સમાં જઈને ટિકિટ બુક કરો.",
+  "pass.scan.body3": "તમારો પાસ ક્યારેય બદલાતો નથી. અધિકારી તમારી ફી નોંધે પછી નવી સમાપ્તિ જોવા રિફ્રેશ કરો.",
+  "pass.tickets.kicker": "ઇવેન્ટ રજિસ્ટર",
+  "pass.tickets.title": "તમારી ટિકિટો",
+  "pass.tickets.all": "બધી ટિકિટો",
+  "pass.tickets.empty": "હજી કોઈ ટિકિટ નથી.",
+  "pass.tickets.findEvent": "ઇવેન્ટ શોધો",
+  "pass.tickets.line": "{pricing} ટિકિટ · {price}",
+  "pass.tickets.holdUntil": "{time} સુધી હોલ્ડ",
+  "pass.tickets.checkedIn": "ચેક-ઇન {time}",
+  "pass.tickets.footnote": "અધિકારી ડેસ્ક પર તમારી ચુકવણીની પુષ્ટિ કરે છે; તે પછી તમારો QR દરવાજે પ્રવેશ અપાવે છે.",
+  "pass.orders.kicker": "ક્લબ શોપ",
+  "pass.orders.title": "તમારા ઓર્ડર",
+  "pass.orders.all": "બધા ઓર્ડર",
+  "pass.orders.empty": "હજી કોઈ મર્ચેન્ડાઇઝ ઓર્ડર નથી.",
+  "pass.orders.openShop": "શોપ ખોલો",
+  "pass.previewNote": "ડોર સ્કેનિંગ તમારા પાસને તેના QR ટોકન કે ટાઇપ કરેલા કોડથી ઓળખે છે, ખાતા ID થી ક્યારેય નહીં.",
+};
+
+export default pass;
