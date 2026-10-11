@@ -2,7 +2,6 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { api, ApiError, useAction } from "../../_lib/api";
 import { useT } from "../../_lib/i18n";
 import { useSession } from "../../_lib/session";
@@ -12,7 +11,6 @@ import { Icon } from "../../_components/icons";
 export default function SettingsPage() {
   const { t } = useT();
   const session = useSession();
-  const router = useRouter();
   const { user, pass } = session;
   const [signingOut, setSigningOut] = useState(false);
 
