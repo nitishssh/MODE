@@ -39,7 +39,7 @@ try {
   // read of the same file so the export sees exactly what the application migrated.
   const raw = new DatabaseSync(sqlitePath === ":memory:" ? ":memory:" : resolve(sqlitePath), { readOnly: sqlitePath !== ":memory:" });
   try {
-    const tables = (raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((t) => t.name);
+    const tables = (raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
     script = postgresExport(raw, { version: SCHEMA_VERSION, replace: flag("--replace"), skipData: schemaOnly ? tables : skip });
   } finally {
     raw.close();

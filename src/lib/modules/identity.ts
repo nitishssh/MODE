@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { hashPassword, verifyPassword } from "../auth/password";
 import { allocateUniqueTokens, normalizeShortCode } from "../auth/tokens";
-import { membershipState } from "./membership-state";
+import { MEMBERSHIP_STATE_SQL, membershipState } from "./membership-state";
 import { clubDate } from "../db/core";
 import { ROLES, hasPermission, type Permission, type Role } from "../auth/permissions";
 import { SESSION_TTL_MS, generateSessionToken, hashSessionToken } from "../auth/session";
-import type { CreateMemberInput, Member } from "../contracts";
+import type { ClubMembership, CreateMemberInput, Member } from "../contracts";
 import {
   DEFAULT_CLUB_ID,
 } from "../db/migrations";
@@ -29,17 +29,23 @@ import {
   UnauthorizedError,
   ValidationError,
 } from "../errors";
+import { createMemberSchema } from "../member-validation";
+import { parseInput } from "../validation";
+import { containsText, containsTextPredicate, cursorPage, membersPageSchema, pageContext } from "../pagination";
 
 /** Login throttling (audit #10): this many consecutive failures per email lock the account for the window. */
 export const LOGIN_MAX_FAILURES = 5;
 export const LOGIN_LOCKOUT_MS = 15 * 60_000;
 /** Simulated outbox rows older than this are purged. */
 export const OUTBOX_RETENTION_DAYS = 90;
-import { createMemberSchema } from "../member-validation";
 
-/** The authenticated caller. Every module scopes its queries to `clubId`. */
+/**
+ * The authenticated caller. Every module scopes its queries to `clubId`. `memberId` is the
+ * caller's membership in that club; `personId` is the login identity shared by all their clubs.
+ */
 export interface Actor {
   memberId: string;
+  personId: string;
   clubId: string;
   role: Role;
   name: string;
@@ -63,6 +69,7 @@ export const loginSchema = z
   .object({ email: z.string().trim().max(254).toLowerCase(), password: z.string().min(1).max(200) })
   .strict();
 export const roleSchema = z.object({ role: z.enum(ROLES) }).strict();
+export const switchClubSchema = z.object({ clubId: z.string().trim().min(1).max(200) }).strict();
 export const changePasswordSchema = z
   .object({ currentPassword: z.string().min(1).max(200), newPassword: passwordSchema })
   .strict();
@@ -96,6 +103,25 @@ export function createIdentityModule(ctx: DbContext) {
       .map((row) => mapMember(row as Row, clubDate(ctx.now())));
   }
 
+  function getMembersPage(actor: Actor, input: unknown = {}) {
+    assertPermission(actor, "members:read");
+    const filters = parseInput(membersPageSchema, input);
+    const page = pageContext(actor, "members", filters, ctx.now());
+    const date = clubDate(new Date(page.asOf));
+    const clauses = ["club_id = ?"], values: (string | number)[] = [actor.clubId];
+    if (filters.role) { clauses.push("role = ?"); values.push(filters.role); }
+    if (filters.membership) { clauses.push(`(${MEMBERSHIP_STATE_SQL}) = ?`); values.push(date, filters.membership); }
+    if (filters.q) { clauses.push(`(${containsTextPredicate("name", db)} OR ${containsTextPredicate("email", db)})`); values.push(containsText(filters.q), containsText(filters.q)); }
+    if (page.after) {
+      // The explicit upper bound lets SQLite seek into the timestamp index.
+      clauses.push("joined_at <= ? AND (joined_at < ? OR (joined_at = ? AND id > ?))");
+      values.push(page.after.timestamp, page.after.timestamp, page.after.timestamp, page.after.id);
+    }
+    const rows = db.prepare(`SELECT * FROM members WHERE ${clauses.join(" AND ")} ORDER BY joined_at DESC, id ASC LIMIT ?`)
+      .all(...values, page.limit + 1).map(row => mapMember(row, date));
+    return cursorPage(rows, page, member => ({ timestamp: member.joinedAt, id: member.id }));
+  }
+
   function findMember(clubId: string, memberId: string): Member | null {
     const row = db.prepare("SELECT * FROM members WHERE club_id = ? AND id = ?").get(clubId, memberId) as Row | undefined;
     return row ? mapMember(row, clubDate(ctx.now())) : null;
@@ -107,58 +133,53 @@ export function createIdentityModule(ctx: DbContext) {
     return member;
   }
 
-  function listMemberships(memberId: string) {
-    const rows = db
-      .prepare(
-        "SELECT m.id as member_id, m.club_id, c.name as club_name, m.role FROM members m JOIN clubs c ON m.club_id = c.id WHERE m.id = ? ORDER BY m.joined_at DESC",
-      )
-      .all(memberId) as Array<{ member_id: string; club_id: string; club_name: string; role: string }>;
-    return rows.map((row) => ({
-      memberId: row.member_id,
-      clubId: row.club_id,
-      clubName: row.club_name,
-      role: row.role as Role,
-    }));
-  }
-
+  /**
+   * Add a club membership for the person with this email. `onExistingPerson` decides what an
+   * email that already has an account means: self-registration refuses it ("create"), while
+   * officers and imports add the existing person to their club ("attach") without touching
+   * the person's name or password. Joining the same club twice is always a duplicate.
+   */
   function insertMember(
     input: CreateMemberInput & { password?: string; role?: Role; clubId?: string },
+    onExistingPerson: "create" | "attach" = "create",
   ): Member {
     // Validate here as well so server callers cannot bypass the API boundary.
     const { name, email } = createMemberSchema.parse({ name: input.name, email: input.email });
-    const member: Member = {
-      id: randomUUID(),
-      name,
-      email,
-      joinedAt: ctx.now().toISOString(),
-      expiresOn: null,
-      duesStatus: "unpaid",
-      role: input.role ?? "member",
-      membership: "none",
-      shortCode: "",
-    };
-    const tokens = allocateUniqueTokens((candidate) => tokenExists.get(candidate.qrToken, candidate.shortCode) !== undefined);
-    member.shortCode = tokens.shortCode;
+    const clubId = input.clubId ?? DEFAULT_CLUB_ID;
+    const joinedAt = ctx.now().toISOString();
     try {
+      const existing = db.prepare("SELECT id, name, email FROM people WHERE email = ?").get(email) as Row | undefined;
+      if (existing && onExistingPerson === "create") throw new DuplicateMemberError();
+      const person = existing
+        ? { id: text(existing.id), name: text(existing.name), email: text(existing.email) }
+        : { id: randomUUID(), name, email };
+      if (!existing) {
+        db.prepare("INSERT INTO people (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)").run(
+          person.id, person.name, person.email, input.password ? hashPassword(input.password) : null, joinedAt,
+        );
+      }
+      const member: Member = {
+        id: randomUUID(),
+        name: person.name,
+        email: person.email,
+        joinedAt,
+        expiresOn: null,
+        duesStatus: "unpaid",
+        role: input.role ?? "member",
+        membership: "none",
+        shortCode: "",
+      };
+      const tokens = allocateUniqueTokens((candidate) => tokenExists.get(candidate.qrToken, candidate.shortCode) !== undefined);
+      member.shortCode = tokens.shortCode;
       db.prepare(
-        "INSERT INTO members (id, name, email, joined_at, expires_on, dues_status, club_id, role, password_hash, qr_token, short_code) VALUES (?, ?, ?, ?, NULL, 'unpaid', ?, ?, ?, ?, ?)",
-      ).run(
-        member.id,
-        member.name,
-        member.email,
-        member.joinedAt,
-        input.clubId ?? DEFAULT_CLUB_ID,
-        member.role,
-        input.password ? hashPassword(input.password) : null,
-        tokens.qrToken,
-        tokens.shortCode,
-      );
+        "INSERT INTO members (id, name, email, joined_at, expires_on, dues_status, club_id, role, password_hash, qr_token, short_code, person_id) VALUES (?, ?, ?, ?, NULL, 'unpaid', ?, ?, NULL, ?, ?, ?)",
+      ).run(member.id, member.name, member.email, member.joinedAt, clubId, member.role, tokens.qrToken, tokens.shortCode, person.id);
+      return member;
     } catch (error) {
-      // The UNIQUE constraint provides the concurrency guarantee, including mixed-case email.
+      // UNIQUE(people.email) and UNIQUE(members.club_id, person_id) provide the concurrency guarantee, including mixed-case email.
       if (isConstraintError(error, SQLITE_CONSTRAINT_UNIQUE)) throw new DuplicateMemberError();
       throw error;
     }
-    return member;
   }
 
   // A member pass must not collide with a ticket pass either: the scanner resolves tickets first (audit #15).
@@ -185,16 +206,16 @@ export function createIdentityModule(ctx: DbContext) {
     return row ? mapMember(row, clubDate(ctx.now())) : null;
   }
 
-  /** Officer-created member record without login credentials. */
+  /** Officer-created membership. A new email gets a person without login credentials; a known one joins this club. */
   function createMember(input: CreateMemberInput, options: { clubId?: string } = {}): Member {
-    return insertMember({ ...input, clubId: options.clubId });
+    return insertMember({ ...input, clubId: options.clubId }, "attach");
   }
 
   /** Officer creates a member in their own club; the record and its audit entry commit together. */
   function createMemberAs(actor: Actor, input: CreateMemberInput): Member {
     assertPermission(actor, "members:create");
     return transaction(ctx, () => {
-      const member = insertMember({ ...input, clubId: actor.clubId });
+      const member = insertMember({ ...input, clubId: actor.clubId }, "attach");
       recordAudit(actor, "member.created", "member", member.id);
       return member;
     });
@@ -237,35 +258,75 @@ export function createIdentityModule(ctx: DbContext) {
     const attempt = db.prepare("SELECT locked_until FROM login_attempts WHERE email = ?").get(parsed.email) as Row | undefined;
     const lockedUntil = nullableText(attempt?.locked_until ?? null);
     if (lockedUntil && lockedUntil > nowIso) throw new TooManyAttemptsError(lockedUntil);
-    const row = db.prepare("SELECT * FROM members WHERE email = ?").get(parsed.email) as Row | undefined;
+    const person = db.prepare("SELECT id, password_hash FROM people WHERE email = ?").get(parsed.email) as Row | undefined;
     // Unknown accounts must run the dummy derivation too; avoid short-circuiting it.
-    const passwordMatches = verifyPassword(parsed.password, row ? nullableText(row.password_hash) : null);
+    const passwordMatches = verifyPassword(parsed.password, person ? nullableText(person.password_hash) : null);
     // Same error for unknown email and wrong password; both count towards the lockout.
-    if (!row || !passwordMatches) {
+    if (!person || !passwordMatches) {
       recordLoginFailure(parsed.email);
       throw new UnauthorizedError("Incorrect email or password.");
     }
+    // Open the club this person used most recently; a first login opens the oldest membership.
+    const row = db.prepare(
+      `SELECT m.* FROM members m WHERE m.person_id = ?
+       ORDER BY COALESCE((SELECT MAX(s.created_at) FROM sessions s WHERE s.member_id = m.id), '') DESC, m.joined_at, m.id`,
+    ).get(text(person.id)) as Row | undefined;
+    if (!row) throw new UnauthorizedError("This account is not a member of any club.");
     return transaction(ctx, () => {
       db.prepare("DELETE FROM login_attempts WHERE email = ?").run(parsed.email);
       return issueSession(mapMember(row), text(row.club_id));
     });
   }
 
-  function revokeSessions(memberId: string, exceptSessionId?: string): number {
+  /** Sessions belong to a membership, but credentials belong to the person: revoke across every club. */
+  function revokeSessions(personId: string, exceptSessionId?: string): number {
     const nowIso = ctx.now().toISOString();
+    const scope = "member_id IN (SELECT id FROM members WHERE person_id = ?) AND revoked_at IS NULL";
     return exceptSessionId
-      ? Number(db.prepare("UPDATE sessions SET revoked_at = ? WHERE member_id = ? AND revoked_at IS NULL AND id <> ?").run(nowIso, memberId, exceptSessionId).changes)
-      : Number(db.prepare("UPDATE sessions SET revoked_at = ? WHERE member_id = ? AND revoked_at IS NULL").run(nowIso, memberId).changes);
+      ? Number(db.prepare(`UPDATE sessions SET revoked_at = ? WHERE ${scope} AND id <> ?`).run(nowIso, personId, exceptSessionId).changes)
+      : Number(db.prepare(`UPDATE sessions SET revoked_at = ? WHERE ${scope}`).run(nowIso, personId).changes);
+  }
+
+  /** Every club this person belongs to, for the club switcher. */
+  function listMemberships(personId: string): ClubMembership[] {
+    const date = clubDate(ctx.now());
+    return (db.prepare(
+      `SELECT m.id, m.club_id, m.role, m.expires_on, c.name AS club_name
+       FROM members m JOIN clubs c ON c.id = m.club_id
+       WHERE m.person_id = ? ORDER BY c.name COLLATE NOCASE, m.club_id`,
+    ).all(personId) as Row[]).map((row) => ({
+      memberId: text(row.id),
+      clubId: text(row.club_id),
+      clubName: text(row.club_name),
+      role: row.role as Role,
+      membership: membershipState({ expiresOn: nullableText(row.expires_on) }, date),
+    }));
+  }
+
+  /**
+   * Point this session at the person's membership in another club. Permissions come from that
+   * membership's role, so nothing carries over between clubs. 403 when the person is not a member.
+   */
+  function switchClub(actor: Actor, clubId: string): Actor {
+    const target = db.prepare("SELECT id, role FROM members WHERE person_id = ? AND club_id = ?").get(actor.personId, clubId) as Row | undefined;
+    if (!target) throw new ForbiddenError("You are not a member of that club.");
+    if (text(target.id) === actor.memberId) return actor;
+    return transaction(ctx, () => {
+      db.prepare("UPDATE sessions SET member_id = ?, club_id = ? WHERE id = ? AND revoked_at IS NULL").run(text(target.id), clubId, actor.sessionId);
+      const next: Actor = { ...actor, memberId: text(target.id), clubId, role: target.role as Role };
+      recordAudit(next, "session.club_switched", "member", next.memberId, { fromClubId: actor.clubId });
+      return next;
+    });
   }
 
   /** Self-service password change (audit #9): proves the current password, keeps this session, signs out every other one. */
   function changePassword(actor: Actor, input: { currentPassword: string; newPassword: string }): { revokedSessions: number } {
     const parsed = changePasswordSchema.parse(input);
-    const row = db.prepare("SELECT password_hash FROM members WHERE id = ?").get(actor.memberId) as Row | undefined;
+    const row = db.prepare("SELECT password_hash FROM people WHERE id = ?").get(actor.personId) as Row | undefined;
     if (!row || !verifyPassword(parsed.currentPassword, nullableText(row.password_hash))) throw new UnauthorizedError("The current password is incorrect.");
     return transaction(ctx, () => {
-      db.prepare("UPDATE members SET password_hash = ? WHERE id = ?").run(hashPassword(parsed.newPassword), actor.memberId);
-      const revokedSessions = revokeSessions(actor.memberId, actor.sessionId);
+      db.prepare("UPDATE people SET password_hash = ? WHERE id = ?").run(hashPassword(parsed.newPassword), actor.personId);
+      const revokedSessions = revokeSessions(actor.personId, actor.sessionId);
       recordAudit(actor, "member.password_changed", "member", actor.memberId, { revokedSessions });
       return { revokedSessions };
     });
@@ -295,8 +356,8 @@ export function createIdentityModule(ctx: DbContext) {
     if (!token) return null;
     const row = db
       .prepare(
-        `SELECT s.id AS session_id, s.expires_at, m.id, m.club_id, m.role, m.name, m.email
-         FROM sessions s JOIN members m ON m.id = s.member_id
+        `SELECT s.id AS session_id, s.expires_at, m.id, m.club_id, m.role, p.id AS person_id, p.name, p.email
+         FROM sessions s JOIN members m ON m.id = s.member_id JOIN people p ON p.id = m.person_id
          WHERE s.token_hash = ? AND s.revoked_at IS NULL`,
       )
       .get(hashSessionToken(token)) as Row | undefined;
@@ -304,6 +365,7 @@ export function createIdentityModule(ctx: DbContext) {
     return {
       sessionId: text(row.session_id),
       memberId: text(row.id),
+      personId: text(row.person_id),
       clubId: text(row.club_id),
       role: row.role as Role,
       name: text(row.name),
@@ -346,15 +408,23 @@ export function createIdentityModule(ctx: DbContext) {
     });
   }
 
-  /** Lets an admin grant credentials to an officer-created member. */
+  /**
+   * Lets an admin grant credentials to an officer-created member. The password belongs to the
+   * person, so an admin may only set it when every membership that person has is in the admin's
+   * own club; otherwise one club's admin could sign in as the student in another club.
+   */
   function setPassword(actor: Actor, memberId: string, password: string): void {
     assertPermission(actor, "roles:manage");
     passwordSchema.parse(password);
     transaction(ctx, () => {
       requireMember(actor.clubId, memberId);
-      db.prepare("UPDATE members SET password_hash = ? WHERE id = ? AND club_id = ?").run(hashPassword(password), memberId, actor.clubId);
+      const personId = text((db.prepare("SELECT person_id FROM members WHERE id = ?").get(memberId) as Row).person_id);
+      if (db.prepare("SELECT 1 FROM members WHERE person_id = ? AND club_id <> ?").get(personId, actor.clubId)) {
+        throw new ConflictError("This member also belongs to another club, so only they can change their password.", "shared_account");
+      }
+      db.prepare("UPDATE people SET password_hash = ? WHERE id = ?").run(hashPassword(password), personId);
       // A reset credential signs the member out everywhere (audit #8).
-      const revokedSessions = revokeSessions(memberId);
+      const revokedSessions = revokeSessions(personId);
       recordAudit(actor, "member.password_set", "member", memberId, { revokedSessions });
     });
   }
@@ -380,7 +450,8 @@ export function createIdentityModule(ctx: DbContext) {
   /**
    * Tooling (`npm run club:import`): bring an existing register in. A member with `expiresOn`
    * arrives as already paid up to that club date; no ledger row is posted because the money
-   * was collected before MODE. Returns null when the email already exists.
+   * was collected before MODE. An email that already has an account joins this club without
+   * any change to its name or password. Returns null when the email is already in this club.
    */
   function importMember(
     input: { name: string; email: string; role?: Role; expiresOn?: string | null; password?: string },
@@ -392,7 +463,7 @@ export function createIdentityModule(ctx: DbContext) {
     return transaction(ctx, () => {
       let member: Member;
       try {
-        member = insertMember({ name: input.name, email: input.email, role: input.role ?? "member", password: input.password, clubId });
+        member = insertMember({ name: input.name, email: input.email, role: input.role ?? "member", password: input.password, clubId }, "attach");
       } catch (error) {
         if (error instanceof DuplicateMemberError) return null;
         throw error;
@@ -442,14 +513,16 @@ export function createIdentityModule(ctx: DbContext) {
     getPass,
     findMemberByPass,
     getMembers,
+    getMembersPage,
     findMember,
     requireMember,
-    listMemberships,
     createMember,
     createMemberAs,
     createMemberWithCredentials,
     register,
     login,
+    listMemberships,
+    switchClub,
     changePassword,
     purge,
     logout,

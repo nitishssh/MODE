@@ -1,29 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type { EventDetails } from "@/lib/contracts";
 import { api, useLoad } from "../../_lib/api";
 import { useT } from "../../_lib/i18n";
 import { useSession } from "../../_lib/session";
+import { useNow } from "../../_lib/use-now";
 import { Icon } from "../../_components/icons";
 import { EmptyState, ErrorState, PageHead, Skeleton } from "../../_components/ui";
 
 /* The door volunteer's landing: pick the event, open its scanner. Nothing else. */
 
 export default function DoorHomePage() {
+  return <Suspense fallback={<Skeleton rows={4} />}><DoorHome /></Suspense>;
+}
+
+function DoorHome() {
   const { t, fmt } = useT();
   const { can } = useSession();
   const events = useLoad(() => api.get<{ events: EventDetails[] }>("/api/events"));
   // A scanned member-pass QR lands here with the credential; carry it to the chosen event's scanner.
-  const [credential, setCredential] = useState("");
-  useEffect(() => { setCredential(new URLSearchParams(window.location.search).get("credential") ?? ""); }, []);
+  const credential = useSearchParams().get("credential") ?? "";
+  const now = useNow();
 
   if (!can("tickets:check_in")) {
     return <section className="panel"><EmptyState title={t("events.door.volunteersOnly")} icon="scan">{t("events.door.needsPermission")}</EmptyState></section>;
   }
 
-  const now = Date.now();
   const list = (events.data?.events ?? [])
     .filter((event) => event.status === "published")
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt))

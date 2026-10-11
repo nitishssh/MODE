@@ -1,14 +1,19 @@
 import { useState } from "react";
-import { Link, Redirect } from "expo-router";
+import { Link } from "expo-router";
 import { useSession } from "../lib/session";
+import { AuthRedirect } from "../lib/auth-redirect";
+import { authHref } from "../lib/return-target";
+import { useScreenSearchParams } from "../lib/use-screen-search-params";
 import { Field } from "../components/forms";
-import { Action, Copy, ErrorNotice, Screen } from "../components/ui";
+import { Action, Copy, ErrorNotice, LoadingRows, Screen } from "../components/ui";
 export default function Register() {
-  const { client, user, busy, error } = useSession();
+  const { client, status, user, busy, error } = useSession();
+  const { returnTo } = useScreenSearchParams();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  if (user) return <Redirect href="/" />;
+  if (user) return <AuthRedirect user={user} returnTo={returnTo} />;
+  if (status === "loading") return <Screen title="Opening your register"><LoadingRows /></Screen>;
   return (
     <Screen title="Join the club">
       <Copy>
@@ -43,7 +48,10 @@ export default function Register() {
       >
         Create account
       </Action>
-      <Link href="/login">Go to sign in</Link>
+      {status === "unavailable" && (
+        <Action onPress={() => void client.bootstrap()}>Retry saved session</Action>
+      )}
+      <Link replace href={authHref("/login", returnTo)}>Go to sign in</Link>
     </Screen>
   );
 }

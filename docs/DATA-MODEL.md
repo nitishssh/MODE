@@ -2,7 +2,7 @@
 
 Source snapshot: `a62c6e27724eccfafe54f3d85c9ddf066fb7c033`, schema **11**, 10 October 2026. The column/DDL appendix below was obtained by opening a new isolated database through this snapshot's `openClubDatabase()`, then reading SQLite PRAGMA metadata. It does not inspect or publish the working demo database or live member records.
 
-The complete current DDL is generated into [schema.sql](schema.sql) by `npm run schema:dump`; `npm run check` fails when it is stale. The same command writes the PostgreSQL translation to [schema.postgres.sql](schema.postgres.sql); see [POSTGRESQL.md](POSTGRESQL.md) for the mapping rules, the export/load tooling and the runtime migration plan, and [DB-AUDIT.md](DB-AUDIT.md) for the audited gaps in this schema.
+The current schema is **14**: migration 13 hardens existing tables and migration 14 adds pagination indexes. The complete current DDL is generated into [schema.sql](schema.sql) by `npm run schema:dump`; `npm run check` and `npm run check:all` fail when either generated schema is stale. The same command writes the PostgreSQL translation to [schema.postgres.sql](schema.postgres.sql); see [POSTGRESQL.md](POSTGRESQL.md) for the mapping rules, the export/load tooling and the runtime migration plan, and [DB-AUDIT.md](DB-AUDIT.md) for the audited gaps in this schema.
 
 See [Architecture](CODEBASE.md), [HTTP API](HTTP-API.md), [code reference](CODE-REFERENCE.md) and [setup/backup instructions](DEVELOPMENT.md).
 
@@ -27,6 +27,7 @@ Writes use synchronous `BEGIN IMMEDIATE` transactions, with savepoints for nesti
 | 11 | Announcement club/author/retry/audience fields and notification/outbox announcement links |
 | 12 | Legacy workspace normalisation and historical ledger imports |
 | 13 | Hardening ([DB-AUDIT.md](DB-AUDIT.md)): `club_id` foreign keys on six tables (SQLite table rebuild), receipt and payment-reference uniqueness, `events.seeded_registrations`, `clubs.require_separate_payer`, `login_attempts`, reminders primary key, purge/throttle indexes |
+| 14 | One person, many clubs: `people` holds name, email (globally unique) and password; `members` becomes one membership per club with `person_id` and `UNIQUE (club_id, person_id)`. Backfill creates one person per existing member with the same id; `members.password_hash` is cleared and no longer read. SQLite rebuilds `members` to drop the global email UNIQUE; PostgreSQL drops `members_email_key` |
 
 Versions 5 and 7 are historical gaps; do not reuse them. Append migrations above the latest released version. v10 does not move/delete old receipt files; new uploads use UUID plus detected extension, while legacy extensionless/WebP downloads remain supported.
 
@@ -34,6 +35,7 @@ Versions 5 and 7 are historical gaps; do not reuse them. Append migrations above
 
 ```mermaid
 erDiagram
+  people ||--o{ members : "belongs to clubs as"
   clubs ||--o{ members : contains
   members ||--o{ sessions : authenticates
   members ||--o{ dues_payments : renews
@@ -58,7 +60,8 @@ This diagram shows the main logical relationships; the appendix gives the actual
 
 - IDs are stored as TEXT; most new records use UUIDs, while stable demo IDs use descriptive strings. Do not assume all resource IDs are UUIDs. Receipt submission specifically validates receipt IDs as UUIDs.
 - Money is stored in integer paise. Ledger amounts must be positive; kind supplies direction. Ticket/product prices can be zero. Free bookings/orders have no zero-value ledger row.
-- `members.email` is globally unique with NOCASE collation. Club scope is a query/actor boundary, not a separate email namespace.
+- `people.email` is globally unique with NOCASE collation and is the login identity; `people.password_hash` is the only credential. A person has at most one `members` row per club (`UNIQUE (club_id, person_id)`). `members.name`/`members.email` are copies of the person's values written by the identity module; `members.password_hash` is unused since v14.
+- Role, dues, expiry, door pass, tickets, tasks, orders and claims all hang off the club membership (`members.id`), never the person. A session points at one membership; `POST /api/auth/switch-club` re-points it to the same person's membership in another club.
 - Membership is derived from expiry; it is not a stored active flag. Asia/Kolkata expiry today is active even when dues_status is stale.
 - `transactions(source_type,source_id)` is unique. Every actual financial transition posts once in the same transaction; reconciliation also finds missing or mismatched postings.
 - Ticket partial indexes allow one live pending/paid member or guest-email ticket per event. A row must identify exactly one of member_id or guest_email. Capacity includes legacy seeded registrations as well as new holds/tickets.
@@ -80,7 +83,8 @@ This diagram shows the main logical relationships; the appendix gives the actual
 | [events](#events) | Event schedule, prices, capacity/registered counters, publication status and fundraiser goal. |
 | [expense_receipts](#expense_receipts) | Private attachment metadata and storage name; binary bytes live on disk. |
 | [expenses](#expenses) | Receipt-backed claims, independent review, payment reference and state timestamps. |
-| [members](#members) | Club membership, role, credentials, expiry and unique member pass values. |
+| [members](#members) | One person's membership of one club: role, expiry and unique member pass values. |
+| people | Login identity shared by all of a person's clubs: name, email, password hash (see [schema.sql](schema.sql)). |
 | [membership_reminders](#membership_reminders) | Deduplication of renewal reminders by member and expiry date. |
 | [merch_orders](#merch_orders) | Member orders with saved pricing, holds, confirmation and fulfilment attribution. |
 | [notifications](#notifications) | Private in-app messages per member, optionally linked to an announcement. |

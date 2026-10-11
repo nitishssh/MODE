@@ -77,6 +77,7 @@ test("tables are ordered so every foreign key target is created first", () => {
     const before = (parent: string, child: string) => assert.ok(position.get(parent)! < position.get(child)!, `${parent} must precede ${child}`);
     before("clubs", "sessions");
     before("members", "sessions");
+    before("people", "members");
     before("members", "announcements");
     before("announcements", "notifications");
     before("announcements", "outbox_messages");
@@ -85,7 +86,7 @@ test("tables are ordered so every foreign key target is created first", () => {
     before("product_variants", "merch_orders");
     before("expense_receipts", "expenses");
     before("transactions", "legacy_ledger_imports");
-    assert.equal(tables.length, 20);
+    assert.equal(tables.length, 21);
   } finally {
     db.close();
   }
@@ -128,7 +129,7 @@ test("the export carries every seeded row, escapes awkward text and restores ide
     assert.equal(exportedRows(script, "clubs"), 2);
     assert.match(script, /INSERT INTO "members" \("id", "name", "email", .*"seq"\) VALUES/);
     assert.ok(/DO \$\$ BEGIN\n(  PERFORM setval[^\n]+\n)+END \$\$;/.test(script), "identity sequences restored in one DO block");
-    assert.match(script, /-- \d+ row\(s\) across 20 table\(s\)\./);
+    assert.match(script, /-- \d+ row\(s\) across 21 table\(s\)\./);
   } finally {
     db.close();
   }

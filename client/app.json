@@ -3,7 +3,7 @@
     "name": "MODE",
     "slug": "mode",
     "scheme": "mode",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "web": {

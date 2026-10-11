@@ -7,6 +7,8 @@ import { hasPermission } from "../auth/permissions";
 import { assertPermission, type Actor, type IdentityModule } from "./identity";
 import { ConflictError, DomainError, ForbiddenError, NotFoundError, ValidationError } from "../errors";
 import { postLedgerEntry } from "./ledger";
+import { parseInput } from "../validation";
+import { containsText, containsTextPredicate, cursorPage, expensesPageSchema, ledgerPageSchema, pageContext, tasksPageSchema } from "../pagination";
 
 function mapTaskDetails(row: Row, now: string): TaskDetails {
   const dueAt = row.due_at !== null ? String(row.due_at) : null;
@@ -56,7 +58,8 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     return id ? identity.requireMember(actor.clubId, id).name : "Unassigned";
   }
   const taskQuery = `SELECT t.*, m.name AS assignee_name, e.title AS event_title FROM tasks t
-    LEFT JOIN members m ON m.id = t.assignee_id LEFT JOIN events e ON e.id = t.event_id`;
+    LEFT JOIN members m ON m.id = t.assignee_id AND m.club_id = t.club_id
+    LEFT JOIN events e ON e.id = t.event_id AND e.club_id = t.club_id`;
   function getTaskById(actor: Actor, id: string): TaskDetails {
     const row = db.prepare(taskQuery + " WHERE t.id = ? AND t.club_id = ?").get(id, actor.clubId);
     if (!row) throw new NotFoundError("Task not found.");
@@ -70,6 +73,23 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     }
     if (filters.overdue) { clauses.push("t.due_at < ? AND t.status != 'done'"); values.push(now().toISOString()); }
     return db.prepare(taskQuery + " WHERE " + clauses.join(" AND ") + " ORDER BY t.created_at DESC, t.id").all(...values).map(row => mapTaskDetails(row, now().toISOString()));
+  }
+  function getTasksPage(actor: Actor, input: unknown = {}) {
+    const filters = parseInput(tasksPageSchema, input);
+    const page = pageContext(actor, "tasks", filters, now());
+    const clauses = ["t.club_id = ?"], values: (string | number)[] = [actor.clubId];
+    for (const [column, value] of [["t.status", filters.status], ["t.assignee_id", filters.mine ? actor.memberId : filters.assigneeId], ["t.event_id", filters.eventId]]) {
+      if (value) { clauses.push(column + " = ?"); values.push(value); }
+    }
+    if (filters.overdue) { clauses.push("t.due_at < ? AND t.status != 'done'"); values.push(page.asOf); }
+    if (filters.q) { clauses.push(`(${containsTextPredicate("t.title", db)} OR ${containsTextPredicate("t.description", db)})`); values.push(containsText(filters.q), containsText(filters.q)); }
+    if (page.after) {
+      clauses.push("t.created_at <= ? AND (t.created_at < ? OR (t.created_at = ? AND t.id > ?))");
+      values.push(page.after.timestamp, page.after.timestamp, page.after.timestamp, page.after.id);
+    }
+    const rows = db.prepare(taskQuery + " WHERE " + clauses.join(" AND ") + " ORDER BY t.created_at DESC, t.id ASC LIMIT ?")
+      .all(...values, page.limit + 1).map(row => mapTaskDetails(row, page.asOf));
+    return cursorPage(rows, page, task => ({ timestamp: task.createdAt, id: task.id }));
   }
   function createTask(actor: Actor, input: CreateTaskInput) {
     assertPermission(actor, "tasks:write");
@@ -158,7 +178,9 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     try { return readFileSync(join(/* turbopackIgnore: true */ receiptsDir, storageName)); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
   }
-  const expenseQuery = `SELECT e.*, m.name AS submitter_name, ev.title AS event_title FROM expenses e JOIN members m ON m.id = e.submitter_id LEFT JOIN events ev ON ev.id = e.event_id`;
+  const expenseQuery = `SELECT e.*, m.name AS submitter_name, ev.title AS event_title FROM expenses e
+    JOIN members m ON m.id = e.submitter_id AND m.club_id = e.club_id
+    LEFT JOIN events ev ON ev.id = e.event_id AND ev.club_id = e.club_id`;
   function getExpenseById(actor: Actor, id: string) {
     const row = db.prepare(expenseQuery + " WHERE e.id = ? AND e.club_id = ?").get(id, actor.clubId);
     if (!row) throw new NotFoundError("Expense not found.");
@@ -169,6 +191,25 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     const owner = hasPermission(actor.role, "expenses:review") ? filters.submitterId : actor.memberId;
     return db.prepare(expenseQuery + " WHERE e.club_id = ?" + (owner ? " AND e.submitter_id = ?" : "") + " ORDER BY e.submitted_at DESC, e.id")
       .all(...(owner ? [actor.clubId, owner] : [actor.clubId])).map(mapExpense);
+  }
+  function getExpensesPage(actor: Actor, input: unknown = {}) {
+    assertPermission(actor, "expenses:submit");
+    const filters = parseInput(expensesPageSchema, input);
+    const page = pageContext(actor, "expenses", filters, now());
+    const clauses = ["e.club_id = ?"], values: (string | number)[] = [actor.clubId];
+    // Own-only access is a separate predicate; a submitter filter cannot widen it.
+    if (!hasPermission(actor.role, "expenses:review")) { clauses.push("e.submitter_id = ?"); values.push(actor.memberId); }
+    for (const [column, value] of [["e.status", filters.status], ["e.submitter_id", filters.submitterId], ["e.event_id", filters.eventId]]) {
+      if (value) { clauses.push(column + " = ?"); values.push(value); }
+    }
+    if (filters.q) { clauses.push(containsTextPredicate("e.purpose", db)); values.push(containsText(filters.q)); }
+    if (page.after) {
+      clauses.push("e.submitted_at <= ? AND (e.submitted_at < ? OR (e.submitted_at = ? AND e.id > ?))");
+      values.push(page.after.timestamp, page.after.timestamp, page.after.timestamp, page.after.id);
+    }
+    const rows = db.prepare(expenseQuery + " WHERE " + clauses.join(" AND ") + " ORDER BY e.submitted_at DESC, e.id ASC LIMIT ?")
+      .all(...values, page.limit + 1).map(mapExpense);
+    return cursorPage(rows, page, expense => ({ timestamp: expense.submittedAt, id: expense.id }));
   }
   function submitExpense(actor: Actor, input: SubmitExpenseInput) {
     assertPermission(actor, "expenses:submit");
@@ -249,17 +290,16 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
       identity.recordAudit(actor, "club.policy_updated", "club", actor.clubId, { requireSeparatePayer: enabled });
     });
   }
-  function ledgerRows(actor: Actor): ExpenseLedgerEntry[] {
-    return db.prepare(`SELECT l.*, e.title AS event_title, officer.name AS officer_name,
+  const ledgerQuery = `SELECT l.*, e.title AS event_title, officer.name AS officer_name,
       COALESCE(x.payment_reference, tk.payment_reference, dp.reference, mo.payment_reference) AS payment_reference
-      FROM transactions l LEFT JOIN events e ON e.id = l.event_id
+      FROM transactions l LEFT JOIN events e ON e.id = l.event_id AND e.club_id = l.club_id
       LEFT JOIN members officer ON officer.id = l.recorded_by AND officer.club_id = l.club_id
-      LEFT JOIN expenses x ON l.source_type = 'expense' AND x.id = l.source_id
-      LEFT JOIN tickets tk ON l.source_type = 'ticket' AND tk.id = l.source_id
-      LEFT JOIN dues_payments dp ON l.source_type = 'dues_payment' AND dp.id = l.source_id
-      LEFT JOIN merch_orders mo ON l.source_type = 'merch_order' AND mo.id = l.source_id
-      WHERE l.club_id = ? ORDER BY l.occurred_at DESC, l.rowid DESC`)
-      .all(actor.clubId).map(row => ({
+      LEFT JOIN expenses x ON l.source_type = 'expense' AND x.id = l.source_id AND x.club_id = l.club_id
+      LEFT JOIN tickets tk ON l.source_type = 'ticket' AND tk.id = l.source_id AND tk.club_id = l.club_id
+      LEFT JOIN dues_payments dp ON l.source_type = 'dues_payment' AND dp.id = l.source_id AND dp.club_id = l.club_id
+      LEFT JOIN merch_orders mo ON l.source_type = 'merch_order' AND mo.id = l.source_id AND mo.club_id = l.club_id`;
+  function mapWorkspaceLedgerEntry(row: Row): ExpenseLedgerEntry {
+    return {
         id: String(row.id), type: row.kind === "income" ? "income" : "expense_paid",
         kind: row.kind as "income" | "expense", description: String(row.description), amountPaise: Number(row.amount_paise),
         category: row.source_type === "dues_payment" ? "membership" : row.source_type === "ticket" ? "events" : String(row.source_type),
@@ -268,9 +308,34 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
         sourceType: String(row.source_type), sourceId: row.source_type === "opening_balance" ? null : String(row.source_id),
         recordedBy: row.recorded_by === null ? null : String(row.recorded_by),
         recordedByName: row.officer_name === null ? null : String(row.officer_name),
-      }));
+    };
+  }
+  function ledgerRows(actor: Actor): ExpenseLedgerEntry[] {
+    return db.prepare(ledgerQuery + " WHERE l.club_id = ? ORDER BY l.occurred_at DESC, l.rowid DESC")
+      .all(actor.clubId).map(mapWorkspaceLedgerEntry);
   }
   function getLedgerEntries(actor: Actor) { assertPermission(actor, "ledger:read"); return ledgerRows(actor); }
+  function getLedgerEntriesPage(actor: Actor, input: unknown = {}) {
+    assertPermission(actor, "ledger:read");
+    const filters = parseInput(ledgerPageSchema, input);
+    const page = pageContext(actor, "ledger", filters, now());
+    const clauses = ["l.club_id = ?"], values: (string | number)[] = [actor.clubId];
+    for (const [column, value] of [["l.kind", filters.kind], ["l.event_id", filters.eventId]]) {
+      if (value) { clauses.push(column + " = ?"); values.push(value); }
+    }
+    if (filters.category) {
+      clauses.push("l.source_type = ?");
+      values.push(filters.category === "membership" ? "dues_payment" : filters.category === "events" ? "ticket" : filters.category);
+    }
+    if (filters.q) { clauses.push(containsTextPredicate("l.description", db)); values.push(containsText(filters.q)); }
+    if (page.after) {
+      clauses.push("l.occurred_at <= ? AND (l.occurred_at < ? OR (l.occurred_at = ? AND l.id > ?))");
+      values.push(page.after.timestamp, page.after.timestamp, page.after.timestamp, page.after.id);
+    }
+    const rows = db.prepare(ledgerQuery + " WHERE " + clauses.join(" AND ") + " ORDER BY l.occurred_at DESC, l.id ASC LIMIT ?")
+      .all(...values, page.limit + 1).map(mapWorkspaceLedgerEntry);
+    return cursorPage(rows, page, entry => ({ timestamp: entry.occurredAt, id: entry.id }));
+  }
   function getLedgerSource(actor: Actor, entryId: string): LedgerSource {
     assertPermission(actor, "ledger:read");
     const entry = db.prepare("SELECT * FROM transactions WHERE id = ? AND club_id = ?").get(entryId, actor.clubId);
@@ -303,13 +368,27 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     };
   }
   function getLedgerSummary(actor: Actor): LedgerSummary {
-    const entries = getLedgerEntries(actor);
-    const totals = (rows: ExpenseLedgerEntry[]) => ({inflowPaise: rows.filter(r => r.type === "income").reduce((sum,r) => sum+r.amountPaise,0), outflowPaise: rows.filter(r => r.type === "expense_paid").reduce((sum,r) => sum+r.amountPaise,0)});
-    const total = totals(entries);
-    return {...total, balancePaise: total.inflowPaise-total.outflowPaise,
-      approvedUnpaidPaise: Number(db.prepare("SELECT COALESCE(SUM(amount_paise), 0) AS total FROM expenses WHERE club_id = ? AND status = 'approved'").get(actor.clubId)?.total ?? 0),
-      byCategory: [...new Set(entries.map(r => r.category))].filter((c): c is string => c !== null).map(category => ({category, ...totals(entries.filter(r => r.category === category))})),
-      byEvent: [...new Set(entries.map(r => r.eventId))].filter((e): e is string => e !== null).map(eventId => ({eventId,eventTitle: entries.find(r => r.eventId === eventId)!.eventTitle!,...totals(entries.filter(r => r.eventId === eventId))}))
+    assertPermission(actor, "ledger:read");
+    // Aggregate the entire authorized ledger in SQL; page limits never enter here.
+    const amounts = `COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_paise ELSE 0 END), 0) AS inflow,
+      COALESCE(SUM(CASE WHEN kind = 'expense' THEN amount_paise ELSE 0 END), 0) AS outflow`;
+    const totals = db.prepare(`SELECT ${amounts},
+      (SELECT COALESCE(SUM(amount_paise), 0) FROM expenses WHERE club_id = ? AND status = 'approved') AS approved
+      FROM transactions WHERE club_id = ?`).get(actor.clubId, actor.clubId)!;
+    // Preserve v1 group order: first appearance in occurred_at DESC, rowid DESC.
+    const scoped = `WITH scoped AS (SELECT kind, amount_paise, event_id,
+      CASE source_type WHEN 'dues_payment' THEN 'membership' WHEN 'ticket' THEN 'events' ELSE COALESCE(source_type, 'null') END AS category,
+      ROW_NUMBER() OVER (ORDER BY occurred_at DESC, rowid DESC) AS ordinal
+      FROM transactions WHERE club_id = ?)`;
+    const byCategory = db.prepare(`${scoped} SELECT category, ${amounts}
+      FROM scoped GROUP BY category ORDER BY MIN(ordinal)`).all(actor.clubId);
+    const byEvent = db.prepare(`${scoped} SELECT event_id, e.title AS event_title, ${amounts}
+      FROM scoped LEFT JOIN events e ON e.id = scoped.event_id AND e.club_id = ?
+      WHERE event_id IS NOT NULL GROUP BY event_id, e.title ORDER BY MIN(ordinal)`).all(actor.clubId, actor.clubId);
+    const inflowPaise = Number(totals.inflow), outflowPaise = Number(totals.outflow);
+    return { inflowPaise, outflowPaise, balancePaise: inflowPaise - outflowPaise, approvedUnpaidPaise: Number(totals.approved),
+      byCategory: byCategory.map(row => ({ category: String(row.category), inflowPaise: Number(row.inflow), outflowPaise: Number(row.outflow) })),
+      byEvent: byEvent.map(row => ({ eventId: String(row.event_id), eventTitle: row.event_title as string, inflowPaise: Number(row.inflow), outflowPaise: Number(row.outflow) })),
     };
   }
   function getEventReport(actor: Actor, eventId: string) {
@@ -321,9 +400,9 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     return {eventId,eventTitle: String(event.title),fundraiser:{goalPaise,raisedPaise,remainingPaise:Math.max(0,goalPaise-raisedPaise),percent:goalPaise ? Math.min(100,Math.round(100*raisedPaise/goalPaise)) : 0,onTrack:goalPaise === 0 || raisedPaise >= goalPaise*0.5},
       tasks:{total:tasks.length,todo:tasks.filter(t=>t.status === "todo").length,inProgress:tasks.filter(t=>t.status === "in_progress").length,done:tasks.filter(t=>t.status === "done").length,overdue:tasks.filter(t=>t.overdue).length}};
   }
-  return {getTasks,getTaskById,createTask,patchTask,updateTaskStatus,saveReceipt,getReceiptById,getReceiptFile,getExpenses,getExpenseById,submitExpense,
+  return {getTasks,getTasksPage,getTaskById,createTask,patchTask,updateTaskStatus,saveReceipt,getReceiptById,getReceiptFile,getExpenses,getExpensesPage,getExpenseById,submitExpense,
     approveExpense: (actor: Actor,id:string) => reviewExpense(actor,id,"approved"),
     rejectExpense: (actor: Actor,id:string,note?:string) => reviewExpense(actor,id,"rejected",note),
-    payExpense,setRequireSeparatePayer,getLedgerEntries,getLedgerSource,getLedgerSummary,getEventReport};
+    payExpense,setRequireSeparatePayer,getLedgerEntries,getLedgerEntriesPage,getLedgerSource,getLedgerSummary,getEventReport};
 }
 

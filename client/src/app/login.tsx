@@ -1,7 +1,11 @@
-import { useState } from "react";
-import { Link, Redirect } from "expo-router";
-import { TextInput, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Link } from "expo-router";
+import { Platform, TextInput, View } from "react-native";
 import { useSession } from "../lib/session";
+import { AuthRedirect } from "../lib/auth-redirect";
+import { authHref, safeReturnTarget } from "../lib/return-target";
+import { hostLoginTarget } from "../lib/host-login";
+import { useScreenSearchParams } from "../lib/use-screen-search-params";
 import {
   Action,
   Copy,
@@ -13,10 +17,20 @@ import {
 import { fonts, radius } from "../constants/theme";
 export default function Login() {
   const { status, user, busy, error, client } = useSession();
+  const { returnTo } = useScreenSearchParams();
   const theme = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  if (user) return <Redirect href="/" />;
+  // Internal Expo links still resolve this route. In the combined web delivery,
+  // cross the document boundary so Azman's Next sign-in owns the screen.
+  const hosted = Platform.OS === "web" && typeof document !== "undefined" &&
+    document.querySelector('meta[name="mode-host"][content="next"]') !== null;
+  const loginTarget = hostLoginTarget(safeReturnTarget(returnTo));
+  useEffect(() => {
+    if (hosted) window.location.replace(loginTarget);
+  }, [hosted, loginTarget]);
+  if (hosted) return <Screen title="Opening sign in"><LoadingRows /></Screen>;
+  if (user) return <AuthRedirect user={user} returnTo={returnTo} />;
   const inputStyle = {
     borderWidth: 1,
     borderColor: theme.hairline,
@@ -78,7 +92,7 @@ export default function Login() {
         Payments are recorded by club officers. No payment is charged in this
         app.
       </Copy>
-      <Link href="/register">Create an account</Link>
+      <Link replace href={authHref("/register", returnTo)}>Create an account</Link>
       <Link href="/booking">Guest event booking</Link>
       <Link href="/archive">Public announcement archive</Link>
     </Screen>

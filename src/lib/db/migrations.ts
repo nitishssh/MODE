@@ -44,9 +44,24 @@ const MIGRATIONS: Migration[] = [
   { version: 11, up: addAnnouncementPublication },
   { version: 12, up: normalizeLegacyWorkspace },
   { version: 13, up: hardenSchema, rebuildsTables: true },
+  { version: 14, up: splitPeopleFromMemberships, rebuildsTables: true },
+  { version: 15, up: addListPaginationIndexes },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
+
+/** Stable v2 keysets: scope and common owner/status filters precede sort keys. */
+function addListPaginationIndexes(db: SqlDatabase) {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS members_page_idx ON members (club_id, joined_at DESC, id ASC);
+    CREATE INDEX IF NOT EXISTS tasks_page_idx ON tasks (club_id, created_at DESC, id ASC);
+    CREATE INDEX IF NOT EXISTS tasks_assignee_page_idx ON tasks (club_id, assignee_id, created_at DESC, id ASC);
+    CREATE INDEX IF NOT EXISTS expenses_page_idx ON expenses (club_id, submitted_at DESC, id ASC);
+    CREATE INDEX IF NOT EXISTS expenses_owner_page_idx ON expenses (club_id, submitter_id, submitted_at DESC, id ASC);
+    CREATE INDEX IF NOT EXISTS expenses_status_page_idx ON expenses (club_id, status, submitted_at DESC, id ASC);
+    CREATE INDEX IF NOT EXISTS transactions_page_idx ON transactions (club_id, occurred_at DESC, id ASC);
+  `);
+}
 
 // P4 (#8): preserve the starter archive and reuse the existing notification/outbox tables.
 function addAnnouncementPublication(db: SqlDatabase) {
@@ -74,7 +89,7 @@ function addReceiptStorageNames(db: SqlDatabase) {
 }
 
 function hasColumn(db: SqlDatabase, table: string, column: string): boolean {
-  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(entry => entry.name === column);
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(entry => entry.name === column);
 }
 
 function hasTable(db: SqlDatabase, table: string): boolean {
@@ -572,7 +587,7 @@ function addMerchandiseOrders(db: SqlDatabase) {
   `);
   // The starter products carry one aggregate stock; give each a single "ONE SIZE" variant holding it.
   const insert = db.prepare("INSERT INTO product_variants (id, club_id, product_id, size, stock) VALUES (?, ?, ?, 'ONE SIZE', ?)");
-  for (const row of db.prepare("SELECT id, club_id, stock FROM products").all() as Array<{ id: string; club_id: string; stock: number }>) {
+  for (const row of db.prepare("SELECT id, club_id, stock FROM products").all() as { id: string; club_id: string; stock: number }[]) {
     insert.run(`${row.id}-one-size`, row.club_id, row.id, row.stock);
   }
 }
@@ -595,9 +610,9 @@ function rebuildTable(db: SqlDatabase, table: string, transform: (sql: string) =
   if (transformed === row.sql) return; // already in the target shape (re-run on a downgraded test database)
   const temp = `${table}__new`;
   db.exec(transformed.replace(/^CREATE TABLE\s+"?[A-Za-z_][A-Za-z0-9_]*"?/i, `CREATE TABLE ${temp}`));
-  const columns = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => `"${c.name}"`).join(", ");
+  const columns = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => `"${c.name}"`).join(", ");
   db.exec(`INSERT INTO ${temp} (rowid, ${columns}) SELECT rowid, ${columns} FROM ${table}`);
-  const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL").all(table) as Array<{ sql: string }>;
+  const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL").all(table) as { sql: string }[];
   db.exec(`DROP TABLE ${table}`);
   db.exec(`ALTER TABLE ${temp} RENAME TO ${table}`);
   for (const index of indexes) db.exec(index.sql);
@@ -648,7 +663,7 @@ function hardenSchema(db: SqlDatabase) {
       locked_until TEXT,
       updated_at TEXT NOT NULL
     )`);
-  const indexes: Array<[string, string[], string]> = [
+  const indexes: [string, string[], string][] = [
     ["expenses", ["receipt_id", "status"], "CREATE UNIQUE INDEX IF NOT EXISTS expenses_receipt_live_idx ON expenses (receipt_id) WHERE receipt_id IS NOT NULL AND status <> 'rejected'"],
     ["tickets", ["club_id", "payment_reference"], "CREATE UNIQUE INDEX IF NOT EXISTS tickets_payment_reference_idx ON tickets (club_id, payment_reference) WHERE payment_reference IS NOT NULL"],
     ["merch_orders", ["club_id", "payment_reference"], "CREATE UNIQUE INDEX IF NOT EXISTS merch_orders_payment_reference_idx ON merch_orders (club_id, payment_reference) WHERE payment_reference IS NOT NULL"],
@@ -660,4 +675,41 @@ function hardenSchema(db: SqlDatabase) {
   for (const [table, columns, sql] of indexes) {
     if (hasTable(db, table) && columns.every((column) => hasColumn(db, table, column))) db.exec(sql);
   }
+}
+
+// ---------------------------------------------------------------------------
+// v14 — one person, many clubs: the login identity (name, email, password) moves to `people`
+// and each `members` row becomes one club membership. Every foreign key that references
+// members(id) keeps pointing at a club-scoped membership, so no other table changes.
+// ---------------------------------------------------------------------------
+function splitPeopleFromMemberships(db: SqlDatabase) {
+  if (!hasTable(db, "members")) return;
+  const postgres = db.dialect === "postgres";
+  db.exec(`CREATE TABLE IF NOT EXISTS people (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      password_hash TEXT,
+      created_at TEXT NOT NULL
+    )`);
+  // Partial historical fixtures (tests recreate only the tables they need) have no identity columns to move.
+  if (!["name", "email", "joined_at"].every((column) => hasColumn(db, "members", column))) return;
+  addColumnIfMissing(db, "members", "person_id", "person_id TEXT REFERENCES people(id)");
+  // Emails were globally unique, so each existing member becomes exactly one person with the same id.
+  db.exec(`INSERT INTO people (id, name, email, password_hash, created_at)
+    SELECT id, name, email, password_hash, joined_at FROM members
+    WHERE person_id IS NULL AND id NOT IN (SELECT id FROM people)`);
+  db.exec("UPDATE members SET person_id = id WHERE person_id IS NULL");
+  // Credentials now live on the person only; a stale copy here could never be checked again.
+  if (hasColumn(db, "members", "password_hash")) db.exec("UPDATE members SET password_hash = NULL");
+  if (postgres) {
+    db.exec("ALTER TABLE members ALTER COLUMN person_id SET NOT NULL");
+    if (postgresConstraintExists(db, "members", "members_email_key")) db.exec("ALTER TABLE members DROP CONSTRAINT members_email_key");
+  } else {
+    rebuildTable(db, "members", (sql) => sql
+      .replace(/email TEXT NOT NULL COLLATE NOCASE UNIQUE/, "email TEXT NOT NULL COLLATE NOCASE")
+      .replace(/person_id TEXT REFERENCES people\(id\)/, "person_id TEXT NOT NULL REFERENCES people(id)"));
+  }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS members_person_club_idx ON members (club_id, person_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS members_person_idx ON members (person_id)");
 }

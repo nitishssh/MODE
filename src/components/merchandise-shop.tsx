@@ -36,45 +36,44 @@ export default function MerchandiseShop({ user }: { user: SessionUser }) {
   const [references, setReferences] = useState<Record<string, string>>({});
   const [productSearch, setProductSearch] = useState("");
 
-  const load = useCallback(async () => {
-    setError("");
-    try {
-      const [productResponse, orderResponse] = await Promise.all([
-        fetch("/api/products", { cache: "no-store" }),
-        fetch(officerDesk ? "/api/orders" : "/api/orders/mine", { cache: "no-store" }),
-      ]);
-      const productResult = await productResponse.json() as ProductResponse & { error?: string };
-      const orderResult = await orderResponse.json() as OrderResponse & { error?: string };
-      if (!productResponse.ok) throw new Error(messageFrom(productResult, "Could not load merchandise."));
-      if (!orderResponse.ok) throw new Error(messageFrom(orderResult, "Could not load orders."));
-      setProducts(productResult.products.filter((product) => product.active));
-      setOrders(orderResult.orders);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load the merchandise desk.");
-    } finally {
-      setLoading(false);
-    }
-  }, [officerDesk]);
+  // State is only set in promise callbacks, so the initial load can run from an effect.
+  const load = useCallback(() => Promise.all([
+    fetch("/api/products", { cache: "no-store" }),
+    fetch(officerDesk ? "/api/orders" : "/api/orders/mine", { cache: "no-store" }),
+  ]).then(async ([productResponse, orderResponse]) => {
+    const productResult = await productResponse.json() as ProductResponse & { error?: string };
+    const orderResult = await orderResponse.json() as OrderResponse & { error?: string };
+    if (!productResponse.ok) throw new Error(messageFrom(productResult, "Could not load merchandise."));
+    if (!orderResponse.ok) throw new Error(messageFrom(orderResult, "Could not load orders."));
+    return { products: productResult.products, orders: orderResult.orders };
+  }).then(
+    (result) => {
+      setProducts(result.products.filter((product) => product.active));
+      setOrders(result.orders);
+      setError("");
+    },
+    (caught: unknown) => setError(caught instanceof Error ? caught.message : "Could not load the merchandise desk."),
+  ).finally(() => setLoading(false)), [officerDesk]);
 
   useEffect(() => { void load(); }, [load]);
 
-  const visibleProducts = products.filter((item) => {
+  const visibleProducts = useMemo(() => {
     const query = productSearch.trim().toLowerCase();
-    return !query || `${item.name} ${item.description ?? ""} ${item.variants.map((variant) => variant.size).join(" ")}`.toLowerCase().includes(query);
-  });
+    return products.filter((item) => !query || `${item.name} ${item.description ?? ""} ${item.variants.map((variant) => variant.size).join(" ")}`.toLowerCase().includes(query));
+  }, [products, productSearch]);
   const product = visibleProducts[Math.min(activeIndex, Math.max(0, visibleProducts.length - 1))];
   const firstAvailable = product?.variants.find((variant) => variant.stock > 0) ?? product?.variants[0];
   const selectedVariant = product?.variants.find((variant) => variant.id === variantId) ?? firstAvailable;
 
-  useEffect(() => {
+  // Reset the variant picker when the shown product changes (adjusted during render, not in an effect).
+  const selectionKey = `${product?.id ?? ""}:${firstAvailable?.id ?? ""}`;
+  const [shownSelection, setShownSelection] = useState(selectionKey);
+  if (shownSelection !== selectionKey) {
+    setShownSelection(selectionKey);
     setVariantId(firstAvailable?.id ?? "");
     setQuantity(1);
     setNotice("");
-  }, [product?.id, firstAvailable?.id]);
-
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [productSearch]);
+  }
 
   const slides = useMemo(() => visibleProducts.map((item, index) => ({
     title: item.name,
@@ -144,7 +143,7 @@ export default function MerchandiseShop({ user }: { user: SessionUser }) {
         <IconSearch />
         <input
           value={productSearch}
-          onChange={(event) => setProductSearch(event.target.value)}
+          onChange={(event) => { setProductSearch(event.target.value); setActiveIndex(0); }}
           placeholder="Search merchandise"
           aria-label="Search merchandise"
         />

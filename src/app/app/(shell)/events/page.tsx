@@ -7,6 +7,7 @@ import type { EventDetails } from "@/lib/contracts";
 import { api, useLoad } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
 import { useT } from "../../_lib/i18n";
+import { useNow } from "../../_lib/use-now";
 import { Button, EmptyState, ErrorState, PageHead, PreviewNote, Skeleton, StatusBadge, Tabs } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
 
@@ -54,7 +55,7 @@ function EventsList() {
   const [tab, setTab] = useState<Tab>("upcoming");
   const events = useLoad(() => api.get<{ events: EventDetails[] }>("/api/events"));
 
-  const now = Date.now();
+  const now = useNow();
   const all = events.data?.events ?? [];
   const published = all.filter((e) => e.status === "published");
   const upcoming = published.filter((e) => new Date(e.startsAt).getTime() >= now).sort((a, b) => a.startsAt.localeCompare(b.startsAt));

@@ -1,3 +1,5 @@
 http://user:secret@example.com
 http://user:secret@example.com',
 https://user:pass@club.example",
+postgres://mode_test:mode_ci_only@127.0.0.1:5432
+postgres://mode:mode@127.0.0.1:5432

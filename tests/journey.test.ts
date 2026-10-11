@@ -59,7 +59,7 @@ test("fresh semester journey carries identity, permissions and exactly-once mone
     const beforePass = await body(await me(apiRequest("/api/auth/me", memberAuth)));
     assert.equal(beforePass.pass.membership, "none");
 
-    const expected: Array<{ sourceType: string; sourceId: string; amountPaise: number; kind: string; recordedBy: string }> = [];
+    const expected: { sourceType: string; sourceId: string; amountPaise: number; kind: string; recordedBy: string }[] = [];
     async function money() {
       const rows: ExpenseLedgerEntry[] = await body(await entries(apiRequest("/api/ledger/entries", finance)));
       const realized = rows.filter(row => row.sourceType !== "opening_balance");

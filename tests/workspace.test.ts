@@ -137,6 +137,7 @@ test("schema v8 upgrades preserve members, passes, sessions, merchandise and ope
     db.close();
     // Reconstruct the released v8 shape by removing later additive migrations.
     const raw=new DatabaseSync(path);
+    for (const index of ["members_page_idx", "tasks_page_idx", "tasks_assignee_page_idx", "expenses_page_idx", "expenses_owner_page_idx", "expenses_status_page_idx", "transactions_page_idx"]) raw.exec("DROP INDEX " + index);
     raw.exec("DROP INDEX announcements_request_idx; DROP INDEX announcements_archive_idx; DROP INDEX notifications_announcement_recipient_idx; DROP INDEX outbox_announcement_recipient_idx;");
     raw.exec("ALTER TABLE notifications DROP COLUMN announcement_id; ALTER TABLE outbox_messages DROP COLUMN announcement_id;");
     for(const column of ["club_id","published_by","idempotency_key","recipient_count"])raw.exec("ALTER TABLE announcements DROP COLUMN "+column);

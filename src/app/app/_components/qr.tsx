@@ -28,21 +28,22 @@ export function credentialFromScan(raw: string): string {
   }
 }
 
+type Rendered = { key: string; src: string; failed: boolean };
+
 /** Renders a QR code for a pass or ticket token. Falls back to the typed code when rendering fails. */
 export function QrCode({ value, alt, size = 220 }: { value: string; alt: string; size?: number }) {
-  const [src, setSrc] = useState("");
-  const [failed, setFailed] = useState(false);
+  const key = `${size}:${value}`;
+  const [rendered, setRendered] = useState<Rendered | null>(null);
   useEffect(() => {
     let cancelled = false;
-    setSrc("");
-    setFailed(false);
     toDataURL(value, { width: size * 2, margin: 1, color: { dark: "#1a2a30", light: "#ffffff" } })
-      .then((url) => { if (!cancelled) setSrc(url); })
-      .catch(() => { if (!cancelled) setFailed(true); });
+      .then((src) => { if (!cancelled) setRendered({ key, src, failed: false }); })
+      .catch(() => { if (!cancelled) setRendered({ key, src: "", failed: true }); });
     return () => { cancelled = true; };
-  }, [value, size]);
-  if (failed) return <div className="mx-qr" style={{ width: size, height: size, display: "grid", placeItems: "center", textAlign: "center", fontSize: 12 }}>QR unavailable. Use the typed code.</div>;
-  if (!src) return <div className="mx-qr mx-skel" style={{ width: size, height: size }} aria-hidden="true" />;
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img className="mx-qr" src={src} alt={alt} width={size} height={size} />;
+  }, [key, value, size]);
+  // A result for a previous value is stale; show the skeleton until the new one arrives.
+  const current = rendered?.key === key ? rendered : null;
+  if (current?.failed) return <div className="mx-qr" style={{ width: size, height: size, display: "grid", placeItems: "center", textAlign: "center", fontSize: 12 }}>QR unavailable. Use the typed code.</div>;
+  if (!current?.src) return <div className="mx-qr mx-skel" style={{ width: size, height: size }} aria-hidden="true" />;
+  return <img className="mx-qr" src={current.src} alt={alt} width={size} height={size} />;
 }

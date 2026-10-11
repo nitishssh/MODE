@@ -155,12 +155,20 @@ const DEFAULT_SLIDES: Slide[] = [
   { title: "Field Notes", caption: "The collection, arranged on the line.", palette: "alpine", seed: 8 },
 ];
 
+const noSubscription = () => () => {};
+
+/** True only in the browser, and false during server render and hydration, so markup matches. */
+function useCanPaint(): boolean {
+  return React.useSyncExternalStore(noSubscription, () => true, () => false);
+}
+
 function useSlideImages(slides: Slide[]): string[] {
-  const key = slides.map((s) => s.image || `${s.palette || "dawn"}:${s.seed ?? 1}`).join("|");
-  const [painted, setPainted] = React.useState(() => slides.map(() => ""));
-  React.useEffect(() => {
-    setPainted(slides.map((s, i) => (s.image ? "" : paintLandscape(s.seed ?? i + 1, s.palette || "dawn"))));
-  }, [key, slides]);
+  const canPaint = useCanPaint();
+  // Landscapes need a canvas, so they are painted only once the browser has taken over.
+  const painted = React.useMemo(
+    () => slides.map((s, i) => (s.image || !canPaint ? "" : paintLandscape(s.seed ?? i + 1, s.palette || "dawn"))),
+    [slides, canPaint],
+  );
   return slides.map((s, i) => s.image || painted[i] || "");
 }
 
@@ -220,7 +228,7 @@ export default function PolaroidLineCarousel({
   const lastTouch = React.useRef(0);
   const activeRef = React.useRef(0);
   const opts = React.useRef({ sag, swing });
-  opts.current = { sag, swing };
+  React.useLayoutEffect(() => { opts.current = { sag, swing }; }, [sag, swing]);
   const spacing = size.cw * 1.08;
   const goTo = React.useCallback((i: number) => {
     sim.current.target = clamp(i, 0, n - 1) * spacing;
