@@ -21,7 +21,7 @@ export default function SettingsPage() {
   async function signOut() {
     setSigningOut(true);
     try { await session.logout(); } catch { /* cookie logout is idempotent */ }
-    router.replace("/app/login");
+    window.location.assign("/");
   }
 
   return (

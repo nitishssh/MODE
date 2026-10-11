@@ -138,7 +138,7 @@ export function Shell({ children }: { children: ReactNode }) {
   async function signOut() {
     setMenuOpen(false);
     try { await session.logout(); } catch { /* idempotent */ }
-    router.replace("/app/login");
+    window.location.assign("/");
   }
 
   return (
