@@ -8,11 +8,18 @@ Use Node 24 (`node --version` must report `v24.x`; `.nvmrc` records the major ve
 
 ```sh
 npm ci
+npm ci --prefix client
+npm run check:all
+```
+
+`check:all` is the complete local and CI sequence, including root/Expo lint and types, API/shared-contract checks, both test suites, the foundation build/restart check, Expo web export and Expo delivery build/HTTP checks. It leaves the Expo delivery build in `.next`. To repeat only the backend foundation check after edits:
+
+```sh
 npm run check
 npm run test:foundation
 ```
 
-`check` runs TypeScript, API documentation contracts, domain/API tests and the production build. `test:foundation` starts that build on an available loopback port with a new temporary SQLite database and a randomly generated demo password. It verifies the page and seeded dashboard, signs in as an organizer, creates a member, rejects duplicate/invalid/malformed submissions without adding rows, then stops and restarts the server to verify both the member and session persist. It stops its server and removes its temporary database on completion. It never uses your configured `SQLITE_PATH` or demo password.
+`check` runs lint, TypeScript, API documentation contracts, domain/API tests and the production build. `test:foundation` starts that build on an available loopback port with a new temporary SQLite database and a randomly generated demo password. It verifies the page and seeded dashboard, signs in as an organizer, creates a member, rejects duplicate/invalid/malformed submissions without adding rows, then stops and restarts the server to verify both the member and session persist. It stops its server and removes its temporary database on completion. It never uses your configured `SQLITE_PATH` or demo password.
 
 Run `npm run build` again after code changes before repeating the foundation check. The command requires a built app; it does not rebuild automatically. GitHub Actions runs the same check after every production build on Node 24.
 

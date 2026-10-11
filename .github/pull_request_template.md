@@ -4,7 +4,7 @@ Describe the completed behavior and link the issue.
 
 ## Verification
 
-- [ ] Typecheck, tests and build pass
+- [ ] `npm run check:all` passes (root/client lint, types, contracts, tests, builds and HTTP acceptance)
 - [ ] Acceptance criteria demonstrated
 - [ ] Loading, empty and error states checked for UI changes
 - [ ] No secrets, local database or real student data committed

@@ -1,11 +1,31 @@
 import { Platform, Linking, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Link, Redirect, useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import type { Dashboard } from '../../generated/contracts';
 import { useResource } from '../../lib/use-resource';
 import { useSession } from '../../lib/session';
-import { canVisit, destinations } from '../../lib/navigation';
+import { canVisit, destinations, legacyRootTarget } from '../../lib/navigation';
 import { Action, AsOf, Copy, ErrorNotice, LoadingRows, Row, Screen, useTheme } from '../../components/ui';
-export default function Overview() {
+import { pageHref } from '../../lib/return-target';
+import { useScreenSearchParams } from '../../lib/use-screen-search-params';
+
+function LegacyMembersRedirect() {
+  useEffect(() => { if (Platform.OS === 'web') window.location.replace('/legacy#members'); }, []);
+  return <Screen title="Member directory"><Copy>{Platform.OS === 'web' ? 'Opening the web workspace…' : 'The member directory is available in the web workspace.'}</Copy><Link replace href="/dashboard">Go to overview</Link></Screen>;
+}
+
+export default function DashboardEntry() {
+  const { section } = useScreenSearchParams();
+  if (section !== undefined) {
+    const target = typeof section === 'string' ? legacyRootTarget(`#${section}`, true) : null;
+    if (target === '/legacy#members') return <LegacyMembersRedirect />;
+    if (target) return <Redirect href={pageHref(target)} />;
+    return <Screen title="Section unavailable"><Copy>The requested workspace section does not exist.</Copy><Link replace href="/dashboard">Go to overview</Link></Screen>;
+  }
+  return <Overview />;
+}
+
+function Overview() {
   const { user, client, busy, error: sessionError } = useSession(); const theme = useTheme(); const router = useRouter();
   const { data, loading, error, time, reload } = useResource<Dashboard>('/api/dashboard');
   return <Screen title={data?.club.name ?? 'Your club register'}>

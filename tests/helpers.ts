@@ -22,7 +22,7 @@ export const DEMO = {
  * Set MODE_TEST_DATABASE_URL=postgres://… to run the helper-based tests against PostgreSQL
  * (the schema is dropped and recreated for every database the helpers open).
  */
-export const TEST_DATABASE_URL = process.env.MODE_TEST_DATABASE_URL;
+export const TEST_DATABASE_URL = process.env.MODE_TEST_DATABASE_URL || undefined;
 
 /** In-memory database (or a reset PostgreSQL schema) with a controllable clock for domain-level tests. */
 export function memoryDatabase(): { db: ClubDatabase; clock: { now: Date } } {
@@ -53,12 +53,13 @@ export async function withRouteDatabase(fn: () => Promise<void>): Promise<void> 
   const priorPath = process.env.SQLITE_PATH;
   const priorUrl = process.env.DATABASE_URL;
   const priorNow = process.env.MODE_DEMO_NOW;
+  const priorReceipts = process.env.MODE_RECEIPTS_DIR;
   process.env.SQLITE_PATH = join(directory, "mode.sqlite");
   process.env.MODE_DEMO_NOW = FIXED_NOW.toISOString();
+  process.env.MODE_RECEIPTS_DIR = join(directory, "receipts");
   if (TEST_DATABASE_URL) {
-    openClubDatabase(TEST_DATABASE_URL, { resetSchema: true }).close(); // wipe, then let getDatabase() reopen
+    openClubDatabase(TEST_DATABASE_URL, { resetSchema: true, receiptsDir: process.env.MODE_RECEIPTS_DIR }).close(); // wipe, then let getDatabase() reopen
     process.env.DATABASE_URL = TEST_DATABASE_URL;
-    process.env.MODE_RECEIPTS_DIR = join(directory, "receipts");
   } else delete process.env.DATABASE_URL;
   try {
     await fn();
@@ -68,7 +69,8 @@ export async function withRouteDatabase(fn: () => Promise<void>): Promise<void> 
     else process.env.SQLITE_PATH = priorPath;
     if (priorUrl === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = priorUrl;
-    delete process.env.MODE_RECEIPTS_DIR;
+    if (priorReceipts === undefined) delete process.env.MODE_RECEIPTS_DIR;
+    else process.env.MODE_RECEIPTS_DIR = priorReceipts;
     if (priorNow === undefined) delete process.env.MODE_DEMO_NOW;
     else process.env.MODE_DEMO_NOW = priorNow;
     rmSync(directory, { recursive: true, force: true });

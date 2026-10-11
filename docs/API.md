@@ -4,11 +4,34 @@ The implemented types are authoritative in `src/lib/contracts.ts`. The backend o
 
 ## Conventions
 
-- All routes run on Node.js and read/write SQLite through `src/lib/database.ts`. Responses carry `Cache-Control: no-store`.
+- All routes run on Node.js and use the SQLite/PostgreSQL adapter selected by `src/lib/database.ts`. `DATABASE_URL` selects PostgreSQL; otherwise SQLite is used. Responses carry `Cache-Control: no-store`.
 - Money fields ending in `Paise` are integer paise. ISO timestamps are UTC; date-only fields (`expiresOn`) are club calendar days in Asia/Kolkata.
 - Errors are `{error:string, code?:string, details?:[{field,message}]}`. No database paths or stack traces reach the client.
 - `401 unauthenticated` means no valid selected session. `403 forbidden` means the session exists but the role lacks the permission, or a cookie-authenticated write arrived cross-origin.
 - Cookie-authenticated writes (POST/PATCH/DELETE) enforce same-origin: an `Origin` header, when present, must match `MODE_PUBLIC_ORIGIN` when configured, otherwise the direct request scheme and host. `Sec-Fetch-Site` must not be `cross-site`. Only an authenticated bearer request bypasses this check. Login and registration always enforce the same-origin check; native clients omit browser origin headers.
+
+## Version 2 paginated lists
+
+These authenticated GET routes return `CursorPage<T>`: `{items:T[], nextCursor:string|null, hasMore:boolean}`. The last page returns `nextCursor:null` and `hasMore:false`; an empty list also returns `items:[]`. Existing unversioned routes retain their current full-list response shapes. `/api/ledger/summary`, both ledger CSV exports and event finance totals continue to use all authorized matching records.
+
+| Path | Item type | Access | Default and only supported `sort` | Additional filters |
+|---|---|---|---|---|
+| `/api/v2/members` | `Member` | `members:read`, own club | `joinedAt_desc` | `role`, `membership` (`active`, `expired`, `none`) |
+| `/api/v2/tasks` | `TaskDetails` | signed-in member, own club | `createdAt_desc` | `status` (`todo`, `in_progress`, `done`), `assigneeId`, `eventId`, `mine`, `overdue` |
+| `/api/v2/expenses` | `Expense` | `expenses:submit`; own claims unless `expenses:review`, own club | `submittedAt_desc` | `status` (`submitted`, `approved`, `rejected`, `paid`), `submitterId`, `eventId` |
+| `/api/v2/ledger/entries` | `ExpenseLedgerEntry` | `ledger:read`, own club | `occurredAt_desc` | `kind` (`income`, `expense`), `eventId`, `category` (`membership`, `events`, `expense`, `merch_order`, `opening_balance`) |
+
+All four accept `limit`, `cursor`, `q` and `sort`. `limit` defaults to 25 and must be an integer from 1 through 100; values outside that range are rejected with `400 validation_failed`. Each query parameter may appear once. Unknown parameters, unsupported sort/filter values, empty filters and malformed cursors also return 400. IDs accept 1–100 nonblank characters, including existing `demo-*` IDs and UUIDs. Boolean filters must be `true` or `false`. `mine=true` and `assigneeId` cannot be combined. A non-reviewer filtering expenses by another submitter receives an empty page, because the owner restriction is applied independently.
+
+`q` is a trimmed literal substring of 1–200 characters. Search text and ID filters reject NUL with 400. Members search name/email, tasks search title/description, expenses search purpose and ledger searches description. ASCII letters match without case sensitivity on both engines; non-ASCII characters match literally without case folding. `%`, `_` and backslash are literal search characters. Category `membership` maps to dues payments and `events` maps to ticket income.
+
+Ordering is the listed timestamp **descending**, followed by the immutable record ID **ascending** to break ties. Each SQL query applies club, permissions/ownership, search and filters before fetching at most `limit + 1` rows. Migration 14 adds composite indexes for the base lists and common owner/assignee/status filters, retaining migration 13's data hardening. Only the requested page is materialized by these v2 list methods.
+
+Send `nextCursor` unchanged on the next request with the same endpoint, sort and filters. Cursors are signed and bound to the login session, member, club and role. Cross-list/filter/session use and altered cursors return 400; restart without a cursor after changing filters or login. `limit` may change between pages. The first page's clock is retained for overdue and membership classification. This is a live keyset list, not a database snapshot: exactly-once traversal applies to a fixed dataset; concurrent edits/deletions or newly matching rows require refresh when a complete current view is needed.
+
+Ledger summary uses full-set SQL aggregates for totals, categories and events; it does not materialize individual ledger entries or inherit a list cursor/limit. CSV continues to export the full authorized ledger.
+
+Both database adapters use these queries. CI includes a serialized test job against a disposable PostgreSQL database; successful execution is required before merge. Local SQLite verification does not establish PostgreSQL query plans, concurrent-write capacity or hosted readiness.
 
 ## Identity and roles (#3)
 

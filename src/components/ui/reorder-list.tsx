@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { Reorder, useReducedMotion } from "motion/react";
 
 const CELL = {
@@ -40,11 +40,14 @@ export function useReorderList<T>({
   const [spoken, setSpoken] = useState("");
 
   const emit = useRef(onReorder);
-  emit.current = onReorder;
   const settle = useRef(onCommit);
-  settle.current = onCommit;
   const live = useRef(items);
-  live.current = items;
+  // Keep the latest props for event handlers without writing refs during render.
+  useLayoutEffect(() => {
+    emit.current = onReorder;
+    settle.current = onCommit;
+    live.current = items;
+  });
   const snapshot = useRef<readonly T[] | null>(null);
 
   const indexOf = useCallback(

@@ -206,7 +206,7 @@ test("canonical CSV and source links retain exact IDs, officer names, escaped ce
   await withRouteDatabase(async () => {
     const db = getDatabase(), member = actorFor(db, "active@example.com"), admin = actorFor(db, DEMO.admin);
     const cookie = await loginCookie(DEMO.admin), memberCookie = await loginCookie("active@example.com");
-    const receiptId = receiptFor(db, member);
+    receiptFor(db, member);
     const purposes = ['=SUM(1,2) "test"', "+plus", "-minus", "@command", 'Text, with\n"quotes"'];
     for (const purpose of purposes) {
       const expense = db.submitExpense(member, { amountPaise: 175, purpose, receiptId: receiptFor(db, member) });

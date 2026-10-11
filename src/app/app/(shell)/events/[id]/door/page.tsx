@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import jsQR from "jsqr";
 import type { EventDetails, ScanOutcome, ScanResult } from "@/lib/contracts";
 import { api, useLoad } from "../../../../_lib/api";
@@ -31,12 +31,18 @@ function mask(value: string): string {
 }
 
 export default function DoorPage() {
+  return <Suspense fallback={<Skeleton rows={4} />}><DoorScanner /></Suspense>;
+}
+
+function DoorScanner() {
   const { t, fmt, apiError } = useT();
   const { id } = useParams<{ id: string }>();
   const { can } = useSession();
   const event = useLoad(() => api.get<{ event: EventDetails }>(`/api/events/${encodeURIComponent(id)}`), [id]);
 
-  const [credential, setCredential] = useState("");
+  // A member-pass QR encodes /app/door?credential=…; once the officer picks the event we arrive here with it.
+  const fromUrl = useSearchParams().get("credential") ?? "";
+  const [credential, setCredential] = useState(fromUrl);
   const prefilled = useRef(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -72,15 +78,11 @@ export default function DoorPage() {
     }
   }, [id, apiError]);
 
-  // A member-pass QR encodes /app/door?credential=…; once the officer picks the event we arrive here with it.
   useEffect(() => {
-    if (prefilled.current) return;
-    const fromUrl = new URLSearchParams(window.location.search).get("credential");
-    if (!fromUrl) return;
+    if (prefilled.current || !fromUrl) return;
     prefilled.current = true;
-    setCredential(fromUrl);
     void scan(fromUrl);
-  }, [scan]);
+  }, [fromUrl, scan]);
 
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -89,17 +91,22 @@ export default function DoorPage() {
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // Camera decoding loop.
+  function toggleCamera() {
+    if (camera) { setCamera(false); return; }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError(t("events.door.cameraUnavailable"));
+      return;
+    }
+    setCameraError("");
+    setCamera(true);
+  }
+
+  // Camera decoding loop. Availability is checked in toggleCamera before this starts.
   useEffect(() => {
     if (!camera) return;
     let cancelled = false;
-    setCameraError("");
     const video = videoRef.current;
-    if (!video || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError(t("events.door.cameraUnavailable"));
-      setCamera(false);
-      return;
-    }
+    if (!video) return;
     const canvas = canvasRef.current ?? document.createElement("canvas");
     canvasRef.current = canvas;
     const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -160,7 +167,7 @@ export default function DoorPage() {
         eyebrow={<><Link href={`/app/events/${id}`}>{t("events.door.eventEyebrow")}</Link> <span>/</span> {t("events.door.eyebrow")}</>}
         title={e ? e.title : t("events.door.title")}
         description={e ? t("events.door.description", { when: fmt.dateTime(e.startsAt), venue: e.venue }) : undefined}
-        actions={<Button variant={camera ? "default" : "primary"} onClick={() => setCamera((v) => !v)}><Icon name="scan" size={18} />{camera ? t("events.door.stopCamera") : t("events.door.useCamera")}</Button>}
+        actions={<Button variant={camera ? "default" : "primary"} onClick={toggleCamera}><Icon name="scan" size={18} />{camera ? t("events.door.stopCamera") : t("events.door.useCamera")}</Button>}
       />
       {event.error ? <ErrorState error={event.error} onRetry={event.reload} title={t("events.door.eventLoadFailed")} /> : null}
       {cameraError ? <Alert tone="warning" onDismiss={() => setCameraError("")}>{cameraError}</Alert> : null}

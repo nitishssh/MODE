@@ -4,22 +4,23 @@
 
 Foundation acceptance was verified in [merged PR #26](https://github.com/nitishssh/MODE/pull/26). See [the foundation guide](FOUNDATION.md#acceptance-evidence) for the release commit, passing CI and browser evidence. Repeat these checks for a new release candidate.
 
-1. Use Node 24, run `npm ci`, then `npm run dev`.
-2. Open http://127.0.0.1:3000 and sign in with a synthetic account. Confirm the dashboard records load.
+1. Use Node 24, run `npm ci` and `npm ci --prefix client`, then `npm run dev`.
+2. Open http://127.0.0.1:3000 and confirm the public landing appears. Sign in at `/login` with a synthetic account and confirm `/dashboard` loads.
 3. Sign in as `organizer@example.com` using `MODE_DEMO_PASSWORD` (development default `mode-demo-2026`) and create a fictional member from Members. The same flow is available through `POST /api/auth/login` and `POST /api/members` with a cookie or bearer token; see [API contracts](API.md).
 4. Read `GET /api/members` with that session, restart the server, and read again: the new unpaid member remains present.
 5. Submit the same email again through the authorized API: expect 409 without adding another record.
 6. Check invalid name/email handling through the authorized API. Navigate all six web areas and confirm unfinished flows are marked as previews.
-7. Visit `/api/health`; it returns 200 and reports schema version 13 (`database` is `sqlite`, or `postgres` when `DATABASE_URL` is set).
-8. Run `npm run check`, then `npm run test:foundation`. The first command includes typecheck, API documentation contracts, domain/API tests and the build; the second checks HTTP member/session persistence across a server restart using a temporary database.
+7. Visit `/api/health`; it returns 200 and reports schema version 15 (`database` is `sqlite`, or `postgres` when `DATABASE_URL` is set).
+8. Run `npm run check`, then `npm run test:foundation`. The first command includes version consistency, lint, typecheck, API documentation contracts, generated schemas, domain/API tests and the build; the second checks HTTP member/session persistence across a server restart using a temporary database.
 9. Set `MODE_DEMO_PASSWORD` before seeding a new production database, then run `npm start`. Public reads work; member creation requires an organizer/admin session. Verify missing authentication returns 401, insufficient permissions return 403, and cross-origin cookie writes return 403. Production ignores `MODE_CORS_ORIGINS`.
 
 ## Backend acceptance: foundation, dues, tickets and merchandise
 
-Use Node 24 and a fresh, synthetic SQLite database. The following PowerShell setup freezes the club date for repeatable expiry/pricing results:
+Use Node 24 and a fresh, synthetic SQLite database. Clear `DATABASE_URL` and `MODE_TEST_DATABASE_URL` first so inherited PostgreSQL configuration cannot select another database. The following PowerShell setup freezes the club date for repeatable expiry/pricing results:
 
 ```powershell
 npm ci
+npm ci --prefix client
 npm run check
 $env:SQLITE_PATH = Join-Path $env:TEMP ('mode-demo-' + [guid]::NewGuid().ToString('N') + '.sqlite')
 $env:MODE_DEMO_NOW = '2026-10-10T08:00:00Z'

@@ -4,7 +4,7 @@ export class DomainError extends Error {
     message: string,
     readonly status: number,
     readonly code: string,
-    readonly details?: Array<{ field: string; message: string }>,
+    readonly details?: { field: string; message: string }[],
   ) {
     super(message);
     this.name = new.target.name;
@@ -12,7 +12,7 @@ export class DomainError extends Error {
 }
 
 export class ValidationError extends DomainError {
-  constructor(message: string, details?: Array<{ field: string; message: string }>) {
+  constructor(message: string, details?: { field: string; message: string }[]) {
     super(message, 400, "validation_failed", details);
   }
 }

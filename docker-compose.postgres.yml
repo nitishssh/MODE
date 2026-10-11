@@ -1,12 +1,14 @@
-# Local PostgreSQL for the MODE export/migration path (docs/POSTGRESQL.md).
-# The application itself still runs on SQLite; this service receives
-# `npm run postgres:push` loads and is the target for the future async driver.
+# Local PostgreSQL for MODE's runtime and export path (docs/POSTGRESQL.md).
+# Set DATABASE_URL when starting the app to select this database. The separate
+# compose.yaml application demo continues to use its persistent SQLite volume.
 #
 #   npm run postgres:up      start (data persists in the mode-postgres volume)
 #   npm run postgres:push    export .data/mode.sqlite and load it here
 #   npm run postgres:down    stop and keep data; add -v to drop the volume
 #
 # Connection string for tools: postgres://mode:mode@127.0.0.1:5432/mode (port = MODE_POSTGRES_PORT)
+# This persistent database is not a test target: MODE_TEST_DATABASE_URL resets
+# the public schema. CI uses a separate disposable PostgreSQL service.
 services:
   postgres:
     image: postgres:17-alpine

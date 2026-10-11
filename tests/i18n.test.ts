@@ -121,13 +121,13 @@ test("formatters localize month names and the rupee while pinning Latin digits i
   assert.equal(createFormatters("en").date("2026-10-10T20:30:00.000Z"), "11 Oct 2026", "dates follow the club calendar in Asia/Kolkata");
 });
 
-test("the root layout and sign-in screen expose a language switcher wired to the cookie", async () => {
+test("the root layout and workspace expose a language switcher wired to the cookie", async () => {
   const { readFileSync } = await import("node:fs");
   const layout = readFileSync(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
   assert.match(layout, /lang=\{locale\}/, "html lang follows the resolved locale");
   assert.match(layout, /dir=\{info\.dir\}/, "html dir follows the locale direction");
   assert.match(layout, /I18nProvider/, "client tree receives the dictionary");
-  const page = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../src/components/legacy-workspace.tsx", import.meta.url), "utf8");
   assert.match(page, /<LanguageSwitcher \/>/, "workspace renders the switcher");
   assert.doesNotMatch(page, /"en-IN"/, "page no longer hard-codes the English formatter locale");
 });

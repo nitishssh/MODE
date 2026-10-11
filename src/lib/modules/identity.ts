@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { hashPassword, verifyPassword } from "../auth/password";
 import { allocateUniqueTokens, normalizeShortCode } from "../auth/tokens";
-import { membershipState } from "./membership-state";
+import { MEMBERSHIP_STATE_SQL, membershipState } from "./membership-state";
 import { clubDate } from "../db/core";
 import { ROLES, hasPermission, type Permission, type Role } from "../auth/permissions";
 import { SESSION_TTL_MS, generateSessionToken, hashSessionToken } from "../auth/session";
@@ -29,13 +29,15 @@ import {
   UnauthorizedError,
   ValidationError,
 } from "../errors";
+import { createMemberSchema } from "../member-validation";
+import { parseInput } from "../validation";
+import { containsText, containsTextPredicate, cursorPage, membersPageSchema, pageContext } from "../pagination";
 
 /** Login throttling (audit #10): this many consecutive failures per email lock the account for the window. */
 export const LOGIN_MAX_FAILURES = 5;
 export const LOGIN_LOCKOUT_MS = 15 * 60_000;
 /** Simulated outbox rows older than this are purged. */
 export const OUTBOX_RETENTION_DAYS = 90;
-import { createMemberSchema } from "../member-validation";
 
 /**
  * The authenticated caller. Every module scopes its queries to `clubId`. `memberId` is the
@@ -99,6 +101,25 @@ export function createIdentityModule(ctx: DbContext) {
       .prepare("SELECT * FROM members WHERE club_id = ? ORDER BY joined_at DESC, name COLLATE NOCASE, id")
       .all(clubId)
       .map((row) => mapMember(row as Row, clubDate(ctx.now())));
+  }
+
+  function getMembersPage(actor: Actor, input: unknown = {}) {
+    assertPermission(actor, "members:read");
+    const filters = parseInput(membersPageSchema, input);
+    const page = pageContext(actor, "members", filters, ctx.now());
+    const date = clubDate(new Date(page.asOf));
+    const clauses = ["club_id = ?"], values: (string | number)[] = [actor.clubId];
+    if (filters.role) { clauses.push("role = ?"); values.push(filters.role); }
+    if (filters.membership) { clauses.push(`(${MEMBERSHIP_STATE_SQL}) = ?`); values.push(date, filters.membership); }
+    if (filters.q) { clauses.push(`(${containsTextPredicate("name", db)} OR ${containsTextPredicate("email", db)})`); values.push(containsText(filters.q), containsText(filters.q)); }
+    if (page.after) {
+      // The explicit upper bound lets SQLite seek into the timestamp index.
+      clauses.push("joined_at <= ? AND (joined_at < ? OR (joined_at = ? AND id > ?))");
+      values.push(page.after.timestamp, page.after.timestamp, page.after.timestamp, page.after.id);
+    }
+    const rows = db.prepare(`SELECT * FROM members WHERE ${clauses.join(" AND ")} ORDER BY joined_at DESC, id ASC LIMIT ?`)
+      .all(...values, page.limit + 1).map(row => mapMember(row, date));
+    return cursorPage(rows, page, member => ({ timestamp: member.joinedAt, id: member.id }));
   }
 
   function findMember(clubId: string, memberId: string): Member | null {
@@ -492,6 +513,7 @@ export function createIdentityModule(ctx: DbContext) {
     getPass,
     findMemberByPass,
     getMembers,
+    getMembersPage,
     findMember,
     requireMember,
     createMember,

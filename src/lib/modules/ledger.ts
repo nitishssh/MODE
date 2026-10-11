@@ -73,9 +73,9 @@ export function ledgerBalance(db: SqlDatabase, clubId: string): number {
 
 export interface InventoryReport {
   /** Events whose `registered` counter disagrees with live tickets plus the registrations seeded before the ticket table existed. */
-  events: Array<{ eventId: string; registered: number; liveTickets: number; seeded: number; drift: number }>;
+  events: { eventId: string; registered: number; liveTickets: number; seeded: number; drift: number }[];
   /** Products whose aggregate stock disagrees with the sum of their sizes. */
-  products: Array<{ productId: string; stock: number; variantTotal: number; drift: number }>;
+  products: { productId: string; stock: number; variantTotal: number; drift: number }[];
 }
 
 /** Seat and stock counters are denormalised (audit #5); this is their twin of `reconcileLedger()`. Empty arrays mean clean. */
@@ -108,15 +108,15 @@ export interface ReconciliationReport {
   entries: number;
   openingBalances: number;
   /** Ledger rows whose source cannot be found by any registered resolver. */
-  orphans: Array<{ id: string; sourceType: string | null; sourceId: string | null }>;
+  orphans: { id: string; sourceType: string | null; sourceId: string | null }[];
   /** (type, id) pairs that appear more than once; the UNIQUE index should make this empty. */
-  duplicates: Array<{ sourceType: string; sourceId: string; count: number }>;
+  duplicates: { sourceType: string; sourceId: string; count: number }[];
   /** Rows with no source at all; none are allowed after P0. */
   unsourced: number;
   /** Money-moving source records with no ledger row. Zero-value/free sources are excluded. */
-  missing: Array<{ sourceType: string; sourceId: string }>;
+  missing: { sourceType: string; sourceId: string }[];
   /** Existing rows whose value, direction, club or officer disagrees with the source. */
-  mismatched: Array<{ sourceType: string; sourceId: string; fields: string[] }>;
+  mismatched: { sourceType: string; sourceId: string; fields: string[] }[];
 }
 
 /** The reconciliation harness (P0, #2). Every financial module extends SOURCE_RESOLVERS and asserts a clean report. */
