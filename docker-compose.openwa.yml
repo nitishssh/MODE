@@ -1,0 +1,38 @@
+version: '3.8'
+
+# OpenWA WhatsApp API Gateway integration for MODE
+# Start with: npm run openwa:up
+# Stop with: npm run openwa:down
+#
+# Dashboard: http://localhost:2886
+# API: http://localhost:2785/api
+# Swagger: http://localhost:2785/api/docs
+
+services:
+  openwa:
+    image: rmyndharis/openwa:latest
+    container_name: mode-openwa
+    environment:
+      # Set to your club name for better organization
+      INSTANCE_NAME: MODE_Club
+      DEBUG: "openwa:*"
+      # Disable file storage for now, use memory/sqlite
+      STORAGE_TYPE: "memory"
+      # Webhook settings - MODE will send events here
+      WEBHOOK_URL: "http://127.0.0.1:3000/api/webhooks/whatsapp"
+      WEBHOOK_EVENTS: "message:create,message:ack"
+      RATE_LIMIT_MAX: 30
+      RATE_LIMIT_WINDOW_MS: 60000
+    ports:
+      # Dashboard and API on same port in Docker
+      - "127.0.0.1:2785:2785"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2785/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  openwa-data:

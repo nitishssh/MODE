@@ -12,6 +12,7 @@ import { createAnnouncementsModule } from "./modules/announcements";
 import { createEventsModule } from "./modules/events";
 import { createIdentityModule } from "./modules/identity";
 import { createMerchandiseModule } from "./modules/merchandise";
+import { createWhatsAppModule } from "./modules/whatsapp";
 import { ledgerBalance, listLedger, postLedgerEntry, reconcileInventory, reconcileLedger, type LedgerEntryInput } from "./modules/ledger";
 
 export { DuplicateMemberError } from "./errors";
@@ -52,6 +53,7 @@ export function openClubDatabase(target: string, options: { now?: () => Date; re
   const dues = createDuesModule(ctx, identity);
   const events = createEventsModule(ctx, identity);
   const merchandise = createMerchandiseModule(ctx, identity);
+  const whatsapp = createWhatsAppModule(ctx, identity);
   const dashboard = createDashboardModule(ctx, identity, { beforeRead: () => { events.releaseIfLapsed(); merchandise.releaseIfLapsed(); } });
   let closed = false;
 
@@ -60,9 +62,10 @@ export function openClubDatabase(target: string, options: { now?: () => Date; re
     ...dashboard,
     ...createWorkspaceModule(ctx, identity, options.receiptsDir ?? defaultReceiptsDir(kind, path)),
     dues,
-    announcements: createAnnouncementsModule(ctx, identity),
+    announcements: createAnnouncementsModule(ctx, identity, whatsapp),
     events,
     merchandise,
+    whatsapp,
     ledger: {
       post: (input: LedgerEntryInput) => postLedgerEntry(ctx, input),
       list: (clubId: string) => listLedger(db, clubId),

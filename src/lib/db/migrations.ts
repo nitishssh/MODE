@@ -27,6 +27,17 @@ interface Migration {
   rebuildsTables?: boolean;
 }
 
+/** Add WhatsApp integration support with member phone numbers and opt-in preferences. */
+function addWhatsAppSupport(db: SqlDatabase) {
+  addColumnIfMissing(db, "members", "whatsapp_phone", "whatsapp_phone TEXT");
+  addColumnIfMissing(db, "members", "whatsapp_opt_in", "whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (whatsapp_opt_in IN (0, 1))");
+  addColumnIfMissing(db, "outbox_messages", "whatsapp_message_id", "whatsapp_message_id TEXT");
+  addColumnIfMissing(db, "outbox_messages", "whatsapp_status", "whatsapp_status TEXT CHECK (whatsapp_status IN ('pending', 'sent', 'delivered', 'failed', NULL))");
+  if (hasTable(db, "outbox_messages")) {
+    db.exec("CREATE INDEX IF NOT EXISTS outbox_whatsapp_status_idx ON outbox_messages (whatsapp_status) WHERE whatsapp_status IS NOT NULL");
+  }
+}
+
 /**
  * Schema history. Each entry runs once inside a single write transaction and
  * `PRAGMA user_version` records the highest applied version.
@@ -47,6 +58,7 @@ const MIGRATIONS: Migration[] = [
   { version: 14, up: splitPeopleFromMemberships, rebuildsTables: true },
   { version: 15, up: addListPaginationIndexes },
   { version: 16, up: addJoinCodesAndLeaving },
+  { version: 17, up: addWhatsAppSupport },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
