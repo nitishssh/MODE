@@ -23,6 +23,8 @@
     "postgres:up": "docker compose -f docker-compose.postgres.yml up -d --wait",
     "postgres:down": "docker compose -f docker-compose.postgres.yml down",
     "db:purge": "tsx scripts/purge.ts",
+    "club:init": "tsx scripts/init-club.ts",
+    "club:import": "tsx scripts/import-members.ts",
     "sync:contracts": "node scripts/sync-contracts.mjs",
     "check:client-contracts": "node scripts/sync-contracts.mjs --check",
     "build:client": "npm run check:client-contracts && npm --prefix client run export:web && node scripts/stage-expo-web.mjs",

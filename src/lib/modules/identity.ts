@@ -343,6 +343,52 @@ export function createIdentityModule(ctx: DbContext) {
     });
   }
 
+  /** Club record as shown in the workspace, plus whether it still holds the fictional seed. */
+  function getClub(clubId: string = DEFAULT_CLUB_ID): { id: string; name: string; description: string; annualDuesPaise: number; demo: boolean } | null {
+    const row = db.prepare("SELECT id, name, description, annual_dues_paise FROM clubs WHERE id = ?").get(clubId) as Row | undefined;
+    if (!row) return null;
+    const demo = db.prepare("SELECT 1 FROM members WHERE club_id = ? AND id = 'demo-officer-admin'").get(clubId) !== undefined;
+    return { id: text(row.id), name: text(row.name), description: text(row.description), annualDuesPaise: int(row.annual_dues_paise), demo };
+  }
+
+  /** Tooling (`npm run club:init`): rename the club and set its annual dues without touching members. */
+  function updateClub(clubId: string, input: { name?: string; description?: string; annualDuesPaise?: number }): void {
+    const current = getClub(clubId);
+    if (!current) throw new NotFoundError("Club not found.");
+    const name = input.name === undefined ? current.name : z.string().trim().min(2).max(120).parse(input.name);
+    const description = input.description === undefined ? current.description : z.string().trim().max(500).parse(input.description);
+    const dues = input.annualDuesPaise === undefined ? current.annualDuesPaise : z.number().int().positive().parse(input.annualDuesPaise);
+    db.prepare("UPDATE clubs SET name = ?, description = ?, annual_dues_paise = ? WHERE id = ?").run(name, description, dues, clubId);
+  }
+
+  /**
+   * Tooling (`npm run club:import`): bring an existing register in. A member with `expiresOn`
+   * arrives as already paid up to that club date; no ledger row is posted because the money
+   * was collected before MODE. Returns null when the email already exists.
+   */
+  function importMember(
+    input: { name: string; email: string; role?: Role; expiresOn?: string | null; password?: string },
+    clubId: string = DEFAULT_CLUB_ID,
+  ): Member | null {
+    if (input.role && !ROLES.includes(input.role)) throw new ValidationError(`Unknown role: ${input.role}`);
+    if (input.expiresOn && !/^\d{4}-\d{2}-\d{2}$/.test(input.expiresOn)) throw new ValidationError("expiresOn must be YYYY-MM-DD.");
+    if (input.password) passwordSchema.parse(input.password);
+    return transaction(ctx, () => {
+      let member: Member;
+      try {
+        member = insertMember({ name: input.name, email: input.email, role: input.role ?? "member", password: input.password, clubId });
+      } catch (error) {
+        if (error instanceof DuplicateMemberError) return null;
+        throw error;
+      }
+      if (input.expiresOn) {
+        db.prepare("UPDATE members SET expires_on = ?, dues_status = 'paid' WHERE id = ?").run(input.expiresOn, member.id);
+        return findMember(clubId, member.id);
+      }
+      return member;
+    });
+  }
+
   /** Test and tooling helper; the starter runs a single club. */
   function createClub(name: string): string {
     const id = `club-${randomUUID()}`;
@@ -396,6 +442,9 @@ export function createIdentityModule(ctx: DbContext) {
     recordAudit,
     listAudit,
     createClub,
+    getClub,
+    updateClub,
+    importMember,
   };
 }
 

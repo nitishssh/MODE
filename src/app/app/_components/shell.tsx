@@ -194,7 +194,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <button className="theme-toggle" type="button" onClick={() => setIsDark((value) => !value)} aria-label={themeLabel} title={themeLabel}>
               <Icon name={isDark ? "sun" : "moon"} size={16} />
             </button>
-            <span className="demo-indicator"><span />Fictional sample data</span>
+            <span className="demo-indicator"><span />{dashboard?.club.demo === false ? "Live club data" : "Fictional sample data"}</span>
             <div className="topbar-user-section" ref={menuRef}>
               <div className="topbar-progress-bar" title={`Tasks completed: ${completedTasks}/${totalTasks} (${taskProgress}%)`}>
                 <div className="topbar-progress-fill" style={{ width: `${taskProgress}%` }} />
@@ -235,7 +235,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {children}
           <footer className="workspace-footer">
             <span><span className="footer-dot" />MODE starter workspace</span>
-            <p>Fictional seed records · Local database · Reimbursements record payments made outside MODE.</p>
+            <p>{dashboard?.club.demo === false ? "Local database" : "Fictional seed records · Local database"} · Reimbursements record payments made outside MODE.</p>
           </footer>
         </main>
       </div>

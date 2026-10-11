@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { AuthMeResponse, AuthResponse } from "@/lib/contracts";
+import type { AuthMeResponse, AuthResponse, Dashboard } from "@/lib/contracts";
 import { api, ApiError, describeError } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
 
@@ -33,10 +33,16 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [demo, setDemo] = useState(false);
 
   useEffect(() => {
     if (session.status === "authenticated") router.replace(next);
   }, [session.status, router, next]);
+
+  // The sample-account shortcuts only make sense while the fictional seed is present.
+  useEffect(() => {
+    api.get<Dashboard>("/api/dashboard").then((d) => setDemo(d.club.demo)).catch(() => setDemo(false));
+  }, []);
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -81,14 +87,14 @@ function LoginForm() {
             <button type="submit" disabled={busy}>{busy ? "Signing in…" : "Log In"}</button>
           </form>
           <p className="mode-login-help">New student? <Link href="/app/register"><strong>Join the Association</strong></Link><br />Treasurer &amp; Admin Help</p>
-          <div className="mx-demo">
+          {demo ? <div className="mx-demo">
             <strong>Demo accounts</strong> · password <code>mode-demo-2026</code>
             <div style={{ marginTop: 4 }}>
               {DEMO_ACCOUNTS.map(([address, label]) => (
                 <button key={address} type="button" title={address} onClick={() => { setEmail(address); setPassword("mode-demo-2026"); setFieldErrors({}); }}>{label}</button>
               ))}
             </div>
-          </div>
+          </div> : null}
         </section>
       </section>
     </main>
