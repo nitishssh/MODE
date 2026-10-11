@@ -1,0 +1,38 @@
+import type en from "../en/pass";
+
+const pass: Record<keyof typeof en, string> = {
+  "pass.kicker": "సభ్యత్వం",
+  "pass.kickerSection": "డోర్ యాక్సెస్",
+  "pass.title": "నా సభ్యుల పాస్",
+  "pass.lede": "డోర్ వద్ద దీన్ని చూపించండి. ప్రవేశం వాలంటీర్ ఎంచుకున్న ఈవెంట్‌కు చెల్లించిన టికెట్‌పై ఆధారపడుతుంది, సభ్యత్వంపై మాత్రమే కాదు.",
+  "pass.refresh": "సభ్యత్వం రిఫ్రెష్ చేయి",
+  "pass.cardKicker": "MODE · సభ్యుల పాస్",
+  "pass.notJoined": "చేరలేదు",
+  "pass.membership.active": "యాక్టివ్ సభ్యత్వం",
+  "pass.membership.expired": "సభ్యత్వ గడువు ముగిసింది. అధికారి ద్వారా పునరుద్ధరించండి.",
+  "pass.membership.none": "ఇంకా చెల్లించిన సభ్యుడు కాదు. రుసుము గురించి అధికారిని అడగండి.",
+  "pass.doorCode": "డోర్ కోడ్",
+  "pass.scan.kicker": "సభ్యత్వం / డోర్ యాక్సెస్",
+  "pass.scan.title": "స్కాన్ చేయండి లేదా టైప్ చేయండి",
+  "pass.scan.qrAlt": "సభ్యుల పాస్ QR కోడ్. టైప్ చేసే ప్రత్యామ్నాయం: {code}",
+  "pass.scan.body1": "వాలంటీర్ ఈ QR స్కాన్ చేస్తారు, లేదా మీ డోర్ కోడ్ టైప్ చేస్తారు",
+  "pass.scan.body2": "సభ్యుల పాస్ ఎంచుకున్న ఈవెంట్‌కు మీ ఒకే లైవ్ టికెట్‌ను గుర్తిస్తుంది. టికెట్ లేకపోతే డోర్ అలా చెబుతుంది; ముందుగా ఈవెంట్ల కింద బుక్ చేయండి.",
+  "pass.scan.body3": "మీ పాస్ ఎప్పుడూ మారదు. అధికారి మీ రుసుము నమోదు చేసిన తర్వాత కొత్త గడువు చూడటానికి రిఫ్రెష్ చేయండి.",
+  "pass.tickets.kicker": "ఈవెంట్ రిజిస్టర్",
+  "pass.tickets.title": "మీ టికెట్లు",
+  "pass.tickets.all": "అన్ని టికెట్లు",
+  "pass.tickets.empty": "ఇంకా టికెట్లు లేవు.",
+  "pass.tickets.findEvent": "ఈవెంట్ కనుగొనండి",
+  "pass.tickets.line": "{pricing} టికెట్ · {price}",
+  "pass.tickets.holdUntil": "{time} వరకు హోల్డ్",
+  "pass.tickets.checkedIn": "{time}కు చెక్-ఇన్ అయ్యారు",
+  "pass.tickets.footnote": "అధికారి డెస్క్ వద్ద మీ చెల్లింపును ధృవీకరిస్తారు; ఆ తర్వాత మీ QR డోర్ వద్ద మిమ్మల్ని అనుమతిస్తుంది.",
+  "pass.orders.kicker": "క్లబ్ షాప్",
+  "pass.orders.title": "మీ ఆర్డర్లు",
+  "pass.orders.all": "అన్ని ఆర్డర్లు",
+  "pass.orders.empty": "ఇంకా మర్చండైజ్ ఆర్డర్లు లేవు.",
+  "pass.orders.openShop": "షాప్ తెరవండి",
+  "pass.previewNote": "డోర్ స్కానింగ్ మీ పాస్‌ను QR టోకెన్ లేదా టైప్ చేసిన కోడ్ ద్వారా గుర్తిస్తుంది, ఖాతా ID ద్వారా ఎప్పుడూ కాదు.",
+};
+
+export default pass;

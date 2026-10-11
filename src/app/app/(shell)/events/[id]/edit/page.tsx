@@ -4,11 +4,13 @@ import { useParams, useRouter } from "next/navigation";
 import type { EventDetails } from "@/lib/contracts";
 import { api, useLoad } from "../../../../_lib/api";
 import { useSession } from "../../../../_lib/session";
+import { useT } from "../../../../_lib/i18n";
 import { EmptyState, ErrorState, FormPanel, LinkButton, PageHead, Skeleton } from "../../../../_components/ui";
 import { Icon } from "../../../../_components/icons";
 import { EventForm, type EventPayload } from "../../_event-form";
 
 export default function EditEventPage() {
+  const { t } = useT();
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const { can } = useSession();
@@ -17,7 +19,7 @@ export default function EditEventPage() {
   if (!can("events:write")) {
     return (
       <section className="panel">
-        <EmptyState title="Organizers only" icon="calendar" action={<LinkButton href={`/app/events/${id}`}>Back to event</LinkButton>}>Editing events needs the events:write permission.</EmptyState>
+        <EmptyState title={t("events.new.organizersOnly")} icon="calendar" action={<LinkButton href={`/app/events/${id}`}>{t("events.edit.backToEvent")}</LinkButton>}>{t("events.edit.needsPermission")}</EmptyState>
       </section>
     );
   }
@@ -27,18 +29,18 @@ export default function EditEventPage() {
 
   return (
     <>
-      <PageHead eyebrow={<>CLUB <span>/</span> EVENTS</>} title={current ? `Edit: ${current.title}` : "Edit event"} description="Only changed fields are sent. Cancelling an event stops new bookings." />
+      <PageHead eyebrow={<>{t("events.eyebrowClub")} <span>/</span> {t("events.eyebrow")}</>} title={current ? t("events.edit.titleFor", { title: current.title }) : t("events.edit.title")} description={t("events.edit.description")} />
       {event.error ? <ErrorState error={event.error} onRetry={event.reload} /> : !current ? <section className="panel task-create-panel"><Skeleton rows={8} /></section> : (
         <>
           {held > 0 ? (
             <div className="outstanding-notice">
-              <div className="mx-row" style={{ flexWrap: "nowrap" }}><Icon name="alert" size={16} /><div><strong>{held} seat{held === 1 ? " is" : "s are"} held or sold.</strong><p>Capacity cannot be set below that.</p></div></div>
+              <div className="mx-row" style={{ flexWrap: "nowrap" }}><Icon name="alert" size={16} /><div><strong>{held === 1 ? t("events.edit.heldOne", { count: held }) : t("events.edit.heldMany", { count: held })}</strong><p>{t("events.edit.heldBody")}</p></div></div>
             </div>
           ) : null}
-          <FormPanel title="Event details" description="Prices are in rupees; enter 0 for a free ticket." onClose={() => router.push(`/app/events/${id}`)}>
+          <FormPanel title={t("events.form.panelTitle")} description={t("events.form.panelDescription")} onClose={() => router.push(`/app/events/${id}`)}>
             <EventForm
               initial={current}
-              submitLabel="Save changes"
+              submitLabel={t("events.edit.submit")}
               onCancel={() => router.push(`/app/events/${id}`)}
               onSubmit={async (payload) => {
                 const patch: Partial<EventPayload> = {};

@@ -1,0 +1,38 @@
+import type en from "../en/pass";
+
+const pass: Record<keyof typeof en, string> = {
+  "pass.kicker": "सदस्यत्व",
+  "pass.kickerSection": "डोअर प्रवेश",
+  "pass.title": "माझा सदस्य पास",
+  "pass.lede": "हा दारावर दाखवा. प्रवेश स्वयंसेवकाने निवडलेल्या कार्यक्रमाच्या भरलेल्या तिकिटावर अवलंबून आहे, फक्त सदस्यत्वावर नाही.",
+  "pass.refresh": "सदस्यत्व रिफ्रेश करा",
+  "pass.cardKicker": "MODE · सदस्य पास",
+  "pass.notJoined": "सामील नाही",
+  "pass.membership.active": "सक्रिय सदस्यत्व",
+  "pass.membership.expired": "सदस्यत्व संपले. पदाधिकाऱ्याकडे नूतनीकरण करा.",
+  "pass.membership.none": "अजून शुल्क भरलेले सदस्य नाही. शुल्काबद्दल पदाधिकाऱ्याला विचारा.",
+  "pass.doorCode": "डोअर कोड",
+  "pass.scan.kicker": "सदस्यत्व / डोअर प्रवेश",
+  "pass.scan.title": "स्कॅन करा किंवा टाइप करा",
+  "pass.scan.qrAlt": "सदस्य पास QR कोड. टाइप करण्याचा पर्याय: {code}",
+  "pass.scan.body1": "स्वयंसेवक हा QR स्कॅन करतो, किंवा तुमचा डोअर कोड टाइप करतो",
+  "pass.scan.body2": "सदस्य पास निवडलेल्या कार्यक्रमासाठी तुमच्या एकमेव लाइव्ह तिकिटाशी जोडला जातो. तुमच्याकडे तिकीट नसेल तर दारावर तसे सांगितले जाईल; आधी कार्यक्रमांमध्ये जाऊन तिकीट बुक करा.",
+  "pass.scan.body3": "तुमचा पास कधीही बदलत नाही. पदाधिकाऱ्याने शुल्क नोंदवल्यानंतर नवीन समाप्ती पाहण्यासाठी रिफ्रेश करा.",
+  "pass.tickets.kicker": "कार्यक्रम नोंदवही",
+  "pass.tickets.title": "तुमची तिकिटे",
+  "pass.tickets.all": "सर्व तिकिटे",
+  "pass.tickets.empty": "अजून तिकिटे नाहीत.",
+  "pass.tickets.findEvent": "कार्यक्रम शोधा",
+  "pass.tickets.line": "{pricing} तिकीट · {price}",
+  "pass.tickets.holdUntil": "{time} पर्यंत होल्ड",
+  "pass.tickets.checkedIn": "चेक-इन {time}",
+  "pass.tickets.footnote": "पदाधिकारी डेस्कवर तुमचे पेमेंट निश्चित करतो; त्यानंतर तुमचा QR दारावर प्रवेश देतो.",
+  "pass.orders.kicker": "क्लब शॉप",
+  "pass.orders.title": "तुमच्या ऑर्डर",
+  "pass.orders.all": "सर्व ऑर्डर",
+  "pass.orders.empty": "अजून मर्चंडाइज ऑर्डर नाहीत.",
+  "pass.orders.openShop": "शॉप उघडा",
+  "pass.previewNote": "डोअर स्कॅनिंग तुमचा पास त्याच्या QR टोकन किंवा टाइप केलेल्या कोडने ओळखते, खाते आयडीने कधीही नाही.",
+};
+
+export default pass;
