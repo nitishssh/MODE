@@ -8,7 +8,7 @@ The implemented types are authoritative in `src/lib/contracts.ts`. The backend o
 - Money fields ending in `Paise` are integer paise. ISO timestamps are UTC; date-only fields (`expiresOn`) are club calendar days in Asia/Kolkata.
 - Errors are `{error:string, code?:string, details?:[{field,message}]}`. No database paths or stack traces reach the client.
 - `401 unauthenticated` means no valid selected session. `403 forbidden` means the session exists but the role lacks the permission, or a cookie-authenticated write arrived cross-origin.
-- Cookie-authenticated writes (POST/PATCH/DELETE) enforce same-origin: an `Origin` header, when present, must match the request host and `Sec-Fetch-Site` must not be `cross-site`. Only an authenticated bearer request bypasses this check. Login and registration always enforce the same-origin check; native clients omit browser origin headers.
+- Cookie-authenticated writes (POST/PATCH/DELETE) enforce same-origin: an `Origin` header, when present, must match `MODE_PUBLIC_ORIGIN` when configured, otherwise the direct request scheme and host. `Sec-Fetch-Site` must not be `cross-site`. Only an authenticated bearer request bypasses this check. Login and registration always enforce the same-origin check; native clients omit browser origin headers.
 
 ## Identity and roles (#3)
 
@@ -19,6 +19,8 @@ Native clients may instead send `Authorization: Bearer <token>` using the token 
 Web clients use the HttpOnly cookie and do not persist the response token in browser storage. The Expo native client uses `expo-secure-store`; its exported web app uses the Next host for same-origin cookies. Physical-device and installed-PWA acceptance remains tracked under #10/#14.
 
 ### Development CORS
+
+For HTTPS termination at a reverse proxy, set `MODE_PUBLIC_ORIGIN=https://your-public-host` on the API server. It must be an exact HTTP(S) origin without credentials, trailing slash, path, query or fragment. This configuration pins the accepted browser origin even when the proxy uses an internal HTTP Host, and HTTPS configuration makes session cookies Secure. Invalid configuration fails closed. Forwarded headers cannot authorize another origin. Leave it unset for the normal direct localhost/LAN development setup.
 
 `src/proxy.ts` applies to `/api/:path*`. Only `NODE_ENV=development` enables the optional `MODE_CORS_ORIGINS` comma-separated allowlist of HTTP(S) origins, for example `http://localhost:8081,http://127.0.0.1:8081`. Configured trailing slashes normalize to the origin; non-root paths, credentials, queries, hashes, wildcards and `null` origins are ignored. Request origins must match a normalized allowlist entry exactly. Production ignores this configuration.
 
@@ -77,6 +79,8 @@ Announcement publication and outbox inspection use the permissions above. Implem
 ### Demo accounts
 
 Schema v2 seeds four synthetic officer accounts in the sample club: `lead@example.com` (admin), `organizer@example.com`, `treasurer@example.com`, `volunteer@example.com`. Their shared password is `MODE_DEMO_PASSWORD` (default `mode-demo-2026` in development only; production refuses to start a new database without it). The three starter members have no password until an admin sets one with `POST /api/members/{id}/password` (audited as `member.password_set`). No record contains real student information.
+
+Production also rejects explicitly setting the public default and refuses to open an existing database while any of the six seeded officer/member accounts still uses that password. Changing `MODE_DEMO_PASSWORD` or `MODE_SEED` does not rotate stored credentials. Before promoting an existing demo database, use a private local maintenance environment to reset every synthetic account through the admin password operation, which revokes its old sessions. Use `MODE_SEED=none` and `npm run club:init` for a fresh real club. The startup guard checks known synthetic account IDs; it is not a general password-strength check for all members.
 
 ## P0 foundations (#2)
 
