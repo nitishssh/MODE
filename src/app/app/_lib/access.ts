@@ -3,27 +3,28 @@ import type { Role, SessionUser } from "@/lib/contracts";
 /**
  * Which workspace sections each role sees. The server still enforces every
  * permission on every request; this matrix decides what the sidebar offers and
- * which URLs render for a role: everyone gets the member experience, officer
- * sections are layered on by role, and only the club lead sees everything.
+ * which URLs render for a role, in visibly different tiers: members, then
+ * volunteers, then treasurers, then organizers, and the club lead sees everything.
  */
 export type Section =
   | "overview" | "members" | "events" | "door" | "announcements" | "shop" | "tasks"
   | "expenses" | "treasury" | "tickets" | "pass" | "notifications" | "settings";
 
-/**
- * The member experience every signed-in person gets: the club's public life
- * (overview, announcements, events, merchandise, tasks they are assigned) and
- * their own things (tickets, expense claims, pass, notices, account).
- */
-const EVERYONE: Section[] = ["overview", "announcements", "events", "shop", "tasks", "expenses", "tickets", "pass", "notifications", "settings"];
+/** Sections every signed-in person keeps: their own pass, notices and account. */
+const PERSONAL: Section[] = ["pass", "notifications", "settings"];
 
-/** Officer duties layered on top. Only the club lead holds all of them. */
+/**
+ * Tiered slices, smallest first. The first entry is the role's landing page.
+ * Only the club lead holds everything; organizers lack the ledger; treasurers
+ * run money and desks; volunteers run the door and their tasks; members use
+ * the club's public life and their own tickets.
+ */
 const ROLE_SECTIONS: Record<Role, Section[]> = {
-  member: EVERYONE,
-  volunteer: [...EVERYONE, "door"],
-  treasurer: [...EVERYONE, "members", "treasury"],
-  organizer: [...EVERYONE, "members", "door"],
-  admin: [...EVERYONE, "members", "door", "treasury"],
+  member: ["events", "announcements", "shop", "tickets", ...PERSONAL],
+  volunteer: ["door", "tasks", "announcements", "expenses", ...PERSONAL],
+  treasurer: ["overview", "members", "events", "shop", "expenses", "treasury", "announcements", ...PERSONAL],
+  organizer: ["overview", "members", "events", "door", "announcements", "shop", "tasks", "expenses", "tickets", ...PERSONAL],
+  admin: ["overview", "members", "events", "door", "announcements", "shop", "tasks", "expenses", "treasury", "tickets", ...PERSONAL],
 };
 
 /** Permissions a section additionally needs, so a role list can never outrun the server matrix. */
@@ -34,7 +35,7 @@ const SECTION_PERMISSION: Partial<Record<Section, string>> = {
 };
 
 export function allowedSections(user: SessionUser): Set<Section> {
-  const sections = ROLE_SECTIONS[user.role] ?? EVERYONE;
+  const sections = ROLE_SECTIONS[user.role] ?? PERSONAL;
   return new Set(sections.filter((section) => {
     const permission = SECTION_PERMISSION[section];
     return !permission || user.permissions.includes(permission);

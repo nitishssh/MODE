@@ -11,17 +11,19 @@ function user(role: SessionUser["role"]): SessionUser {
 test("only the club lead sees every workspace section; each other role gets its own slice", () => {
   const all = ["overview", "members", "events", "door", "announcements", "shop", "tasks", "expenses", "treasury", "tickets", "pass", "notifications", "settings"];
   assert.deepEqual([...allowedSections(user("admin"))].sort(), [...all].sort());
-  const everyone = ["announcements", "events", "expenses", "notifications", "overview", "pass", "settings", "shop", "tasks", "tickets"];
-  assert.deepEqual([...allowedSections(user("member"))].sort(), everyone, "members get the club's public life and their own things");
-  assert.deepEqual([...allowedSections(user("volunteer"))].sort(), [...everyone, "door"].sort(), "volunteers add the door");
-  assert.deepEqual([...allowedSections(user("treasurer"))].sort(), [...everyone, "members", "treasury"].sort());
-  assert.deepEqual([...allowedSections(user("organizer"))].sort(), [...everyone, "door", "members"].sort());
-  for (const role of ["member", "volunteer", "treasurer", "organizer"] as const) assert.ok(allowedSections(user(role)).size < allowedSections(user("admin")).size, `${role} sees less than the lead`);
+  const personal = ["notifications", "pass", "settings"];
+  assert.deepEqual([...allowedSections(user("member"))].sort(), [...personal, "announcements", "events", "shop", "tickets"].sort());
+  assert.deepEqual([...allowedSections(user("volunteer"))].sort(), [...personal, "announcements", "door", "expenses", "tasks"].sort());
+  assert.deepEqual([...allowedSections(user("treasurer"))].sort(), [...personal, "announcements", "events", "expenses", "members", "overview", "shop", "treasury"].sort());
+  assert.deepEqual([...allowedSections(user("organizer"))].sort(), [...all.filter((s) => s !== "treasury")].sort());
+  const sizes = (["volunteer", "treasurer", "organizer", "admin"] as const).map((role) => allowedSections(user(role)).size);
+  assert.ok(sizes.every((size, i) => i === 0 || size > sizes[i - 1]), `volunteer < treasurer < organizer < admin: ${sizes.join(" < ")}`);
+  assert.ok(allowedSections(user("member")).size <= allowedSections(user("volunteer")).size, "members never see more than volunteers");
   assert.equal(canAccess(user("organizer"), "treasury"), false, "organizers have no ledger access");
   assert.equal(canAccess(user("organizer"), "door"), true);
   assert.equal(canAccess(user("treasurer"), "treasury"), true);
   assert.equal(canAccess(user("treasurer"), "door"), false);
-  assert.equal(canAccess(user("treasurer"), "tasks"), true, "anyone can be assigned a task, so everyone sees the board");
+  assert.equal(canAccess(user("treasurer"), "tasks"), false);
   assert.equal(canAccess(user("volunteer"), "announcements"), true, "announcements are for everyone");
   assert.equal(canAccess(user("member"), "members"), false);
 });
@@ -41,7 +43,8 @@ test("URLs map to sections and each role lands on the first section of its slice
   assert.equal(sectionFor("/app/shop/manage"), "shop");
   assert.equal(sectionFor("/app/login"), null);
   assert.equal(homeFor(user("admin")), "/app");
-  assert.equal(homeFor(user("volunteer")), "/app");
-  assert.equal(homeFor(user("member")), "/app");
-  assert.equal(homeFor({ ...user("volunteer"), permissions: [] }), "/app", "the overview is the home for every role");
+  assert.equal(homeFor(user("volunteer")), "/app/door");
+  assert.equal(homeFor(user("member")), "/app/events");
+  assert.equal(homeFor(user("treasurer")), "/app");
+  assert.equal(homeFor({ ...user("volunteer"), permissions: [] }), "/app/tasks", "without the door permission a volunteer lands on tasks");
 });
