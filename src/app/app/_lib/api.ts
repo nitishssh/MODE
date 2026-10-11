@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /** Typed error for any non-2xx API answer. `code` is the stable server field; `message` is readable. */
 export class ApiError extends Error {
@@ -95,7 +95,7 @@ export interface Loadable<T> {
 }
 
 /**
- * Load data for a page. `load` must be stable (wrap in useCallback) or pass `deps`.
+ * Load data for a page. Reloads whenever an item in `deps` changes (compared with Object.is).
  * Stale completions never overwrite a newer request.
  */
 export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = []): Loadable<T> {
@@ -103,31 +103,51 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = []): Loadab
   const [error, setError] = useState<ApiError | Error | null>(null);
   const [loading, setLoading] = useState(true);
   const ticket = useRef(0);
+  const latestLoad = useRef(load);
+  useLayoutEffect(() => { latestLoad.current = load; });
 
-  const run = useCallback(async () => {
-    const current = ++ticket.current;
+  // Compare deps during render so the hook dependency lists below stay array literals.
+  const [seenDeps, setSeenDeps] = useState(deps);
+  const [generation, setGeneration] = useState(0);
+  if (!sameDeps(seenDeps, deps)) {
+    setSeenDeps(deps);
+    setGeneration((value) => value + 1);
     setLoading(true);
-    try {
-      const result = await load();
-      if (current !== ticket.current) return;
-      setData(result);
-      setError(null);
-    } catch (caught) {
-      if (current !== ticket.current) return;
-      setError(caught instanceof Error ? caught : new Error(String(caught)));
-    } finally {
-      if (current === ticket.current) setLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }
 
-  useEffect(() => { void run(); }, [run]);
+  const fetchLatest = useCallback(() => {
+    const current = ++ticket.current;
+    return latestLoad.current().then(
+      (result) => {
+        if (current !== ticket.current) return;
+        setData(result);
+        setError(null);
+        setLoading(false);
+      },
+      (caught: unknown) => {
+        if (current !== ticket.current) return;
+        setError(caught instanceof Error ? caught : new Error(String(caught)));
+        setLoading(false);
+      },
+    );
+  }, []);
+
+  useEffect(() => { void fetchLatest(); }, [fetchLatest, generation]);
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    return fetchLatest();
+  }, [fetchLatest]);
 
   const set = useCallback<Loadable<T>["setData"]>((updater) => {
     setData((current) => (typeof updater === "function" ? (updater as (c: T | null) => T | null)(current) : updater));
   }, []);
 
-  return { data, error, loading, reload: run, setData: set };
+  return { data, error, loading, reload, setData: set };
+}
+
+function sameDeps(a: unknown[], b: unknown[]): boolean {
+  return a.length === b.length && a.every((value, index) => Object.is(value, b[index]));
 }
 
 /** Small helper for buttons that run one async action and surface its error. */

@@ -7,6 +7,7 @@ import type { EventDetails, EventReport, Ticket, TicketStatus, WorkspaceEventRep
 import { api, ApiError, useAction, useLoad } from "../../../_lib/api";
 import { useSession } from "../../../_lib/session";
 import { useT } from "../../../_lib/i18n";
+import { useNow } from "../../../_lib/use-now";
 import { Alert, Button, Card, Countdown, EmptyState, ErrorState, FormPanel, KeyValue, LinkButton, PageHead, Person, PreviewNote, Skeleton, Stat, StatusBadge, Tabs, When } from "../../../_components/ui";
 import { Icon } from "../../../_components/icons";
 import { QrCode, ticketQrValue } from "../../../_components/qr";
@@ -26,8 +27,9 @@ function BookingCard({ event, reloadMine }: { event: EventDetails; reloadMine: (
   const price$ = usePrice();
   const { pass, can } = useSession();
   const action = useAction();
+  const now = useNow();
   const price = pass?.membership === "active" ? event.memberPricePaise : event.guestPricePaise;
-  const open = event.status === "published" && new Date(event.startsAt).getTime() > Date.now();
+  const open = event.status === "published" && new Date(event.startsAt).getTime() > now;
   if (!can("bookings:create")) return null;
   return (
     <Card kicker={t("events.detail.yourSeat")} title={t("events.detail.bookTitle")}>
@@ -92,7 +94,8 @@ function GuestBookingCard({ event }: { event: EventDetails }) {
   const [email, setEmail] = useState("");
   const [result, setResult] = useState<{ ticket: Ticket; url: string } | null>(null);
   const action = useAction();
-  const open = event.status === "published" && new Date(event.startsAt).getTime() > Date.now();
+  const now = useNow();
+  const open = event.status === "published" && new Date(event.startsAt).getTime() > now;
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

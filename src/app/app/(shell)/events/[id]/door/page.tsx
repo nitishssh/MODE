@@ -89,17 +89,22 @@ export default function DoorPage() {
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // Camera decoding loop.
+  function toggleCamera() {
+    if (camera) { setCamera(false); return; }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError(t("events.door.cameraUnavailable"));
+      return;
+    }
+    setCameraError("");
+    setCamera(true);
+  }
+
+  // Camera decoding loop. Availability is checked in toggleCamera before this starts.
   useEffect(() => {
     if (!camera) return;
     let cancelled = false;
-    setCameraError("");
     const video = videoRef.current;
-    if (!video || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError(t("events.door.cameraUnavailable"));
-      setCamera(false);
-      return;
-    }
+    if (!video) return;
     const canvas = canvasRef.current ?? document.createElement("canvas");
     canvasRef.current = canvas;
     const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -160,7 +165,7 @@ export default function DoorPage() {
         eyebrow={<><Link href={`/app/events/${id}`}>{t("events.door.eventEyebrow")}</Link> <span>/</span> {t("events.door.eyebrow")}</>}
         title={e ? e.title : t("events.door.title")}
         description={e ? t("events.door.description", { when: fmt.dateTime(e.startsAt), venue: e.venue }) : undefined}
-        actions={<Button variant={camera ? "default" : "primary"} onClick={() => setCamera((v) => !v)}><Icon name="scan" size={18} />{camera ? t("events.door.stopCamera") : t("events.door.useCamera")}</Button>}
+        actions={<Button variant={camera ? "default" : "primary"} onClick={toggleCamera}><Icon name="scan" size={18} />{camera ? t("events.door.stopCamera") : t("events.door.useCamera")}</Button>}
       />
       {event.error ? <ErrorState error={event.error} onRetry={event.reload} title={t("events.door.eventLoadFailed")} /> : null}
       {cameraError ? <Alert tone="warning" onDismiss={() => setCameraError("")}>{cameraError}</Alert> : null}

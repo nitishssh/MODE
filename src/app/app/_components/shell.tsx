@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Dashboard, Notification } from "@/lib/contracts";
@@ -57,6 +57,28 @@ export function sectionTitleKey(pathname: string): AppKey {
   return TITLES.find(([pattern]) => pattern.test(pathname))?.[1] ?? "shell.sectionFallback";
 }
 
+// Theme: same localStorage key and html class as the legacy workspace.
+const THEME_KEY = "mode-theme";
+const THEME_EVENT = "mode-theme-change";
+
+function subscribeTheme(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(THEME_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(THEME_EVENT, onChange);
+  };
+}
+
+function readDarkTheme() {
+  try { return window.localStorage.getItem(THEME_KEY) === "dark"; } catch { return false; }
+}
+
+function writeDarkTheme(dark: boolean) {
+  try { window.localStorage.setItem(THEME_KEY, dark ? "dark" : "light"); } catch { /* storage unavailable */ }
+  window.dispatchEvent(new Event(THEME_EVENT));
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const session = useRequireSession();
   const { t } = useT();
@@ -64,13 +86,20 @@ export function Shell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isDark, setIsDark] = useState(false);
+  const isDark = useSyncExternalStore(subscribeTheme, readDarkTheme, () => false);
   const [search, setSearch] = useState("");
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [unread, setUnread] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setNavOpen(false); setMenuOpen(false); setSearch(""); }, [pathname]);
+  // Close menus and clear search when the route changes (adjusted during render, not in an effect).
+  const [shownPath, setShownPath] = useState(pathname);
+  if (shownPath !== pathname) {
+    setShownPath(pathname);
+    setNavOpen(false);
+    setMenuOpen(false);
+    setSearch("");
+  }
 
   // Roles whose slice has no overview land on their first section instead.
   useEffect(() => {
@@ -79,12 +108,7 @@ export function Shell({ children }: { children: ReactNode }) {
     }
   }, [session.status, session.user, pathname, router]);
 
-  // Theme: same localStorage key and html class as the legacy workspace.
-  useEffect(() => { setIsDark(window.localStorage.getItem("mode-theme") === "dark"); }, []);
-  useEffect(() => {
-    document.documentElement.classList.toggle("mode-dark", isDark);
-    window.localStorage.setItem("mode-theme", isDark ? "dark" : "light");
-  }, [isDark]);
+  useEffect(() => { document.documentElement.classList.toggle("mode-dark", isDark); }, [isDark]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -93,13 +117,13 @@ export function Shell({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("mousedown", onDown);
   }, [menuOpen]);
 
-  const loadChrome = useCallback(async () => {
-    try {
-      const [d, n] = await Promise.all([api.get<Dashboard>("/api/dashboard"), api.get<{ notifications: Notification[] }>("/api/notifications")]);
-      setDashboard(d);
-      setUnread(n.notifications.filter((item) => !item.readAt).length);
-    } catch { /* counts are best-effort */ }
-  }, []);
+  const loadChrome = useCallback(() =>
+    Promise.all([api.get<Dashboard>("/api/dashboard"), api.get<{ notifications: Notification[] }>("/api/notifications")])
+      .then(([d, n]) => {
+        setDashboard(d);
+        setUnread(n.notifications.filter((item) => !item.readAt).length);
+      })
+      .catch(() => { /* counts are best-effort */ }), []);
 
   useEffect(() => {
     if (session.status !== "authenticated") return;
@@ -202,7 +226,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div> : <div className="workspace-search-wrap" aria-hidden="true" />}
           <div className="topbar-right">
             <LanguageSwitcher />
-            <button className="theme-toggle" type="button" onClick={() => setIsDark((value) => !value)} aria-label={themeLabel} title={themeLabel}>
+            <button className="theme-toggle" type="button" onClick={() => writeDarkTheme(!isDark)} aria-label={themeLabel} title={themeLabel}>
               <Icon name={isDark ? "sun" : "moon"} size={16} />
             </button>
             <span className="demo-indicator"><span />{dashboard?.club.demo === false ? t("topbar.liveData") : t("topbar.demoData")}</span>
