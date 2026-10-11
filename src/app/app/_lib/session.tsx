@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import type { AuthMeResponse, MemberPass, SessionUser } from "@/lib/contracts";
+import type { AuthMeResponse, ClubMembership, MemberPass, SessionUser } from "@/lib/contracts";
 import { api, ApiError } from "./api";
 
 export type Permission =
@@ -17,6 +17,7 @@ export interface Session {
   status: Status;
   user: SessionUser | null;
   pass: MemberPass | null;
+  memberships: ClubMembership[];
   /** Drive navigation and actions from permissions, never from role names. */
   can: (permission: Permission) => boolean;
   /** Re-fetch /api/auth/me (after dues renewal, role change, etc.). */
@@ -76,6 +77,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     status,
     user: me?.user ?? null,
     pass: me?.pass ?? null,
+    memberships: me?.memberships ?? [],
     can: (permission) => me?.user.permissions.includes(permission) ?? false,
     refresh,
     setSession,

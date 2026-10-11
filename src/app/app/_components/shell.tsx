@@ -11,6 +11,7 @@ import { api } from "../_lib/api";
 import { initials } from "../_lib/format";
 import { useT } from "../_lib/i18n";
 import { useRequireSession, type Permission } from "../_lib/session";
+import { ClubSwitcher } from "./club-switcher";
 import { allowedSections, homeFor, sectionFor, type Section } from "../_lib/access";
 import { EmptyState } from "./ui";
 import { ToastProvider } from "./toast";
@@ -242,6 +243,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <span className="profile-avatar">{initials(user.name)}</span>
             <span style={{ minWidth: 0 }}><strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</strong><small><span className={`badge mx-role ${ROLE_TONE[user.role] ?? "neutral"}`}>{roleLabel}</span></small></span>
           </Link>
+          <ClubSwitcher memberships={session.memberships} currentClubId={user.clubId} />
         </div>
       </aside>
 
