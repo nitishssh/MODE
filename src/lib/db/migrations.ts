@@ -44,6 +44,7 @@ const MIGRATIONS: Migration[] = [
   { version: 11, up: addAnnouncementPublication },
   { version: 12, up: normalizeLegacyWorkspace },
   { version: 13, up: hardenSchema, rebuildsTables: true },
+  { version: 14, up: splitPeopleFromMemberships, rebuildsTables: true },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -660,4 +661,41 @@ function hardenSchema(db: SqlDatabase) {
   for (const [table, columns, sql] of indexes) {
     if (hasTable(db, table) && columns.every((column) => hasColumn(db, table, column))) db.exec(sql);
   }
+}
+
+// ---------------------------------------------------------------------------
+// v14 — one person, many clubs: the login identity (name, email, password) moves to `people`
+// and each `members` row becomes one club membership. Every foreign key that references
+// members(id) keeps pointing at a club-scoped membership, so no other table changes.
+// ---------------------------------------------------------------------------
+function splitPeopleFromMemberships(db: SqlDatabase) {
+  if (!hasTable(db, "members")) return;
+  const postgres = db.dialect === "postgres";
+  db.exec(`CREATE TABLE IF NOT EXISTS people (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      password_hash TEXT,
+      created_at TEXT NOT NULL
+    )`);
+  // Partial historical fixtures (tests recreate only the tables they need) have no identity columns to move.
+  if (!["name", "email", "joined_at"].every((column) => hasColumn(db, "members", column))) return;
+  addColumnIfMissing(db, "members", "person_id", "person_id TEXT REFERENCES people(id)");
+  // Emails were globally unique, so each existing member becomes exactly one person with the same id.
+  db.exec(`INSERT INTO people (id, name, email, password_hash, created_at)
+    SELECT id, name, email, password_hash, joined_at FROM members
+    WHERE person_id IS NULL AND id NOT IN (SELECT id FROM people)`);
+  db.exec("UPDATE members SET person_id = id WHERE person_id IS NULL");
+  // Credentials now live on the person only; a stale copy here could never be checked again.
+  if (hasColumn(db, "members", "password_hash")) db.exec("UPDATE members SET password_hash = NULL");
+  if (postgres) {
+    db.exec("ALTER TABLE members ALTER COLUMN person_id SET NOT NULL");
+    if (postgresConstraintExists(db, "members", "members_email_key")) db.exec("ALTER TABLE members DROP CONSTRAINT members_email_key");
+  } else {
+    rebuildTable(db, "members", (sql) => sql
+      .replace(/email TEXT NOT NULL COLLATE NOCASE UNIQUE/, "email TEXT NOT NULL COLLATE NOCASE")
+      .replace(/person_id TEXT REFERENCES people\(id\)/, "person_id TEXT NOT NULL REFERENCES people(id)"));
+  }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS members_person_club_idx ON members (club_id, person_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS members_person_idx ON members (person_id)");
 }

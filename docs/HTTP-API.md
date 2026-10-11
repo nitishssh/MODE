@@ -45,7 +45,8 @@ The UI receives `user.permissions`; visibility should use those permission strin
 | POST `/api/auth/register` | Public, origin guard | `{name,email,password}` | 201 `AuthResponse` + cookie |
 | POST `/api/auth/login` | Public, origin guard | `{email,password}` | 200 `AuthResponse` + cookie |
 | POST `/api/auth/logout` | Cookie logout may be anonymous/idempotent; bearer must validate | No body | `{ok:true}` |
-| GET `/api/auth/me` | Signed in | None | `{user:SessionUser,pass:MemberPass}` |
+| GET `/api/auth/me` | Signed in | None | `{user:SessionUser,pass:MemberPass,memberships:ClubMembership[]}` |
+| POST `/api/auth/switch-club` | Signed in, origin guard for cookies | `{clubId}` | `AuthMeResponse` for the new active club; 403 when the person is not a member of it |
 | GET `/api/health` | Public | None | `{status:"ok",database:"sqlite",schemaVersion:11}` at this snapshot |
 | GET `/api/dashboard` | Public, enriched by permissions | None | `Dashboard` |
 | GET `/api/members` | `members:read` | None | `{members:Member[]}` |
@@ -53,7 +54,7 @@ The UI receives `user.permissions`; visibility should use those permission strin
 | PATCH `/api/members/{id}/role` | `roles:manage` | `{role}` | `{member}` |
 | POST `/api/members/{id}/password` | `roles:manage` | `{password}` | `{ok:true}` |
 
-Names are trimmed, 2–120 characters. Emails are trimmed, validated, lowercased, maximum 254 characters and globally unique case-insensitively. Registration/password assignment requires 8–200 password characters; login accepts 1–200. Unknown body fields are rejected. Registration always creates a plain member in the default club. Officer-created members have no password or active membership. Duplicate email returns `409 duplicate_member`; self-role changes return `409 self_role_change`.
+Names are trimmed, 2–120 characters. Emails are trimmed, validated, lowercased, maximum 254 characters and identify one person globally (case-insensitive); a person may belong to many clubs, once each. Registration/password assignment requires 8–200 password characters; login accepts 1–200. Unknown body fields are rejected. Registration always creates a new person as a plain member of the default club and refuses an email that already has an account. An officer adding an email that already has an account adds that person to the officer's club without changing their name or password; a new email gets a person with no password. Either way the membership starts with no active membership. An email already in this club returns `409 duplicate_member`; an admin setting the password of someone who also belongs to another club returns `409 shared_account`; self-role changes return `409 self_role_change`.
 
 Anonymous dashboard calls withhold members, tasks and transactions. Callers without `members:read` receive `members:[]`; callers without `ledger:read` receive `transactions:[]` and balance zero. The `access` flags distinguish hidden data from an empty dataset. Other dashboard arrays are club-scoped but do not use the dedicated event/product publication filters.
 

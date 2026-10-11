@@ -5,7 +5,8 @@ import { verifyPassword } from "./password";
 /** Check persisted synthetic credentials even when every migration has already run. */
 export function assertSafeDemoPasswords(db: SqlDatabase): void {
   if (process.env.NODE_ENV !== "production") return;
-  const lookup = db.prepare("SELECT password_hash FROM members WHERE id = ?");
+  // Credentials live on the person (v14); memberships only point at them.
+  const lookup = db.prepare("SELECT p.password_hash FROM members m JOIN people p ON p.id = m.person_id WHERE m.id = ?");
   for (const { id } of [...DEMO_OFFICERS, ...DEMO_MEMBERS]) {
     const hash = lookup.get(id)?.password_hash;
     if (typeof hash === "string" && verifyPassword(PUBLIC_DEMO_PASSWORD, hash)) {
