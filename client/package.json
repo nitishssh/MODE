@@ -48,6 +48,6 @@
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.0",
     "tsx": "^4.20.5",
-    "typescript": "~6.0.3"
+    "typescript": "~7.0.2"
   }
 }
