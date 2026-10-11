@@ -40,20 +40,24 @@ export default function PassPage() {
       />
 
       <div className="overview-grid">
-        <article className="metric-card metric-dark" style={{ padding: 27 }}>
-          <div className="metric-top">
-            <span>{t("pass.cardKicker")}</span>
-            <span className="metric-icon"><Icon name="coin" size={18} /></span>
+        <article className="mx-wallet" aria-label={t("pass.cardKicker")}>
+          <div className="mx-wallet-head">
+            <span className="mx-wallet-brand">MODE<span>.</span></span>
+            <span className="eyebrow">{t("pass.cardKicker")}</span>
           </div>
-          <strong className="metric-value">{user.name}</strong>
-          <p>{user.email}</p>
-          <div className="mx-row" style={{ marginTop: 18 }}>
+          <div className="mx-wallet-name">{user.name}</div>
+          <div className="mx-wallet-email">{user.email}</div>
+          <div className="mx-wallet-row">
             <StatusBadge status={pass.membership} label={pass.membership === "none" ? t("pass.notJoined") : undefined} />
-            {pass.expiresOn ? <span className="mx-small" style={{ color: "#c4d0d2" }}>{t("membership.through", { date: fmt.date(pass.expiresOn) })}</span> : null}
+            {pass.expiresOn ? <small>{t("membership.through", { date: fmt.date(pass.expiresOn) })}</small> : null}
           </div>
-          <p>{t(`pass.membership.${pass.membership}` as AppKey)}</p>
-          <div className="eyebrow" style={{ marginTop: 22, color: "#c4d0d2" }}>{t("pass.doorCode")}</div>
-          <span className="mx-code-big" style={{ color: "#fff", display: "block", marginTop: 6 }}>{pass.shortCode}</span>
+          <div className="mx-wallet-foot">
+            <div>
+              <div className="eyebrow">{t("pass.doorCode")}</div>
+              <span className="mx-code-big">{pass.shortCode}</span>
+            </div>
+            <span className="mx-wallet-chip" aria-hidden="true" />
+          </div>
         </article>
 
         <section className="panel">
@@ -61,12 +65,15 @@ export default function PassPage() {
             <div><div className="eyebrow">{t("pass.scan.kicker")}</div><h2>{t("pass.scan.title")}</h2></div>
           </div>
           <div className="panel-body">
-            <div className="mx-row" style={{ alignItems: "flex-start", gap: 24 }}>
-              <QrCode value={passQrValue(pass.qrToken)} alt={t("pass.scan.qrAlt", { code: pass.shortCode })} />
-              <div className="mx-stack-sm" style={{ flex: 1, minWidth: 200 }}>
-                <p className="mx-small">{t("pass.scan.body1")} <span className="payment-ref" style={{ display: "inline" }}>{pass.shortCode}</span>.</p>
-                <p className="mx-muted mx-small">{t("pass.scan.body2")}</p>
-                <p className="mx-muted mx-small">{t("pass.scan.body3")}</p>
+            <div className="mx-pass-qr-wrap">
+              <div className="mx-pass-qr"><QrCode value={passQrValue(pass.qrToken)} alt={t("pass.scan.qrAlt", { code: pass.shortCode })} /></div>
+              <div>
+                <ol className="mx-pass-steps">
+                  <li><i>1</i><span>{t("pass.scan.body1")} <span className="payment-ref" style={{ display: "inline" }}>{pass.shortCode}</span>.</span></li>
+                  <li><i>2</i><span>{t("pass.scan.body2")}</span></li>
+                  <li><i>3</i><span>{t("pass.scan.body3")}</span></li>
+                </ol>
+                <p className="mx-muted mx-small" style={{ marginTop: 14 }}>{t(`pass.membership.${pass.membership}` as AppKey)}</p>
               </div>
             </div>
           </div>

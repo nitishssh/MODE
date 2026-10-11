@@ -13,6 +13,7 @@ import { useT } from "../_lib/i18n";
 import { useRequireSession, type Permission } from "../_lib/session";
 import { allowedSections, homeFor, sectionFor, type Section } from "../_lib/access";
 import { EmptyState } from "./ui";
+import { ToastProvider } from "./toast";
 
 /*
  * Azman's workspace chrome, verbatim: .workspace > .sidebar (brand, club
@@ -53,6 +54,33 @@ const TITLES: [RegExp, AppKey][] = [
   [/^\/app\/expenses/, "nav.myExpenses"], [/^\/app\/treasury/, "nav.treasury"], [/^\/app\/pass/, "nav.myPass"], [/^\/app\/notifications/, "nav.notifications"], [/^\/app\/settings/, "nav.settings"],
 ];
 
+const ROLE_TONE: Record<string, string> = { admin: "red", organizer: "amber", treasurer: "purple", volunteer: "green", member: "neutral" };
+
+/** Phone-only bottom tab bar: the first four sections of the role's slice plus "More" (opens the drawer). */
+function TabBar({ items, isActive, dashboard, unread, onMore }: { items: NavItem[]; isActive: (item: NavItem) => boolean; dashboard: Dashboard | null; unread: number; onMore: () => void }) {
+  const { t } = useT();
+  const primary = items.slice(0, 4);
+  return (
+    <nav className="mx-tabbar" aria-label={t("shell.mainNavigation")}>
+      {primary.map((item) => {
+        const active = isActive(item);
+        const count = item.count?.(dashboard, unread);
+        return (
+          <Link key={item.href} href={item.href} className={active ? "active" : ""} aria-current={active ? "page" : undefined}>
+            <Icon name={item.icon} size={20} />
+            <span>{t(item.label)}</span>
+            {count ? <span className="nav-count">{count}</span> : null}
+          </Link>
+        );
+      })}
+      <button type="button" onClick={onMore} aria-label={t("shell.openNavigation")}>
+        <Icon name="menu" size={20} />
+        <span>{t("shell.tabMore")}</span>
+      </button>
+    </nav>
+  );
+}
+
 export function sectionTitleKey(pathname: string): AppKey {
   return TITLES.find(([pattern]) => pattern.test(pathname))?.[1] ?? "shell.sectionFallback";
 }
@@ -69,6 +97,21 @@ export function Shell({ children }: { children: ReactNode }) {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [unread, setUnread] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // "/" focuses the workspace search from anywhere outside a field.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      if (!searchRef.current) return;
+      event.preventDefault();
+      searchRef.current.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => { setNavOpen(false); setMenuOpen(false); setSearch(""); }, [pathname]);
 
@@ -142,7 +185,8 @@ export function Shell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="workspace">
+    <ToastProvider>
+    <div className="workspace mx-app">
       <a className="skip-link" href="#main-content">{t("shell.skipToContent")}</a>
       {navOpen ? <button className="nav-scrim" type="button" aria-label={t("shell.closeNavigation")} onClick={() => setNavOpen(false)} /> : null}
       <aside className={`sidebar ${navOpen ? "mobile-open" : ""}`.trim()} aria-label={t("shell.workspaceNavigation")}>
@@ -169,15 +213,11 @@ export function Shell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="sidebar-bottom">
-          <div className="sidebar-note">
-            <span className="small-star">✳</span>
-            <h3>{t("shell.noteTitleLine1")}<br />{t("shell.noteTitleLine2")}</h3>
-            <p>{t("shell.noteBody")}</p>
-          </div>
-          <div className="sidebar-profile">
+          {allowed.has("overview") ? <div className="mx-side-shortcut" aria-hidden="true"><Icon name="search" size={14} /><span>{t("shell.searchHint")}</span><kbd style={{ marginLeft: "auto" }}>/</kbd></div> : null}
+          <Link href="/app/settings" className="sidebar-profile" aria-label={t("topbar.menuSettings")}>
             <span className="profile-avatar">{initials(user.name)}</span>
-            <span><strong>{user.name}</strong><small>{t("shell.signedInAs", { role: roleLabel })}</small></span>
-          </div>
+            <span style={{ minWidth: 0 }}><strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</strong><small><span className={`badge mx-role ${ROLE_TONE[user.role] ?? "neutral"}`}>{roleLabel}</span></small></span>
+          </Link>
         </div>
       </aside>
 
@@ -188,7 +228,8 @@ export function Shell({ children }: { children: ReactNode }) {
           {allowed.has("overview") ? <div className="workspace-search-wrap">
             <label className="workspace-search">
               <Icon name="search" size={15} />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("topbar.searchPlaceholder")} aria-label={t("topbar.searchLabel")} />
+              <input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("topbar.searchPlaceholder")} aria-label={t("topbar.searchLabel")} />
+              <kbd className="mx-search-kbd" aria-hidden="true">/</kbd>
             </label>
             {query ? (
               <div className="workspace-search-results" role="listbox">
@@ -243,13 +284,17 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main id="main-content" tabIndex={-1}>
-          {sectionAllowed ? children : <section className="panel"><EmptyState title={t("state.officerOnlyTitle")} icon="shield">{t("state.officerOnlyBody")}</EmptyState></section>}
+          <div className="mx-page" key={pathname}>
+            {sectionAllowed ? children : <section className="panel"><EmptyState title={t("state.officerOnlyTitle")} icon="shield">{t("state.officerOnlyBody")}</EmptyState></section>}
+          </div>
           <footer className="workspace-footer">
             <span><span className="footer-dot" />{t("shell.footerBrand")}</span>
             <p>{dashboard?.club.demo === false ? t("shell.footerLive") : t("shell.footerDemo")} · {t("shell.footerNote")}</p>
           </footer>
         </main>
       </div>
+      <TabBar items={NAV.filter(visible).filter((item) => allowed.has(item.section))} isActive={isActive} dashboard={dashboard} unread={unread} onMore={() => setNavOpen(true)} />
     </div>
+    </ToastProvider>
   );
 }

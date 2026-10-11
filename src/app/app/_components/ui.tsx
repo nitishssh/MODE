@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import Link from "next/link";
 import ShinyButton from "@/components/ui/shiny-button";
 import { Icon, type IconName } from "./icons";
@@ -106,18 +106,51 @@ export function FormPanel({ title, description, onClose, children, id }: { title
 
 const METRIC_COLORS = { blue: "lavender", accent: "peach", green: "mint", amber: "peach", dark: "dark" } as const;
 
-/** `.metric-card` with the coloured icon chip; `tone="dark"` is the ink card used for money. */
-export function Stat({ label, value, hint, tone = "blue", icon }: { label: string; value: ReactNode; hint?: ReactNode; tone?: keyof typeof METRIC_COLORS; icon?: IconName }) {
+/** Counts from 0 to `value` on first paint (and on change); plain text under reduced motion. */
+export function CountUp({ value, format }: { value: number; format?: (n: number) => string }) {
+  const [shown, setShown] = useState(0);
+  const from = useRef(0);
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !Number.isFinite(value)) { setShown(value); from.current = value; return; }
+    const start = from.current, delta = value - start, t0 = performance.now(), duration = 650;
+    let frame = 0;
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - t0) / duration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setShown(start + delta * eased);
+      if (p < 1) frame = requestAnimationFrame(tick); else from.current = value;
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+  const rounded = Number.isInteger(value) ? Math.round(shown) : shown;
+  return <>{format ? format(rounded) : String(rounded)}</>;
+}
+
+/**
+ * `.metric-card`: the number is the hero. `progress` (0–100) draws a bar under
+ * the hint, `trend` adds a small up/down/flat chip. `tone="dark"` is the ink
+ * card used for money. Numeric `value` counts up on first paint.
+ */
+export function Stat({ label, value, hint, tone = "blue", icon, progress, trend, format }: { label: string; value: ReactNode; hint?: ReactNode; tone?: keyof typeof METRIC_COLORS; icon?: IconName; progress?: number; trend?: { direction: "up" | "down" | "flat"; label: ReactNode }; format?: (n: number) => string }) {
   const color = METRIC_COLORS[tone];
   const iconName: IconName = icon ?? (tone === "dark" ? "wallet" : tone === "green" ? "check" : tone === "accent" ? "calendar" : "people");
+  const shown = typeof value === "number" ? <CountUp value={value} format={format} /> : value;
   return (
     <article className={`metric-card ${color === "dark" ? "metric-dark" : ""}`.trim()}>
       <div className="metric-top">
         <span>{label}</span>
-        <span className={`metric-icon ${color}`}><Icon name={iconName} size={18} /></span>
+        <span className={`metric-icon ${color}`}><Icon name={iconName} size={16} /></span>
       </div>
-      <strong className="metric-value">{value}</strong>
+      <strong className="metric-value">{shown}</strong>
       {hint ? <p>{hint}</p> : null}
+      {typeof progress === "number" || trend ? (
+        <div className="mx-metric-foot">
+          {typeof progress === "number" ? <span className="mx-metric-bar" role="progressbar" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} /></span> : null}
+          {trend ? <span className={`mx-trend ${trend.direction}`}><Icon name="trend" size={12} />{trend.label}</span> : null}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -169,8 +202,51 @@ export function Loading({ label }: { label?: string }) {
   return <div className="loading-state" role="status" aria-live="polite"><span className="loader" /><span>{label ?? t("state.loading")}</span></div>;
 }
 
-export function Skeleton({ rows = 4 }: { rows?: number }) {
+/**
+ * Skeletons match the final layout's shape so the page does not jump:
+ * `shape="stats"` is a metrics row, `"table"` is avatar + cells per row,
+ * `"cards"` is a two-column card grid; default is text lines.
+ */
+export function Skeleton({ rows = 4, shape }: { rows?: number; shape?: "stats" | "table" | "cards" }) {
   const { t } = useT();
+  if (shape === "stats") {
+    return (
+      <section className="metrics-grid" aria-busy="true" aria-label={t("state.loading")}>
+        {Array.from({ length: 4 }, (_, i) => (
+          <article key={i} className="metric-card mx-skel-stat">
+            <span className="skeleton" style={{ width: 80, height: 10 }} />
+            <span className="skeleton" style={{ width: 96, height: 36, marginTop: 14 }} />
+            <span className="skeleton" style={{ width: 140, height: 12, marginTop: 12 }} />
+          </article>
+        ))}
+      </section>
+    );
+  }
+  if (shape === "table") {
+    return (
+      <div className="mx-skel-rows" aria-busy="true" aria-label={t("state.loading")}>
+        {Array.from({ length: rows }, (_, i) => (
+          <div key={i} className="mx-skel-row">
+            <span className="skeleton" /><span className="skeleton" style={{ width: `${70 - (i % 3) * 12}%` }} /><span className="skeleton" /><span className="skeleton" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (shape === "cards") {
+    return (
+      <div className="mx-grid mx-grid-2" aria-busy="true" aria-label={t("state.loading")}>
+        {Array.from({ length: Math.max(2, rows) }, (_, i) => (
+          <article key={i} className="panel" style={{ padding: 24 }}>
+            <span className="skeleton" style={{ width: 70, height: 10 }} />
+            <span className="skeleton" style={{ width: "60%", height: 24, marginTop: 12 }} />
+            <span className="skeleton" style={{ width: "90%", height: 12, marginTop: 14 }} />
+            <span className="skeleton" style={{ width: "40%", height: 12, marginTop: 8 }} />
+          </article>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="mx-stack-sm" aria-busy="true" aria-label={t("state.loading")} style={{ padding: "4px 0" }}>
       {Array.from({ length: rows }, (_, i) => <span key={i} className="skeleton" style={{ width: `${90 - (i % 3) * 18}%`, height: 14 }} />)}
@@ -195,8 +271,9 @@ const STATUS_TONES: Record<string, Tone> = {
   simulated: "purple", unpaid: "amber",
 };
 
-export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode; dot?: boolean }) {
-  return <span className={`badge ${TONE_CLASS[tone]}`}>{children}</span>;
+/** The one status pill: tone colour plus a dot. `dot={false}` renders a plain label chip. */
+export function Badge({ tone = "neutral", children, dot = true }: { tone?: Tone; children: ReactNode; dot?: boolean }) {
+  return <span className={`badge ${TONE_CLASS[tone]} ${dot ? "" : "plain"}`.trim()}>{children}</span>;
 }
 
 /** Translated status label; roles and statuses live in common.ts. Unknown statuses fall back to Title Case. */

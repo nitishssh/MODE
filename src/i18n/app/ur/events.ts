@@ -170,7 +170,7 @@ const events: Record<keyof typeof en, string> = {
   "events.door.eventLoadFailed": "ایونٹ لوڈ نہیں ہو سکا",
   "events.door.cameraUnavailable": "اس براؤزر میں کیمرے تک رسائی دستیاب نہیں۔ اس کے بجائے کوڈ ٹائپ کریں۔",
   "events.door.cameraFailed": "کیمرہ شروع نہیں ہو سکا۔ اجازتیں چیک کریں، یا کوڈ ٹائپ کریں۔",
-  "events.door.placeholder": "10 حروف کا کوڈ ٹائپ کریں یا QR ٹوکن پیسٹ کریں",
+  "events.door.placeholder": "کوڈ یا اسکین شدہ لنک",
   "events.door.inputLabel": "ٹکٹ یا پاس کی سند",
   "events.door.scan": "اسکین",
   "events.door.scanFailed": "اسکین چیک نہیں ہو سکا۔ دوبارہ کوشش کریں۔",

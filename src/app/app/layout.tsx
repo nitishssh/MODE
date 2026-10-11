@@ -5,6 +5,7 @@ import { requestI18n } from "@/i18n/server";
 import { AppI18nProvider } from "./_lib/i18n";
 import { SessionProvider } from "./_lib/session";
 import "./app.css";
+import "./polish.css";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { locale } = await requestI18n();
