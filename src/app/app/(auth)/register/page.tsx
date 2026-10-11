@@ -8,8 +8,9 @@ import { api, ApiError } from "../../_lib/api";
 import { useT } from "../../_lib/i18n";
 import { useSession } from "../../_lib/session";
 import { homeFor } from "../../_lib/access";
+import { AuthLanguage, AuthStory } from "../_story";
 
-/* Same scrapbook treatment as the login page. */
+/* Registration shares the sign-in layout. */
 
 export default function RegisterPage() {
   const { t, apiError } = useT();
@@ -22,7 +23,7 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (session.status === "authenticated" && session.user) router.replace(homeFor(session.user));
-  }, [session.status, router]);
+  }, [session.status, session.user, router]);
 
   function update<K extends keyof typeof form>(key: K, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -53,30 +54,32 @@ export default function RegisterPage() {
     }
   }
 
+  const field = (key: keyof typeof form, label: string, type: string, autoComplete: string) => (
+    <label key={key}>
+      {label}
+      <input type={type} autoComplete={autoComplete} value={form[key]} aria-invalid={Boolean(errors[key])} onChange={(e) => update(key, e.target.value)} />
+      {errors[key] ? <span className="mx-login-error" role="alert">{errors[key]}</span> : null}
+    </label>
+  );
+
   return (
-    <main className="mode-login">
-      <section className="mode-login-form-column" aria-label={t("auth.register.ariaLabel")}>
-        <section className="mode-login-card" aria-labelledby="register-title">
-          <h1 id="register-title">{t("auth.register.title")}</h1>
-          <p>{t("auth.register.leadLine1")}<br />{t("auth.register.leadLine2")}</p>
+    <main className="mx-login">
+      <AuthStory />
+      <section className="mx-login-form" aria-label={t("auth.register.ariaLabel")}>
+        <AuthLanguage />
+        <div className="mx-login-card">
+          <h2>{t("auth.register.title")}</h2>
+          <p>{t("shell.description")}</p>
           <form onSubmit={submit} noValidate>
-            <label htmlFor="name">{t("auth.register.nameLabel")}</label>
-            <input id="name" autoComplete="name" value={form.name} aria-invalid={Boolean(errors.name)} onChange={(e) => update("name", e.target.value)} />
-            {errors.name && <span className="mode-field-error">{errors.name}</span>}
-            <label htmlFor="email">{t("auth.register.emailLabel")}</label>
-            <input id="email" type="email" autoComplete="email" value={form.email} aria-invalid={Boolean(errors.email)} onChange={(e) => update("email", e.target.value)} />
-            {errors.email && <span className="mode-field-error">{errors.email}</span>}
-            <label htmlFor="password">{t("auth.register.passwordLabel")}</label>
-            <input id="password" type="password" autoComplete="new-password" value={form.password} aria-invalid={Boolean(errors.password)} onChange={(e) => update("password", e.target.value)} />
-            {errors.password && <span className="mode-field-error">{errors.password}</span>}
-            <label htmlFor="confirm">{t("auth.register.confirmLabel")}</label>
-            <input id="confirm" type="password" autoComplete="new-password" value={form.confirm} aria-invalid={Boolean(errors.confirm)} onChange={(e) => update("confirm", e.target.value)} />
-            {errors.confirm && <span className="mode-field-error">{errors.confirm}</span>}
-            {error && <p className="mode-login-error" role="alert">{error}</p>}
-            <button type="submit" disabled={busy}>{busy ? t("auth.register.submitting") : t("auth.register.submit")}</button>
+            {error ? <div className="mx-login-alert" role="alert">{error}</div> : null}
+            {field("name", t("auth.register.nameLabel"), "text", "name")}
+            {field("email", t("auth.register.emailLabel"), "email", "email")}
+            {field("password", t("auth.register.passwordLabel"), "password", "new-password")}
+            {field("confirm", t("auth.register.confirmLabel"), "password", "new-password")}
+            <button type="submit" className="button primary" disabled={busy}>{busy ? t("auth.register.submitting") : t("auth.register.submit")}</button>
           </form>
-          <p className="mode-login-help">{t("auth.register.alreadyMember")} <Link href="/app/login"><strong>{t("auth.register.loginLink")}</strong></Link></p>
-        </section>
+          <p className="mx-login-links">{t("auth.register.alreadyMember")} <Link href="/app/login"><strong>{t("auth.register.loginLink")}</strong></Link></p>
+        </div>
       </section>
     </main>
   );

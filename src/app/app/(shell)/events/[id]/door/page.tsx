@@ -10,6 +10,7 @@ import { useSession } from "../../../../_lib/session";
 import { useT } from "../../../../_lib/i18n";
 import { Alert, Button, Card, EmptyState, ErrorState, LinkButton, PageHead, Skeleton } from "../../../../_components/ui";
 import { Icon } from "../../../../_components/icons";
+import { credentialFromScan } from "../../../../_components/qr";
 
 type Tone = "ok" | "warn" | "bad";
 const TONE: Record<ScanOutcome, Tone> = {
@@ -36,6 +37,7 @@ export default function DoorPage() {
   const event = useLoad(() => api.get<{ event: EventDetails }>(`/api/events/${encodeURIComponent(id)}`), [id]);
 
   const [credential, setCredential] = useState("");
+  const prefilled = useRef(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState("");
@@ -57,7 +59,7 @@ export default function DoorPage() {
     setBusy(true);
     setError("");
     try {
-      const outcome = await api.post<ScanResult>(`/api/events/${encodeURIComponent(id)}/scan`, { credential: trimmed });
+      const outcome = await api.post<ScanResult>(`/api/events/${encodeURIComponent(id)}/scan`, { credential: credentialFromScan(trimmed) });
       setResult(outcome);
       setLog((current) => [{ at: new Date().toISOString(), credential: mask(trimmed), outcome: outcome.outcome, name: outcome.attendee?.name }, ...current].slice(0, 20));
       setCredential("");
@@ -69,6 +71,16 @@ export default function DoorPage() {
       inputRef.current?.focus();
     }
   }, [id, apiError]);
+
+  // A member-pass QR encodes /app/door?credential=…; once the officer picks the event we arrive here with it.
+  useEffect(() => {
+    if (prefilled.current) return;
+    const fromUrl = new URLSearchParams(window.location.search).get("credential");
+    if (!fromUrl) return;
+    prefilled.current = true;
+    setCredential(fromUrl);
+    void scan(fromUrl);
+  }, [scan]);
 
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

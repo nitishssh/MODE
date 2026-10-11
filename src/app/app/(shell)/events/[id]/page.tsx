@@ -9,7 +9,7 @@ import { useSession } from "../../../_lib/session";
 import { useT } from "../../../_lib/i18n";
 import { Alert, Button, Card, Countdown, EmptyState, ErrorState, FormPanel, KeyValue, LinkButton, PageHead, Person, PreviewNote, Skeleton, Stat, StatusBadge, Tabs, When } from "../../../_components/ui";
 import { Icon } from "../../../_components/icons";
-import { QrCode } from "../../../_components/qr";
+import { QrCode, ticketQrValue } from "../../../_components/qr";
 
 type FullReport = EventReport & WorkspaceEventReport;
 type DeskTab = "holds" | "tickets";
@@ -60,7 +60,7 @@ function MyTicketCard({ ticket, event, reload }: { ticket: Ticket; event: EventD
     <Card kicker={t("events.detail.yourSeat")} title={t("events.detail.yourTicket")} actions={<StatusBadge status={ticket.status} />}>
       {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
       <div className="mx-row" style={{ alignItems: "flex-start", gap: 20 }}>
-        {ticket.qrToken ? <QrCode value={ticket.qrToken} alt={t("events.detail.qrAlt", { title: event.title, code: ticket.shortCode })} size={160} /> : null}
+        {ticket.qrToken ? <QrCode value={ticketQrValue(ticket.qrToken)} alt={t("events.detail.qrAlt", { title: event.title, code: ticket.shortCode })} size={160} /> : null}
         <div className="mx-stack-sm" style={{ flex: 1, minWidth: 200 }}>
           <div><div className="eyebrow">{t("events.detail.doorCode")}</div><p className="mx-code-big">{ticket.shortCode}</p></div>
           <KeyValue items={[

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { EventDetails } from "@/lib/contracts";
 import { api, useLoad } from "../../_lib/api";
@@ -14,6 +15,9 @@ export default function DoorHomePage() {
   const { t, fmt } = useT();
   const { can } = useSession();
   const events = useLoad(() => api.get<{ events: EventDetails[] }>("/api/events"));
+  // A scanned member-pass QR lands here with the credential; carry it to the chosen event's scanner.
+  const [credential, setCredential] = useState("");
+  useEffect(() => { setCredential(new URLSearchParams(window.location.search).get("credential") ?? ""); }, []);
 
   if (!can("tickets:check_in")) {
     return <section className="panel"><EmptyState title={t("events.door.volunteersOnly")} icon="scan">{t("events.door.needsPermission")}</EmptyState></section>;
@@ -38,7 +42,7 @@ export default function DoorHomePage() {
         <section className="panel">
           <div className="event-list">
             {list.map((event, index) => (
-              <Link key={event.id} href={`/app/events/${event.id}/door`} className="event-row">
+              <Link key={event.id} href={`/app/events/${event.id}/door${credential ? `?credential=${encodeURIComponent(credential)}` : ""}`} className="event-row">
                 <div className={`date-tile ${index % 2 ? "purple" : "coral"}`}><span>{fmt.month(event.startsAt)}</span><strong>{fmt.day(event.startsAt)}</strong></div>
                 <div className="event-info">
                   <h3>{event.title}</h3>

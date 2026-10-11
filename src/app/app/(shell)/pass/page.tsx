@@ -8,7 +8,7 @@ import { api, useLoad } from "../../_lib/api";
 import { useT } from "../../_lib/i18n";
 import { useSession } from "../../_lib/session";
 import { Button, ErrorState, PageHead, PreviewNote, Skeleton, StatusBadge, TextLink } from "../../_components/ui";
-import { QrCode } from "../../_components/qr";
+import { QrCode, passQrValue } from "../../_components/qr";
 import { Icon } from "../../_components/icons";
 
 export default function PassPage() {
@@ -62,7 +62,7 @@ export default function PassPage() {
           </div>
           <div className="panel-body">
             <div className="mx-row" style={{ alignItems: "flex-start", gap: 24 }}>
-              <QrCode value={pass.qrToken} alt={t("pass.scan.qrAlt", { code: pass.shortCode })} />
+              <QrCode value={passQrValue(pass.qrToken)} alt={t("pass.scan.qrAlt", { code: pass.shortCode })} />
               <div className="mx-stack-sm" style={{ flex: 1, minWidth: 200 }}>
                 <p className="mx-small">{t("pass.scan.body1")} <span className="payment-ref" style={{ display: "inline" }}>{pass.shortCode}</span>.</p>
                 <p className="mx-muted mx-small">{t("pass.scan.body2")}</p>

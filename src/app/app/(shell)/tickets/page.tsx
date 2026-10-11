@@ -7,7 +7,7 @@ import { api, useAction, useLoad } from "../../_lib/api";
 import { useT } from "../../_lib/i18n";
 import { Countdown, EmptyState, ErrorState, PageHead, PreviewNote, Segmented, Skeleton, StatusBadge, When } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
-import { QrCode } from "../../_components/qr";
+import { QrCode, ticketQrValue } from "../../_components/qr";
 
 /* Tickets as .panel.event-card articles, in Azman's event-card rhythm. */
 
@@ -29,7 +29,7 @@ function TicketCard({ ticket, event, reload, index }: { ticket: Ticket; event?: 
       <h2>{event?.title ?? t("tickets.eventFallback")}</h2>
       <p>{event ? `${event.venue} · ${fmt.dateTime(event.startsAt)}` : t("tickets.detailsUnavailable")}</p>
       <div className="mx-row mx-mt" style={{ alignItems: "flex-start", gap: 20 }}>
-        {live && ticket.qrToken ? <QrCode value={ticket.qrToken} alt={t("tickets.qrAlt", { code: ticket.shortCode })} size={150} /> : null}
+        {live && ticket.qrToken ? <QrCode value={ticketQrValue(ticket.qrToken)} alt={t("tickets.qrAlt", { code: ticket.shortCode })} size={150} /> : null}
         <div style={{ flex: 1, minWidth: 180 }}>
           <div className="eyebrow">{t("events.detail.doorCode")}</div>
           <p className="mx-code-big" style={{ fontSize: 24 }}>{ticket.shortCode}</p>
