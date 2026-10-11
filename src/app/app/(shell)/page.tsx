@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { Dashboard, Task } from "@/lib/contracts";
+import type { Dashboard, Notification, Task } from "@/lib/contracts";
 import { ReorderList } from "@/components/ui/reorder-list";
 import { WorkspaceMainSkeleton } from "@/app/skeleton";
 import { api, useLoad } from "../_lib/api";
 import { useT } from "../_lib/i18n";
 import { useSession } from "../_lib/session";
 import { Icon } from "../_components/icons";
+import { useToast } from "../_components/toast";
 import { Button, Card, EmptyState, ErrorState, PageHead, Person, PreviewNote, Stat, TextLink } from "../_components/ui";
 
 /* Azman's overview, section for section: metrics, calendar panel, team to-dos
@@ -21,7 +22,9 @@ export default function OverviewPage() {
   const router = useRouter();
   const { t, fmt, apiError } = useT();
   const { user, can } = useSession();
+  const toast = useToast();
   const dashboard = useLoad(() => api.get<Dashboard>("/api/dashboard"));
+  const inbox = useLoad(() => api.get<{ notifications: Notification[] }>("/api/notifications"));
   const [tasks, setTasks] = useState<Task[]>([]);
   const [todoOrder, setTodoOrder] = useState<string[]>([]);
   const [dragged, setDragged] = useState<string | null>(null);
@@ -41,13 +44,20 @@ export default function OverviewPage() {
   const data = dashboard.data;
   const canMove = (task: Task) => can("tasks:write") || task.assigneeId === user.id;
 
-  async function move(task: Task, status: Task["status"]) {
+  async function move(task: Task, status: Task["status"], { silent = false } = {}) {
     if (task.status === status || saving.includes(task.id) || !canMove(task)) return;
+    const previous = task.status;
     setSaving((s) => [...s, task.id]);
     setTaskErrors((c) => ({ ...c, [task.id]: "" }));
     try {
       const result = await api.post<{ status: Task["status"] }>(`/api/tasks/${encodeURIComponent(task.id)}/status`, { status });
       setTasks((current) => current.map((item) => (item.id === task.id ? { ...item, status: result.status } : item)));
+      if (!silent) {
+        toast.ok(t("overview.todos.moved", { status: t(`status.${result.status}`) }), task.title, {
+          label: t("action.undo"),
+          onClick: () => { void move({ ...task, status: result.status }, previous, { silent: true }); toast.push({ title: t("overview.todos.restored"), body: task.title, tone: "info", duration: 2500 }); },
+        });
+      }
     } catch (caught) {
       setTaskErrors((c) => ({ ...c, [task.id]: apiError(caught, "overview.todos.updateFailed") }));
     } finally {
@@ -56,6 +66,9 @@ export default function OverviewPage() {
   }
 
   const openTasks = tasks.filter((task) => task.status !== "done").length;
+  const myOpenTasks = tasks.filter((task) => task.status !== "done" && task.assigneeId === user.id).length;
+  const unread = inbox.data?.notifications.filter((item) => !item.readAt).length ?? 0;
+  const nextEvent = data ? [...data.events].filter((event) => new Date(event.startsAt).getTime() >= Date.now()).sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? data.events[0] : undefined;
   const doneTasks = tasks.filter((task) => task.status === "done").length;
   const assigneeLabel = (task: Task) => (saving.includes(task.id) ? t("state.saving") : task.assignee || t("state.unassigned"));
 
@@ -75,12 +88,38 @@ export default function OverviewPage() {
       {data ? (
         <>
           <section className="metrics-grid" aria-label={t("overview.keyFigures")}>
-            <Stat label={t("overview.metrics.totalMembers")} value={data.metrics.members} hint={t("overview.metrics.activeMemberships", { count: data.metrics.activeMembers })} tone="blue" icon="people" />
-            <Stat label={t("overview.metrics.upcomingEvents")} value={String(data.metrics.upcomingEvents).padStart(2, "0")} hint={t("overview.metrics.upcomingHint")} tone="accent" icon="calendar" />
-            <Stat label={t("overview.metrics.openTasks")} value={String(openTasks).padStart(2, "0")} hint={t("overview.metrics.tasksCompleted", { count: doneTasks })} tone="green" icon="check" />
+            <Stat label={t("overview.metrics.totalMembers")} value={data.metrics.members} hint={t("overview.metrics.activeMemberships", { count: data.metrics.activeMembers })} tone="blue" icon="people" progress={data.metrics.members ? (data.metrics.activeMembers / data.metrics.members) * 100 : 0} />
+            <Stat label={t("overview.metrics.upcomingEvents")} value={data.metrics.upcomingEvents} hint={t("overview.metrics.upcomingHint")} tone="accent" icon="calendar" />
+            <Stat label={t("overview.metrics.openTasks")} value={openTasks} hint={t("overview.metrics.tasksCompleted", { count: doneTasks })} tone="green" icon="check" progress={tasks.length ? (doneTasks / tasks.length) * 100 : 0} />
             {data.access.finance
-              ? <Stat label={t("overview.metrics.clubBalance")} value={fmt.currency(data.metrics.balancePaise)} hint={t("overview.metrics.balanceHint")} tone="dark" icon="wallet" />
-              : <Stat label={t("overview.metrics.announcements")} value={String(data.announcements.length).padStart(2, "0")} hint={t("overview.metrics.announcementsHint")} tone="dark" icon="megaphone" />}
+              ? <Stat label={t("overview.metrics.clubBalance")} value={data.metrics.balancePaise} format={(n) => fmt.currency(Math.round(n))} hint={t("overview.metrics.balanceHint")} tone="dark" icon="wallet" />
+              : <Stat label={t("overview.metrics.announcements")} value={data.announcements.length} hint={t("overview.metrics.announcementsHint")} tone="dark" icon="megaphone" />}
+          </section>
+
+          <section className="mx-today mx-stagger" aria-label={t("overview.todos.kicker")}>
+            {nextEvent ? (
+              <Link href={`/app/events/${nextEvent.id}`}>
+                <i><Icon name="calendar" size={18} /></i>
+                <div><b>{nextEvent.title}</b><small>{t("overview.today.nextEvent")} · {fmt.dateTime(nextEvent.startsAt)} · {nextEvent.venue}</small></div>
+                <span className="mx-row-arrow"><Icon name="arrow" size={16} /></span>
+              </Link>
+            ) : (
+              <Link href="/app/events">
+                <i><Icon name="calendar" size={18} /></i>
+                <div><b>{t("overview.today.noEvent")}</b><small>{t("overview.today.noEventHint")}</small></div>
+                <span className="mx-row-arrow"><Icon name="arrow" size={16} /></span>
+              </Link>
+            )}
+            <Link href="/app/tasks">
+              <i className={myOpenTasks ? "warn" : "ok"}><Icon name="check" size={18} /></i>
+              <div><b>{t("overview.today.myTasks")}</b><small>{myOpenTasks ? t("overview.today.myTasksHint", { count: myOpenTasks }) : t("overview.today.allDone")}</small></div>
+              <span className="mx-row-arrow"><Icon name="arrow" size={16} /></span>
+            </Link>
+            <Link href="/app/notifications">
+              <i className={unread ? "info" : "ok"}><Icon name="bell" size={18} /></i>
+              <div><b>{t("overview.today.unread")}</b><small>{unread ? t("overview.today.unreadHint", { count: unread }) : t("overview.today.inboxClear")}</small></div>
+              <span className="mx-row-arrow"><Icon name="arrow" size={16} /></span>
+            </Link>
           </section>
 
           <div className="overview-grid">
@@ -102,6 +141,7 @@ export default function OverviewPage() {
                           <span>{t("overview.calendar.registered", { registered: event.registered, capacity: event.capacity })}</span>
                         </div>
                       </div>
+                      <span className="mx-row-arrow"><Icon name="arrow" size={16} /></span>
                     </Link>
                   ))}
                 </div>
@@ -164,8 +204,8 @@ export default function OverviewPage() {
                     <thead><tr><th scope="col">{t("col.member")}</th><th scope="col">{t("col.joined")}</th><th scope="col">{t("overview.directory.colDues")}</th><th scope="col">{t("col.expires")}</th></tr></thead>
                     <tbody>
                       {data.members.slice(0, 6).map((member) => (
-                        <tr key={member.id}>
-                          <td><Link href={`/app/members/${member.id}`}><Person name={member.name} sub={member.email} /></Link></td>
+                        <tr key={member.id} className="mx-row-link" onClick={() => router.push(`/app/members/${member.id}`)}>
+                          <td><Link href={`/app/members/${member.id}`} onClick={(e) => e.stopPropagation()}><Person name={member.name} sub={member.email} /></Link></td>
                           <td>{fmt.date(member.joinedAt)}</td>
                           <td><span className={`badge ${member.duesStatus === "paid" ? "green" : "amber"}`}>{member.duesStatus === "paid" ? t("status.paid") : t("status.unpaid")}</span></td>
                           <td>{member.expiresOn ? fmt.date(member.expiresOn) : t("state.notSet")}</td>

@@ -6,7 +6,7 @@ import { api, ApiError, useLoad } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
 import { useT } from "../../_lib/i18n";
 import { titleCase } from "../../_lib/format";
-import { Alert, Card, EmptyState, ErrorState, KeyValue, Loading, Modal, PageHead, PreviewNote, Stat, Tabs } from "../../_components/ui";
+import { Alert, Button, Card, EmptyState, ErrorState, KeyValue, Loading, Modal, PageHead, PreviewNote, Skeleton, Stat, Tabs } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
 
 /* Azman's Treasury: metric cards, pill tabs, overview breakdowns, the ledger
@@ -18,7 +18,7 @@ type KindFilter = "all" | "income" | "expense";
 function Signed({ entry }: { entry: ExpenseLedgerEntry }) {
   const { fmt } = useT();
   const income = entry.kind === "income";
-  return <span className={income ? "positive" : undefined}>{income ? "+" : "−"}{fmt.currency(entry.amountPaise)}</span>;
+  return <span className={income ? "positive" : "negative"}>{income ? "+" : "−"}{fmt.currency(entry.amountPaise)}</span>;
 }
 
 export default function TreasuryPage() {
@@ -78,18 +78,29 @@ export default function TreasuryPage() {
   }
 
   const s = summary.data;
+  const rupees = (n: number) => fmt.currency(Math.round(n));
+  const categoryTotal = Math.max(1, ...(s?.byCategory.map((cat) => cat.inflowPaise + cat.outflowPaise) ?? [1]));
+  const eventTotal = Math.max(1, ...(s?.byEvent.map((ev) => ev.inflowPaise + ev.outflowPaise) ?? [1]));
 
   return (
     <>
-      <PageHead eyebrow={eyebrow} title={t("treasury.title")} description={t("treasury.description")} />
+      <PageHead
+        eyebrow={eyebrow}
+        title={t("treasury.title")}
+        description={t("treasury.description")}
+        actions={<>
+          <Button onClick={() => { void summary.reload(); void entries.reload(); }} loading={summary.loading && Boolean(s)}><Icon name="refresh" size={16} />{t("action.refresh")}</Button>
+          <a className="button primary" href="/api/ledger/export.csv" download><Icon name="download" size={16} />{t("treasury.register.exportCsv")}</a>
+        </>}
+      />
 
       {summary.error ? <ErrorState error={summary.error} onRetry={summary.reload} title={t("treasury.summaryErrorTitle")} /> : null}
 
       <section className="metrics-grid treasury-metrics" aria-label={t("treasury.summary.ariaLabel")}>
-        <Stat label={t("treasury.summary.balance")} value={s ? fmt.currency(s.balancePaise) : "—"} hint={t("treasury.summary.balanceHint")} tone="dark" icon="wallet" />
-        <Stat label={t("treasury.summary.inflow")} value={s ? fmt.currency(s.inflowPaise) : "—"} hint={t("treasury.summary.inflowHint")} tone="green" icon="coin" />
-        <Stat label={t("treasury.summary.outflow")} value={s ? fmt.currency(s.outflowPaise) : "—"} hint={t("treasury.summary.outflowHint")} tone="accent" icon="receipt" />
-        <Stat label={t("treasury.summary.approvedUnpaid")} value={s ? fmt.currency(s.approvedUnpaidPaise) : "—"} hint={t("treasury.summary.approvedUnpaidHint")} tone="amber" icon="clock" />
+        <Stat label={t("treasury.summary.balance")} value={s ? s.balancePaise : "—"} format={rupees} hint={t("treasury.summary.balanceHint")} tone="dark" icon="wallet" />
+        <Stat label={t("treasury.summary.inflow")} value={s ? s.inflowPaise : "—"} format={rupees} hint={t("treasury.summary.inflowHint")} tone="green" icon="coin" progress={s && s.inflowPaise + s.outflowPaise > 0 ? (s.inflowPaise / (s.inflowPaise + s.outflowPaise)) * 100 : undefined} />
+        <Stat label={t("treasury.summary.outflow")} value={s ? s.outflowPaise : "—"} format={rupees} hint={t("treasury.summary.outflowHint")} tone="accent" icon="receipt" progress={s && s.inflowPaise + s.outflowPaise > 0 ? (s.outflowPaise / (s.inflowPaise + s.outflowPaise)) * 100 : undefined} />
+        <Stat label={t("treasury.summary.approvedUnpaid")} value={s ? s.approvedUnpaidPaise : "—"} format={rupees} hint={t("treasury.summary.approvedUnpaidHint")} tone="amber" icon="clock" />
       </section>
 
       <Tabs value={tab} onChange={setTab} items={[{ value: "overview", label: t("treasury.tab.overview") }, { value: "register", label: t("treasury.tab.register"), count: list.length }, { value: "export", label: t("treasury.tab.export") }]} />
@@ -104,17 +115,20 @@ export default function TreasuryPage() {
           ) : null}
           <div className="treasury-overview-grid">
             <Card kicker={t("treasury.byCategory.kicker")} title={t("treasury.byCategory.title")} flush>
-              {summary.loading && !s ? <Loading label={t("state.loading")} /> : !s?.byCategory.length ? <EmptyState title={t("treasury.byCategory.emptyTitle")} icon="wallet">{t("treasury.byCategory.emptyBody")}</EmptyState> : (
+              {summary.loading && !s ? <Skeleton rows={3} shape="table" /> : !s?.byCategory.length ? <EmptyState title={t("treasury.byCategory.emptyTitle")} icon="wallet">{t("treasury.byCategory.emptyBody")}</EmptyState> : (
                 <div className="table-scroll">
                   <table>
                     <thead><tr><th scope="col">{t("col.category")}</th><th scope="col" className="amount-cell">{t("treasury.col.inflow")}</th><th scope="col" className="amount-cell">{t("treasury.col.outflow")}</th><th scope="col" className="amount-cell">{t("treasury.col.net")}</th></tr></thead>
                     <tbody>
                       {s.byCategory.map((cat) => (
                         <tr key={cat.category}>
-                          <td><strong>{titleCase(cat.category)}</strong></td>
+                          <td>
+                            <strong>{titleCase(cat.category)}</strong>
+                            <span className="mx-share" style={{ marginTop: 6 }}><i><b style={{ width: `${(cat.inflowPaise / categoryTotal) * 100}%` }} /></i><i><b className="out" style={{ width: `${(cat.outflowPaise / categoryTotal) * 100}%` }} /></i></span>
+                          </td>
                           <td className="amount-cell positive">+{fmt.currency(cat.inflowPaise)}</td>
-                          <td className="amount-cell">{cat.outflowPaise > 0 ? `−${fmt.currency(cat.outflowPaise)}` : "—"}</td>
-                          <td className={`amount-cell ${cat.inflowPaise - cat.outflowPaise >= 0 ? "positive" : ""}`.trim()}>{fmt.currency(cat.inflowPaise - cat.outflowPaise)}</td>
+                          <td className={`amount-cell ${cat.outflowPaise > 0 ? "negative" : ""}`.trim()}>{cat.outflowPaise > 0 ? `−${fmt.currency(cat.outflowPaise)}` : "—"}</td>
+                          <td className={`amount-cell ${cat.inflowPaise - cat.outflowPaise >= 0 ? "positive" : "negative"}`.trim()}>{fmt.currency(cat.inflowPaise - cat.outflowPaise)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -123,16 +137,19 @@ export default function TreasuryPage() {
               )}
             </Card>
             <Card kicker={t("treasury.byEvent.kicker")} title={t("treasury.byEvent.title")} flush>
-              {summary.loading && !s ? <Loading label={t("state.loading")} /> : !s?.byEvent.length ? <EmptyState title={t("treasury.byEvent.emptyTitle")} icon="calendar">{t("treasury.byEvent.emptyBody")}</EmptyState> : (
+              {summary.loading && !s ? <Skeleton rows={3} shape="table" /> : !s?.byEvent.length ? <EmptyState title={t("treasury.byEvent.emptyTitle")} icon="calendar">{t("treasury.byEvent.emptyBody")}</EmptyState> : (
                 <div className="table-scroll">
                   <table>
                     <thead><tr><th scope="col">{t("col.event")}</th><th scope="col" className="amount-cell">{t("treasury.col.inflow")}</th><th scope="col" className="amount-cell">{t("treasury.col.outflow")}</th></tr></thead>
                     <tbody>
                       {s.byEvent.map((ev) => (
                         <tr key={ev.eventId}>
-                          <td><strong>{ev.eventTitle}</strong></td>
+                          <td>
+                            <strong className="mx-clamp">{ev.eventTitle}</strong>
+                            <span className="mx-share" style={{ marginTop: 6 }}><i><b style={{ width: `${(ev.inflowPaise / eventTotal) * 100}%` }} /></i><i><b className="out" style={{ width: `${(ev.outflowPaise / eventTotal) * 100}%` }} /></i></span>
+                          </td>
                           <td className="amount-cell positive">+{fmt.currency(ev.inflowPaise)}</td>
-                          <td className="amount-cell">{ev.outflowPaise > 0 ? `−${fmt.currency(ev.outflowPaise)}` : "—"}</td>
+                          <td className={`amount-cell ${ev.outflowPaise > 0 ? "negative" : ""}`.trim()}>{ev.outflowPaise > 0 ? `−${fmt.currency(ev.outflowPaise)}` : "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -157,10 +174,9 @@ export default function TreasuryPage() {
               <option value="">{t("treasury.register.allEvents")}</option>
               {eventOptions.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
             </select>
-            <a className="button secondary" href="/api/ledger/export.csv" download><Icon name="download" size={16} />{t("treasury.register.exportCsv")}</a>
           </div>
           <Card kicker={t("treasury.register.kicker")} title={t("treasury.register.title")} flush actions={<span className="subtext" style={{ margin: 0 }}>{t("treasury.register.count", { count: rows.length, total: list.length })}</span>}>
-            {entries.error ? <ErrorState error={entries.error} onRetry={entries.reload} /> : entries.loading && !entries.data ? <Loading label={t("treasury.register.loading")} /> : !rows.length ? (
+            {entries.error ? <ErrorState error={entries.error} onRetry={entries.reload} /> : entries.loading && !entries.data ? <Skeleton rows={6} shape="table" /> : !rows.length ? (
               <EmptyState title={t("treasury.register.emptyTitle")} icon="wallet">{list.length ? t("treasury.register.emptyFiltered") : t("treasury.register.emptyLedger")}</EmptyState>
             ) : (
               <div className="table-scroll">
@@ -168,12 +184,12 @@ export default function TreasuryPage() {
                   <thead><tr><th scope="col">{t("col.date")}</th><th scope="col">{t("treasury.col.kind")}</th><th scope="col">{t("col.description")}</th><th scope="col">{t("col.category")}</th><th scope="col">{t("col.event")}</th><th scope="col" className="amount-cell">{t("col.amount")}</th><th scope="col">{t("col.recordedBy")}</th><th scope="col">{t("col.reference")}</th></tr></thead>
                   <tbody>
                     {rows.map((entry) => (
-                      <tr key={entry.id} onClick={() => void openSource(entry)} title={t("treasury.register.showSource")} style={{ cursor: "pointer" }}>
+                      <tr key={entry.id} className="mx-row-link" onClick={() => void openSource(entry)} title={t("treasury.register.showSource")} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void openSource(entry); } }}>
                         <td>{fmt.date(entry.occurredAt)}</td>
                         <td><span className={`badge ${entry.kind === "income" ? "green" : "red"}`}>{entry.kind === "income" ? t("status.income") : t("status.expense")}</span></td>
-                        <td><strong>{entry.description}</strong><span className="subtext">{titleCase(entry.sourceType)}</span></td>
+                        <td><strong className="mx-clamp" title={entry.description}>{entry.description}</strong><span className="subtext">{titleCase(entry.sourceType)}</span></td>
                         <td>{entry.category ? titleCase(entry.category) : "—"}</td>
-                        <td>{entry.eventTitle ?? "—"}</td>
+                        <td><span className="mx-clamp" style={{ maxWidth: "22ch" }}>{entry.eventTitle ?? "—"}</span></td>
                         <td className="amount-cell"><Signed entry={entry} /></td>
                         <td>{entry.recordedByName ?? "—"}</td>
                         <td>{entry.reference ? <span className="payment-ref">{entry.reference}</span> : "—"}</td>

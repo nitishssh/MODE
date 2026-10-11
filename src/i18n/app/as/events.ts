@@ -170,7 +170,7 @@ const events: Record<keyof typeof en, string> = {
   "events.door.eventLoadFailed": "অনুষ্ঠান ল'ড কৰিব পৰা নগ'ল",
   "events.door.cameraUnavailable": "এই ব্ৰাউজাৰত কেমেৰা উপলব্ধ নহয়। ইয়াৰ সলনি ক'ড টাইপ কৰক।",
   "events.door.cameraFailed": "কেমেৰা আৰম্ভ কৰিব পৰা নগ'ল। অনুমতি পৰীক্ষা কৰক, বা ক'ড টাইপ কৰক।",
-  "events.door.placeholder": "10 আখৰৰ ক'ড টাইপ কৰক বা QR ট'কেন পেষ্ট কৰক",
+  "events.door.placeholder": "ক'ড বা স্কেন কৰা লিংক",
   "events.door.inputLabel": "টিকট বা পাছৰ ক্ৰেডেনশ্বিয়েল",
   "events.door.scan": "স্কেন",
   "events.door.scanFailed": "স্কেন পৰীক্ষা কৰিব পৰা নগ'ল। আকৌ চেষ্টা কৰক।",

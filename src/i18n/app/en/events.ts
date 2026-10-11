@@ -169,7 +169,7 @@ const events = {
   "events.door.eventLoadFailed": "The event could not load",
   "events.door.cameraUnavailable": "Camera access is not available in this browser. Type the code instead.",
   "events.door.cameraFailed": "Could not start the camera. Check permissions, or type the code.",
-  "events.door.placeholder": "Type the 10-character code or paste a QR token",
+  "events.door.placeholder": "Code or scanned link",
   "events.door.inputLabel": "Ticket or pass credential",
   "events.door.scan": "Scan",
   "events.door.scanFailed": "The scan could not be checked. Try again.",

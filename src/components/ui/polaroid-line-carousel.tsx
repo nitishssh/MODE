@@ -162,14 +162,23 @@ function useCanPaint(): boolean {
   return React.useSyncExternalStore(noSubscription, () => true, () => false);
 }
 
-function useSlideImages(slides: Slide[]): string[] {
+/** Each slide's own image, or a painted landscape; an image that fails to load falls back to the painting. */
+function useSlideImages(slides: Slide[]): [string[], (i: number) => void] {
   const canPaint = useCanPaint();
+  const key = slides.map((s) => s.image || `${s.palette || "dawn"}:${s.seed ?? 1}`).join("|");
   // Landscapes need a canvas, so they are painted only once the browser has taken over.
   const painted = React.useMemo(
-    () => slides.map((s, i) => (s.image || !canPaint ? "" : paintLandscape(s.seed ?? i + 1, s.palette || "dawn"))),
+    () => slides.map((s, i) => (canPaint ? paintLandscape(s.seed ?? i + 1, s.palette || "dawn") : "")),
     [slides, canPaint],
   );
-  return slides.map((s, i) => s.image || painted[i] || "");
+  // Failures belong to one slide set; a new set starts clean without resetting state in an effect.
+  const [failed, setFailed] = React.useState<{ key: string; slides: Record<number, boolean> }>({ key, slides: {} });
+  const current = failed.key === key ? failed.slides : {};
+  const fail = React.useCallback((i: number) => setFailed((f) => {
+    const base = f.key === key ? f.slides : {};
+    return base[i] ? f : { key, slides: { ...base, [i]: true } };
+  }), [key]);
+  return [slides.map((s, i) => (s.image && !current[i] ? s.image : painted[i] || "")), fail];
 }
 
 const PL_CSS = [
@@ -216,7 +225,7 @@ export default function PolaroidLineCarousel({
   ariaLabel = "Image carousel",
 }: PolaroidLineCarouselProps) {
   const n = slides.length;
-  const srcs = useSlideImages(slides);
+  const [srcs, failImage] = useSlideImages(slides);
   const [active, setActive] = React.useState(0);
   const [dragging, setDragging] = React.useState(false);
   const [size, setSize] = React.useState({ w: 1200, h: 800, cw: cardWidth });
@@ -361,7 +370,7 @@ export default function PolaroidLineCarousel({
       <svg className="pl-string" aria-hidden="true"><path ref={pathRef} fill="none" stroke={string} strokeWidth="1.5" strokeLinecap="round" /></svg>
       {slides.map((slide, i) => (
         <div key={`${slide.title}-${i}`} className="pl-card" data-i={i} data-on={i === active ? "1" : "0"} ref={(el) => { cards.current[i] = el; }} aria-hidden={i === active ? undefined : true}>
-          <div className="pl-print"><div className="pl-shot">{srcs[i] ? <img src={srcs[i]} alt={slide.alt || slide.title || ""} draggable={false} /> : null}</div><div className="pl-note">{slide.title || ""}</div></div>
+          <div className="pl-print"><div className="pl-shot">{srcs[i] ? <img src={srcs[i]} alt={slide.alt || slide.title || ""} draggable={false} onError={() => failImage(i)} /> : null}</div><div className="pl-note">{slide.title || ""}</div></div>
           <div className="pl-peg" />
         </div>
       ))}
