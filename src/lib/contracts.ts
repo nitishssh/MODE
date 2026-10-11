@@ -261,9 +261,24 @@ export interface AuthResponse {
   token: string;
 }
 
+/** One club the signed-in person belongs to; role and membership are per club. */
+export interface ClubMembership {
+  memberId: string;
+  clubId: string;
+  clubName: string;
+  role: Role;
+  membership: "active" | "expired" | "none";
+}
+
 export interface AuthMeResponse {
   user: SessionUser;
   pass: MemberPass;
+  /** Every club this person belongs to; `user.clubId` is the active one. */
+  memberships: ClubMembership[];
+}
+
+export interface SwitchClubInput {
+  clubId: string;
 }
 
 export interface RegisterInput {

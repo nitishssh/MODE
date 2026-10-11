@@ -34,7 +34,8 @@ CORS does not authorize a request or relax cookie CSRF protection. Even an allow
 | POST | `/api/auth/login` | public | 200 `AuthResponse` + cookie | 400 invalid; 401 wrong email/password (same message for both); 403 cross-origin; 429 `too_many_attempts` after 5 consecutive failures for an email (15-minute lock) |
 | POST | `/api/auth/password` | signed in, same-origin | 200 `{ok:true, revokedSessions}`; body `{currentPassword, newPassword}`; keeps this session, signs out every other one | 400 invalid; 401 current password wrong; 403 cross-origin |
 | POST | `/api/auth/logout` | cookie logout is idempotent; bearer must be valid | 200 `{ok:true}`; cookie auth also clears cookie | 401 invalid bearer; 403 cross-origin cookie request |
-| GET | `/api/auth/me` | signed in | 200 `{user:SessionUser,pass:{qrToken,shortCode,membership,expiresOn}}` | 401 |
+| GET | `/api/auth/me` | signed in | 200 `{user:SessionUser,pass:{qrToken,shortCode,membership,expiresOn},memberships:ClubMembership[]}` | 401 |
+| POST | `/api/auth/switch-club` | signed in, same-origin (or bearer) | 200 same shape as `/api/auth/me` for the new active club; body `{clubId}`; re-points this session only and writes `session.club_switched` to the target club's audit trail | 400 invalid; 401; 403 not a member of that club or cross-origin |
 | PATCH | `/api/members/{id}/role` | `roles:manage` | 200 `{member:Member}` | 400 unknown role; 401; 403; 404 not in this club; 409 changing own role |
 | POST | `/api/members/{id}/password` | `roles:manage` | 200 `{ok:true}` | 400 password under 8 or over 200 characters; 401; 403 (also cross-origin); 404 not in this club |
 
