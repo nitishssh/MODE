@@ -255,6 +255,13 @@ export interface SessionUser {
   permissions: string[];
 }
 
+export interface ClubMembership {
+  memberId: string;
+  clubId: string;
+  clubName: string;
+  role: Role;
+}
+
 export interface AuthResponse {
   user: SessionUser;
   expiresAt: string;
@@ -264,6 +271,7 @@ export interface AuthResponse {
 export interface AuthMeResponse {
   user: SessionUser;
   pass: MemberPass;
+  memberships: ClubMembership[];
 }
 
 export interface RegisterInput {

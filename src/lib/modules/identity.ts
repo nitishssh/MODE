@@ -107,6 +107,20 @@ export function createIdentityModule(ctx: DbContext) {
     return member;
   }
 
+  function listMemberships(memberId: string) {
+    const rows = db
+      .prepare(
+        "SELECT m.id as member_id, m.club_id, c.name as club_name, m.role FROM members m JOIN clubs c ON m.club_id = c.id WHERE m.id = ? ORDER BY m.joined_at DESC",
+      )
+      .all(memberId) as Array<{ member_id: string; club_id: string; club_name: string; role: string }>;
+    return rows.map((row) => ({
+      memberId: row.member_id,
+      clubId: row.club_id,
+      clubName: row.club_name,
+      role: row.role as Role,
+    }));
+  }
+
   function insertMember(
     input: CreateMemberInput & { password?: string; role?: Role; clubId?: string },
   ): Member {
@@ -428,6 +442,7 @@ export function createIdentityModule(ctx: DbContext) {
     getMembers,
     findMember,
     requireMember,
+    listMemberships,
     createMember,
     createMemberAs,
     createMemberWithCredentials,

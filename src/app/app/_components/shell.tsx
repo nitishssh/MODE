@@ -9,6 +9,7 @@ import { Icon, type IconName } from "./icons";
 import { api } from "../_lib/api";
 import { initials } from "../_lib/format";
 import { useRequireSession, type Permission } from "../_lib/session";
+import { ClubSwitcher } from "./club-switcher";
 
 /*
  * Azman's workspace chrome, verbatim: .workspace > .sidebar (brand, club
@@ -165,7 +166,11 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
           <div className="sidebar-profile">
             <span className="profile-avatar">{initials(user.name)}</span>
-            <span><strong>{user.name}</strong><small>Signed in as {roleLabel}</small></span>
+            <div className="profile-info">
+              <strong>{user.name}</strong>
+              <small>Signed in as {roleLabel}</small>
+            </div>
+            <ClubSwitcher memberships={session.memberships} currentClubId={user.clubId} />
           </div>
         </div>
       </aside>
