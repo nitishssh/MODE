@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
+  <rect width="160" height="160" rx="80" fill="#eee9f7"/>
+  <circle cx="80" cy="62" r="28" fill="#b47a52"/>
+  <path d="M52 54 Q58 30 80 30 Q102 30 108 54 L104 58 Q96 40 80 42 Q64 40 56 58 Z" fill="#24201e"/>
+  <circle cx="70" cy="64" r="9" fill="none" stroke="#24201e" stroke-width="3"/><circle cx="92" cy="64" r="9" fill="none" stroke="#24201e" stroke-width="3"/><path d="M79 64 h4" stroke="#24201e" stroke-width="3"/>
+  <circle cx="70" cy="64" r="3" fill="#24201e"/><circle cx="92" cy="64" r="3" fill="#24201e"/>
+  <path d="M72 78 Q80 82 88 78" fill="none" stroke="#24201e" stroke-width="3" stroke-linecap="round"/>
+  <path d="M30 150 Q34 108 80 104 Q126 108 130 150 Z" fill="#5d4487"/>
+  <circle cx="112" cy="124" r="18" fill="#f0a500" stroke="#24201e" stroke-width="3"/>
+  <text x="112" y="131" text-anchor="middle" font-family="DM Sans, Arial, sans-serif" font-size="20" font-weight="800" fill="#24201e">₹</text>
+</svg>

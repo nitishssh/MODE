@@ -8,11 +8,11 @@ import { LanguageSwitcher } from "@/i18n/client";
 import type { AppKey } from "@/i18n/app";
 import { Icon, type IconName } from "./icons";
 import { api } from "../_lib/api";
-import { initials } from "../_lib/format";
 import { useT } from "../_lib/i18n";
 import { useRequireSession, type Permission } from "../_lib/session";
 import { ClubSwitcher } from "./club-switcher";
 import { allowedSections, homeFor, sectionFor, type Section } from "../_lib/access";
+import { CLUB_CREST, roleAvatar } from "@/lib/avatars";
 import { EmptyState } from "./ui";
 import { ToastProvider } from "./toast";
 
@@ -182,7 +182,6 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const { user, can } = session;
   const clubName = dashboard?.club.name ?? t("shell.defaultClub");
-  const clubInitials = initials(clubName);
   const roleLabel = user.role === "admin" ? t("role.adminLong") : t(`role.${user.role}` as AppKey);
   const allowed = allowedSections(user);
   const visible = (item: NavItem) => allowed.has(item.section) && (!item.anyOf || item.anyOf.some((permission) => can(permission)));
@@ -220,7 +219,7 @@ export function Shell({ children }: { children: ReactNode }) {
           MODE<span className="brand-dot">.</span>
         </Link>
         <div className="workspace-switch">
-          <span className="club-monogram">{clubInitials}</span>
+          <span className="club-monogram mx-crest"><img src={CLUB_CREST} alt="" width={34} height={34} /></span>
           <span><strong>{clubName}</strong><small>{t("shell.studentOrganization")}</small></span>
         </div>
         <p className="nav-caption">{t("shell.navCaption")}</p>
@@ -240,7 +239,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="sidebar-bottom">
           {allowed.has("overview") ? <div className="mx-side-shortcut" aria-hidden="true"><Icon name="search" size={14} /><span>{t("shell.searchHint")}</span><kbd style={{ marginLeft: "auto" }}>/</kbd></div> : null}
           <Link href="/app/settings" className="sidebar-profile" aria-label={t("topbar.menuSettings")}>
-            <span className="profile-avatar">{initials(user.name)}</span>
+            <span className="profile-avatar mx-avatar"><img src={roleAvatar(user.role)} alt="" width={36} height={36} /></span>
             <span style={{ minWidth: 0 }}><strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</strong><small><span className={`badge mx-role ${ROLE_TONE[user.role] ?? "neutral"}`}>{roleLabel}</span></small></span>
           </Link>
           <ClubSwitcher memberships={session.memberships} currentClubId={user.clubId} />
@@ -277,16 +276,14 @@ export function Shell({ children }: { children: ReactNode }) {
               <div className="topbar-progress-bar" title={t("topbar.tasksCompletedTitle", progressVars)}>
                 <div className="topbar-progress-fill" style={{ width: `${taskProgress}%` }} />
               </div>
-              <button type="button" className={`topbar-avatar-btn ${menuOpen ? "active" : ""}`.trim()} onClick={() => setMenuOpen((open) => !open)} aria-label={t("topbar.accountMenu")} aria-expanded={menuOpen}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+              <button type="button" className={`topbar-avatar-btn mx-avatar ${menuOpen ? "active" : ""}`.trim()} onClick={() => setMenuOpen((open) => !open)} aria-label={t("topbar.accountMenu")} aria-expanded={menuOpen}>
+                <img src={roleAvatar(user.role)} alt="" width={34} height={34} />
                 {unread ? <span className="nav-count" style={{ position: "absolute", top: -6, right: -6 }} aria-label={t("topbar.unreadNotifications", { count: unread })}>{unread}</span> : null}
               </button>
               {menuOpen ? (
                 <div className="topbar-user-dropdown" role="menu">
                   <div className="dropdown-user-header">
-                    <div className="dropdown-user-avatar">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                    </div>
+                    <div className="dropdown-user-avatar mx-avatar"><img src={roleAvatar(user.role)} alt="" width={40} height={40} /></div>
                     <div className="dropdown-user-info"><strong>{user.name}</strong><span className="dropdown-role-badge">{roleLabel}</span></div>
                   </div>
                   <div className="dropdown-progress-stats">

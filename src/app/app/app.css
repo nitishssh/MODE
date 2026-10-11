@@ -160,6 +160,17 @@
 .mx-login-sheet li strong { font-weight: 600; }
 .mx-login-sheet li small { margin-left: auto; color: #8b8178; font-size: 11px; }
 .mx-login-foot { font-size: 11px; color: #8b8178; margin-top: 28px; }
+/* The member pass on its lanyard, hanging over the story panel; the compact sheet sits beneath it. */
+.mx-login-lanyard { position: absolute; top: 0; right: 0; width: min(46%, 440px); height: min(78vh, 680px); pointer-events: auto; z-index: 1; }
+.mx-login-story > div:first-of-type { max-width: 54%; }
+.mx-login-story > div:first-of-type h1 { font-size: clamp(34px, 3.4vw, 50px); max-width: 14ch; }
+.mx-login-story > div:first-of-type > p { max-width: 36ch; }
+.mx-login-lanyard .lanyard { width: 100%; height: 100%; }
+.mx-login-lanyard-fallback { width: 100%; height: 100%; }
+.mx-login-sheet-compact { margin-top: clamp(18px, 3vh, 32px); width: min(100%, 360px); transform: rotate(-1.2deg); }
+.mx-login-story h1 { position: relative; z-index: 2; }
+@media (max-width: 1240px) { .mx-login-lanyard { width: 46%; height: 60vh; } }
+@media (max-width: 900px) { .mx-login-lanyard { position: relative; width: 100%; height: 360px; margin-top: 16px; } .mx-login-sheet-compact { display: none; } .mx-login-story > div:first-of-type { max-width: none; } .mx-login-story > div:first-of-type h1 { max-width: none; } }
 .mx-login-form { display: grid; place-items: center; padding: clamp(28px, 5vw, 64px) clamp(22px, 4vw, 56px); }
 .mx-login-card { width: min(100%, 430px); }
 .mx-login-card h2 { font-family: "Crimson Pro", Georgia, serif; font-size: 36px; font-weight: 620; letter-spacing: -.9px; line-height: 1.1; }
