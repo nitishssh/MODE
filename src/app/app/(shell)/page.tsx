@@ -152,8 +152,8 @@ export default function OverviewPage() {
             </section>
           </div>
 
-          <div className="overview-bottom">
-            <section className="panel members-panel">
+          <div className="overview-bottom" style={data.access.members ? undefined : { gridTemplateColumns: "1fr" }}>
+            {data.access.members ? <section className="panel members-panel">
               <div className="panel-heading">
                 <div><div className="eyebrow">{t("overview.directory.kicker")}</div><h2>{t("overview.directory.title")}</h2></div>
                 {data.access.members ? <TextLink href="/app/members">{t("overview.directory.allMembers")}</TextLink> : null}
@@ -174,8 +174,8 @@ export default function OverviewPage() {
                     </tbody>
                   </table>
                 </div>
-              ) : <EmptyState title={data.access.members ? t("overview.directory.emptyTitle") : t("overview.directory.officerOnlyTitle")} icon="people">{data.access.members ? t("overview.directory.emptyBody") : t("overview.directory.officerOnlyBody")}</EmptyState>}
-            </section>
+              ) : <EmptyState title={t("overview.directory.emptyTitle")} icon="people">{t("overview.directory.emptyBody")}</EmptyState>}
+            </section> : null}
 
             {data.announcements.length ? (
               <article className="notice-card">
