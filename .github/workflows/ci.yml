@@ -2,39 +2,65 @@ name: Quality checks
 
 on:
   push:
-    branches: [main, "codex/**"]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm run check:contracts
-      - run: npm run check:client-contracts
       - run: npm ci --prefix client
-      - run: npm run typecheck --prefix client
-      - run: npm run lint --prefix client
-      - run: npm test
-      - run: npm run build
-      - run: npm run test:foundation
-      - run: npm ci --prefix client
-      - run: npm run check:client-contracts
-      - run: npm --prefix client run typecheck
-      - run: npm --prefix client run lint
-      - run: npm --prefix client test
-      - run: npm run build:client
-      - run: npm run build
+      - run: npm run check:all
         env:
-          MODE_EXPO_WEB: '1'
-      - run: npm run test:expo-web
+          CI: "1"
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Every helper-backed test resets the public schema. This database belongs
+    # only to this job; never replace this URL with a deployment secret.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: mode_test
+          POSTGRES_PASSWORD: mode_ci_only
+          POSTGRES_DB: mode_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mode_test -d mode_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run test:postgres
+        env:
+          CI: "1"
+          DATABASE_URL: ""
+          MODE_TEST_DATABASE_URL: postgres://mode_test:mode_ci_only@127.0.0.1:5432/mode_test

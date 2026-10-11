@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import Link from "next/link";
 import ShinyButton from "@/components/ui/shiny-button";
 import { Icon, type IconName } from "./icons";
@@ -431,16 +431,20 @@ export function KeyValue({ items }: { items: { label: ReactNode; value: ReactNod
 export function Countdown({ until, onExpire }: { until: string | null | undefined; onExpire?: () => void }) {
   const { t } = useT();
   const [now, setNow] = useState(() => Date.now());
-  const [fired, setFired] = useState(false);
+  const expire = useEffectEvent(() => onExpire?.());
   useEffect(() => {
     if (!until) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
+    let fired = false;
+    const tick = () => {
+      const time = Date.now();
+      setNow(time);
+      if (!fired && !countdown(until, time)) { fired = true; expire(); }
+    };
+    const first = window.setTimeout(tick, 0);
+    const id = window.setInterval(tick, 1000);
+    return () => { window.clearTimeout(first); window.clearInterval(id); };
   }, [until]);
   const left = countdown(until, now);
-  useEffect(() => {
-    if (until && !left && !fired) { setFired(true); onExpire?.(); }
-  }, [until, left, fired, onExpire]);
   if (!until) return null;
   return <span className="mx-countdown">{left || t("state.expired")}</span>;
 }

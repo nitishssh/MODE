@@ -14,12 +14,13 @@ Use **Node.js 24 LTS**. Node 22.13+ within the 22.x line and Node 24+ are suppor
 
 ```sh
 npm ci
+npm ci --prefix client
 npm run dev
 ```
 
-Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 13 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
+Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 15 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
 
-Optional configuration is documented in `.env.example`; copy it to `.env.local` if needed. Never commit `.env.local` or the local database. To try a separate dataset without changing the existing one, set `SQLITE_PATH` to a new filename.
+Optional configuration is documented in `.env.example`; copy it to `.env.local` if needed. Never commit `.env.local` or the local database. To try a separate SQLite dataset without changing the existing one, clear `DATABASE_URL` and set `SQLITE_PATH` to a new filename. PostgreSQL takes precedence when `DATABASE_URL` is set.
 
 ## Real club data
 
@@ -40,10 +41,17 @@ Everything else (events, products, announcements, tasks, dues, tickets) is enter
 The repository's `.nvmrc` selects Node 24 for version managers that support it. To verify a fresh checkout, follow [the foundation acceptance check](docs/FOUNDATION.md), including the automated server restart test.
 
 ```sh
-npm run check
-npm run test:foundation
+npm run check:all
 npm start
 ```
+
+`check:all` checks product version consistency, then runs root and Expo lint/types/tests, both contract checks, generated schema verification, production builds, restart persistence and Expo same-origin delivery, matching GitHub Actions. It requires both dependency installs and leaves the Expo delivery build in `.next`; use `npm run build` to prepare a standard web build again. For a shorter backend edit loop, use `npm run check`. See [contributing](CONTRIBUTING.md) for individual checks and [quality tooling](docs/QUALITY.md) for the pending Next.js-specific and Prettier rules.
+
+[VERSION](VERSION) identifies the prepared product version across the server, client and Expo app. See the [changelog](CHANGELOG.md) and [versioning checklist](docs/VERSIONING.md); `npm run check:version` detects mismatched manifest or lockfile versions before release.
+
+The [page routing contract](docs/ROUTING.md) lists the URLs served in each delivery mode. Use Expo web delivery for the paginated task, expense and treasury screens. Standard Next keeps the existing workspace at `/dashboard`; its lists remain unpaginated.
+
+[docs/schema.sql](docs/schema.sql) and [docs/schema.postgres.sql](docs/schema.postgres.sql) contain the current SQLite DDL and its PostgreSQL translation, generated from migrations without exporting member or seed records. Run `npm run schema:dump` after a migration change and commit the result. Both verification commands run `npm run schema:check` to detect stale schema documentation.
 
 Member creation requires an organizer or admin session in both development and production (see [API contracts](docs/API.md)). `MODE_ENABLE_DEMO_WRITES` has been replaced by role-based authorization. `npm start` runs in production mode, which refuses to seed a new database with the public default demo password: set `MODE_DEMO_PASSWORD` in the environment first. Both provided server commands bind to loopback by default.
 
@@ -52,13 +60,13 @@ Native API clients can log in without browser Origin headers and use the returne
 ## What works today
 
 - SDK 57 Expo client in `client/`: registration, cookie-based web login, SecureStore native bearer sessions, permission-driven navigation, QR membership passes and dues, event booking and check-in, merchandise, announcements, task assignment, receipt claims and treasury/source/CSV views. See [the interactive journey](docs/DEMO.md#interactive-client-journey).
-- Optional same-origin Expo export at `/`, with the existing business workspace at `/legacy`. Native camera scanning, receipt selection and private-file sharing are implemented; bundle compilation does not establish physical-device acceptance.
+- Public landing at `/`, sign-in at `/login`, and an authenticated overview at `/dashboard`. Optional same-origin Expo delivery serves business screens while keeping the Next landing and login pages; `/legacy` retains the original workspace. Native camera scanning, receipt selection and private-file sharing are implemented; bundle compilation does not establish physical-device acceptance.
 - Responsive dashboard and navigation for all six club areas.
 - Legacy web interface in English and eleven of the most spoken Indian languages (Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Malayalam, Punjabi, Assamese), chosen from the browser's language or the in-app switcher.
 - Browser sign-in/sign-out, task editing, receipt-backed expenses, treasury review and ledger CSV export.
 - Backend APIs for dues/renewals, simulated reminders, ticket holds, payment confirmation, check-in and merchandise orders with stock holds.
 - Announcement publication API with a public dated archive, active-member notifications, atomic simulated outbox delivery and safe retries. See the [announcement demo](docs/DEMO.md#announcement-publication-8).
-- SQLite-backed dashboard, health check and member directory.
+- SQLite/PostgreSQL-backed dashboard, health check and member directory; bounded v2 member, task, expense and ledger lists.
 - Registration, login, logout, hashed sessions and role-protected member APIs; native bearer tokens and browser HttpOnly cookies share the same session.
 - Create a member through the authorized API with server validation and case-insensitive duplicate prevention.
 - Server-calculated member/event counts and a sample ledger balance in integer paise.
@@ -73,17 +81,19 @@ The starter is a single-club, local development scaffold with synthetic demo acc
 
 ## Stack and layout
 
-Next.js App Router API · Expo Router · React Native Web · React · TypeScript · Zod · native SQLite.
+Next.js App Router API · Expo Router · React Native Web · React · TypeScript · Zod · native SQLite / PostgreSQL.
 
 ```text
 client/src/app/          Expo registration, booking and authenticated business screens
-src/app/page.tsx          Existing web entry (Expo export is optional)
+src/app/page.tsx          Public landing page
+src/app/dashboard/        Authenticated overview (Expo export is optional)
+shared/                  Page registry and validated return destinations
 src/app/legacy/page.tsx   Existing web workspace
 src/app/globals.css       Responsive design, script fallbacks and right-to-left layout
 src/app/api/              Auth, memberships, tickets, tasks, expenses and ledger
 src/i18n/                 Locale registry, dictionaries (12 languages), formatters and provider
 src/lib/contracts.ts     Shared API types
-src/lib/database.ts      SQLite connection and module composition
+src/lib/database.ts      Database adapter selection and module composition
 src/lib/db/              Versioned schema migrations and transaction helpers
 docs/schema.sql          Generated DDL for the current schema (`npm run schema:dump`)
 docs/schema.postgres.sql Generated PostgreSQL translation of the same schema (`npm run schema:dump`)
@@ -116,7 +126,7 @@ The web manifest provides the MODE icon and standalone display metadata. On a su
 
 ### Authenticated tasks and reimbursements
 
-The web workspace now has sign-in, a task board, personal expense submissions and treasury review. Task assignment and status changes respect the signed-in member’s permissions. New claims require a JPG, PNG or PDF receipt up to 5 MB, private to their uploader and club finance reviewers. Reimbursements post exactly once to the shared ledger, alongside dues and ticket income. The register links to exact source records and shows the paying officer; its CSV export matches the register totals. Schema v13 hardens the data model (club foreign keys, unique payment references, receipt single-use) on top of v12, which preserved older workflow and ledger records; back up `.data/` before the first start on v13 because tables are rebuilt. See [API](docs/API.md), [demo walkthrough](docs/DEMO.md) and [local reimbursement verification](docs/REIMBURSEMENT-VERIFICATION.md).
+The web workspace now has sign-in, a task board, personal expense submissions and treasury review. Task assignment and status changes respect the signed-in member’s permissions. New claims require a JPG, PNG or PDF receipt up to 5 MB, private to their uploader and club finance reviewers. Reimbursements post exactly once to the shared ledger, alongside dues and ticket income. The register links to exact source records and shows the paying officer; its CSV export matches the register totals. Schema v13 hardens the data model (club foreign keys, unique payment references, receipt single-use) on top of v12, which preserved older workflow and ledger records; back up `.data/` before upgrading from an older schema because v13 rebuilds tables. Schema v14 splits login identities (`people`) from club memberships, and v15 adds pagination indexes without rebuilding tables. See [API](docs/API.md), [demo walkthrough](docs/DEMO.md) and [local reimbursement verification](docs/REIMBURSEMENT-VERIFICATION.md).
 
 ## Languages
 

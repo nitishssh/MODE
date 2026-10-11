@@ -29,17 +29,15 @@ function loadDraft(): Draft {
 
 function PublishPanel({ onClose, onPublished }: { onClose: () => void; onPublished: (publication: AnnouncementPublication) => void }) {
   const { t, fmt } = useT();
-  const [draft, setDraft] = useState<Draft>({ key: "", title: "", body: "" });
-  const [ready, setReady] = useState(false);
+  // The panel only mounts after a click, so it can read the saved draft on first render.
+  const [draft, setDraft] = useState<Draft>(loadDraft);
   const [errors, setErrors] = useState<{ title?: string; body?: string }>({});
   const [keyReused, setKeyReused] = useState(false);
   const action = useAction();
 
-  useEffect(() => { setDraft(loadDraft()); setReady(true); }, []);
   useEffect(() => {
-    if (!ready) return;
     try { window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* storage full or unavailable */ }
-  }, [draft, ready]);
+  }, [draft]);
 
   function freshDraft() {
     setDraft({ key: newId(), title: "", body: "" });

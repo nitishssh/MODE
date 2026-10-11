@@ -1,9 +1,15 @@
 import { Tabs } from "expo-router";
+import type { ComponentProps } from "react";
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { destinations, canVisit } from "../lib/navigation";
 import { useSession } from "../lib/session";
 import { Copy, useTheme } from "./ui";
 import { fonts } from "../constants/theme";
+import { preserveTabQueryHistory } from "../lib/tab-query-history";
+
+const queryHistoryRouter: NonNullable<ComponentProps<typeof Tabs>["UNSTABLE_router"]> = original => ({
+  getStateForAction: (state, action, options) => preserveTabQueryHistory(state, original.getStateForAction(state, action, options), action.type),
+});
 export default function AppTabs() {
   const { user } = useSession();
   const theme = useTheme();
@@ -11,6 +17,8 @@ export default function AppTabs() {
   if (!user) return null;
   return (
     <Tabs
+      backBehavior="fullHistory"
+      UNSTABLE_router={queryHistoryRouter}
       tabBar={({ state, navigation }) => (
         <ScrollView
           horizontal={width < 900}
@@ -42,7 +50,7 @@ export default function AppTabs() {
                     target: route.key,
                     canPreventDefault: true,
                   });
-                  if (!event.defaultPrevented) navigation.navigate(route.name);
+                  if (!event.defaultPrevented && state.routes[state.index].key !== route.key) navigation.navigate(route.name, route.params);
                 }}
                 style={{
                   paddingHorizontal: 12,

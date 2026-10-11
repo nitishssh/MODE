@@ -2,6 +2,49 @@
 /** Public API shapes. Money is stored and returned as integer paise. */
 export type Role = "member" | "volunteer" | "organizer" | "treasurer" | "admin";
 
+/** v2 lists only. Existing v1 lists, finance totals and CSV stay full-set. */
+export interface CursorPage<T> {
+  items: T[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+/** limit defaults to 25; accepted range 1..100. Treat cursors as opaque. */
+export interface PageQuery {
+  limit?: number;
+  cursor?: string;
+  q?: string;
+}
+
+export interface MembersPageQuery extends PageQuery {
+  sort?: "joinedAt_desc";
+  role?: Role;
+  membership?: "active" | "expired" | "none";
+}
+
+export interface TasksPageQuery extends PageQuery {
+  sort?: "createdAt_desc";
+  status?: "todo" | "in_progress" | "done";
+  assigneeId?: string;
+  eventId?: string;
+  mine?: boolean;
+  overdue?: boolean;
+}
+
+export interface ExpensesPageQuery extends PageQuery {
+  sort?: "submittedAt_desc";
+  status?: "submitted" | "approved" | "rejected" | "paid";
+  submitterId?: string;
+  eventId?: string;
+}
+
+export interface LedgerPageQuery extends PageQuery {
+  sort?: "occurredAt_desc";
+  kind?: "income" | "expense";
+  eventId?: string;
+  category?: "membership" | "events" | "expense" | "merch_order" | "opening_balance";
+}
+
 export interface Member {
   id: string;
   name: string;
@@ -262,9 +305,24 @@ export interface AuthResponse {
   token: string;
 }
 
+/** One club the signed-in person belongs to; role and membership are per club. */
+export interface ClubMembership {
+  memberId: string;
+  clubId: string;
+  clubName: string;
+  role: Role;
+  membership: "active" | "expired" | "none";
+}
+
 export interface AuthMeResponse {
   user: SessionUser;
   pass: MemberPass;
+  /** Every club this person belongs to; `user.clubId` is the active one. */
+  memberships: ClubMembership[];
+}
+
+export interface SwitchClubInput {
+  clubId: string;
 }
 
 export interface RegisterInput {

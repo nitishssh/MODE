@@ -1,22 +1,23 @@
 import { useState } from "react";
 import type { ExpenseLedgerEntry, LedgerSource } from "../generated/contracts";
-import { useResource } from "../lib/use-resource";
+import { usePagedList } from "../lib/use-paged-list";
 import { useSession } from "../lib/session";
 import { savePrivateFile } from "../lib/files";
-import { Action, ActionGroup, Copy, ErrorNotice, LoadingRows, Row, money } from "./ui";
+import { Action, ActionGroup, Copy, LoadingRows, Row, money } from "./ui";
 import { useWrite, WriteNotice } from "./forms";
+import { ListFilters, ListPageControls } from "./list-pagination";
 
 export function Ledger() {
-  const entries = useResource<ExpenseLedgerEntry[]>("/api/ledger/entries");
+  const entries = usePagedList<ExpenseLedgerEntry>("ledger");
   const { client } = useSession();
   const write = useWrite();
   return (
     <Row>
       <Copy kind="title">Ledger entries</Copy>
-      <ErrorNotice error={entries.error} />
+      <ListFilters key={entries.filterKey} kind="ledger" query={entries.query} update={entries.updateFilters} clear={entries.clearFilters} />
+      <ListPageControls page={entries.data} loading={entries.loading} error={entries.error} time={entries.time} cursor={entries.query.cursor} next={entries.next} restart={entries.restart} reload={entries.reload} queryError={entries.query.error} />
       <WriteNotice state={write} />
       <ActionGroup>
-        <Action onPress={() => void entries.reload()}>Refresh entries</Action>
         <Action
           disabled={write.busy}
           onPress={() =>
@@ -29,12 +30,13 @@ export function Ledger() {
             )
           }
         >
-          Export ledger CSV
+          Export all ledger entries CSV
         </Action>
       </ActionGroup>
+      <Copy>The totals above and CSV cover the whole ledger. These filters apply to the entries below.</Copy>
       {entries.loading && !entries.data && <LoadingRows />}
-      {entries.data?.length === 0 && <Copy>No ledger entries.</Copy>}
-      {entries.data?.map((entry) => (
+      {entries.data?.items.length === 0 && <Copy>No ledger entries match this page and its filters.</Copy>}
+      {entries.data?.items.map((entry) => (
         <Entry key={entry.id} entry={entry} />
       ))}
     </Row>

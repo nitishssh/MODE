@@ -46,7 +46,12 @@ async function startServer() {
   output = "";
   server = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: root, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, NODE_ENV: "production", SQLITE_PATH: join(directory, "mode.sqlite"), MODE_DEMO_PASSWORD: password, MODE_DEMO_NOW: "2026-10-10T08:00:00.000Z" },
+    env: {
+      ...process.env, NODE_ENV: "production", MODE_EXPO_WEB: "0",
+      DATABASE_URL: "", MODE_TEST_DATABASE_URL: "",
+      SQLITE_PATH: join(directory, "mode.sqlite"), MODE_RECEIPTS_DIR: join(directory, "receipts"),
+      MODE_DEMO_PASSWORD: password, MODE_DEMO_NOW: "2026-10-10T08:00:00.000Z",
+    },
   });
   let spawnError;
   server.once("error", error => { spawnError = error; });

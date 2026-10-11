@@ -1,2 +1,2 @@
 // Keep the existing business workflows available during the Expo rollout.
-export { default } from '../page';
+export { default } from '@/components/legacy-workspace';

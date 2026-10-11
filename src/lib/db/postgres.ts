@@ -92,7 +92,7 @@ export interface SchemaObject {
 export function readSchemaObjects(db: DatabaseSync): SchemaObject[] {
   const rows = db
     .prepare("SELECT type, name, tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND type IN ('table', 'index') ORDER BY name")
-    .all() as Array<{ type: string; name: string; tbl_name: string; sql: string }>;
+    .all() as { type: string; name: string; tbl_name: string; sql: string }[];
   return rows.map((row) => ({ type: row.type as SchemaObject["type"], name: row.name, tableName: row.tbl_name, sql: row.sql.trim() }));
 }
 
@@ -230,8 +230,8 @@ export function postgresExport(db: DatabaseSync, options: PostgresScriptOptions)
       lines.push(`-- ${table.name}: data skipped on request`, "");
       continue;
     }
-    const columns = (db.prepare(`PRAGMA table_info(${quoteIdentifier(table.name)})`).all() as Array<{ name: string }>).map((c) => c.name);
-    const rows = db.prepare(`SELECT rowid AS __seq, * FROM ${quoteIdentifier(table.name)} ORDER BY rowid`).all() as Array<Record<string, unknown>>;
+    const columns = (db.prepare(`PRAGMA table_info(${quoteIdentifier(table.name)})`).all() as { name: string }[]).map((c) => c.name);
+    const rows = db.prepare(`SELECT rowid AS __seq, * FROM ${quoteIdentifier(table.name)} ORDER BY rowid`).all() as Record<string, unknown>[];
     lines.push(`-- ${table.name}: ${rows.length} row(s)`);
     const columnList = [...columns, "seq"].map(quoteIdentifier).join(", ");
     for (let start = 0; start < rows.length; start += batchSize) {

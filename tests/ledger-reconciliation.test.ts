@@ -7,6 +7,7 @@ import { SOURCE_RESOLVERS } from "../src/lib/modules/ledger";
 import { DatabaseSync } from 'node:sqlite';
 import { rmSync } from 'node:fs';
 import { legacyFixture } from './legacy-fixture';
+import { DEMO, actorFor, memoryDatabase, receiptFor } from "./helpers";
 
 test('legacy payer exception requires its migration evidence; missing and altered payments still fail reconciliation', () => {
   const fixture = legacyFixture();
@@ -45,7 +46,6 @@ test("merchandise income stays in its club ledger with its payment reference", (
     assert.deepEqual(db.ledger.reconcile().orphans, []);
   } finally { db.close(); }
 });
-import { DEMO, actorFor, memoryDatabase, receiptFor } from "./helpers";
 
 test("reimbursements (#7): only payment changes balance, with one source and the paying officer", () => {
   const { db } = memoryDatabase();

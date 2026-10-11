@@ -1,5 +1,6 @@
 import type { ZodType } from "zod";
 import { DomainError, ValidationError } from "./errors";
+import { correlateResponse, logRequest, requestIdFor } from "./request-diagnostics";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
@@ -24,14 +25,13 @@ export async function readJson<T>(request: Request, schema: ZodType<T>): Promise
   return parsed.data;
 }
 
-export function errorResponse(error: unknown, context: string): Response {
+export function errorResponse(error: unknown): Response {
   if (error instanceof DomainError) {
     return json(
       { error: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) },
       { status: error.status },
     );
   }
-  console.error(`MODE ${context} failed`, error);
   return json({ error: "Something went wrong. Please try again." }, { status: 500 });
 }
 
@@ -41,11 +41,24 @@ type Handler<P> = (request: Request, params: P) => Promise<Response> | Response;
 /** Wrap a route handler so domain errors map to status codes and nothing internal leaks. */
 export function route<P = Record<string, never>>(context: string, handler: Handler<P>) {
   return async (request: Request, routeContext?: RouteContext<P>): Promise<Response> => {
+    const requestId = requestIdFor(request);
+    const started = performance.now();
+    let response: Response;
     try {
       const params = routeContext ? await routeContext.params : ({} as P);
-      return await handler(request, params);
+      response = await handler(request, params);
     } catch (error) {
-      return errorResponse(error, context);
+      response = errorResponse(error);
     }
+    logRequest({
+      event: "http_request",
+      requestId,
+      operation: context,
+      method: request.method,
+      status: response.status,
+      durationMs: Math.round(Math.max(0, performance.now() - started) * 100) / 100,
+      outcome: response.status >= 500 ? "server_error" : response.status >= 400 ? "client_error" : "success",
+    });
+    return correlateResponse(response, requestId);
   };
 }

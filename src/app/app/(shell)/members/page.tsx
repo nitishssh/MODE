@@ -35,9 +35,15 @@ function MembersView() {
   const [remindersOpen, setRemindersOpen] = useState(false);
   const action = useAction();
 
-  useEffect(() => { if (params.get("add") === "1" && can("members:create")) setAdding(true); }, [params, can]);
+  // Open the add form when the URL asks for it (?add=1), adjusted during render rather than in an effect.
+  const addRequested = params.get("add") === "1" && can("members:create");
+  const [seenAddRequest, setSeenAddRequest] = useState(false);
+  if (addRequested !== seenAddRequest) {
+    setSeenAddRequest(addRequested);
+    if (addRequested) setAdding(true);
+  }
 
-  const list = members.data?.members ?? [];
+  const list = useMemo(() => members.data?.members ?? [], [members.data]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return list.filter((m) =>

@@ -155,17 +155,30 @@ const DEFAULT_SLIDES: Slide[] = [
   { title: "Field Notes", caption: "The collection, arranged on the line.", palette: "alpine", seed: 8 },
 ];
 
+const noSubscription = () => () => {};
+
+/** True only in the browser, and false during server render and hydration, so markup matches. */
+function useCanPaint(): boolean {
+  return React.useSyncExternalStore(noSubscription, () => true, () => false);
+}
+
 /** Each slide's own image, or a painted landscape; an image that fails to load falls back to the painting. */
 function useSlideImages(slides: Slide[]): [string[], (i: number) => void] {
+  const canPaint = useCanPaint();
   const key = slides.map((s) => s.image || `${s.palette || "dawn"}:${s.seed ?? 1}`).join("|");
-  const [painted, setPainted] = React.useState(() => slides.map(() => ""));
-  const [failed, setFailed] = React.useState<Record<number, boolean>>({});
-  React.useEffect(() => {
-    setFailed({});
-    setPainted(slides.map((s, i) => paintLandscape(s.seed ?? i + 1, s.palette || "dawn")));
-  }, [key, slides]);
-  const fail = React.useCallback((i: number) => setFailed((f) => (f[i] ? f : { ...f, [i]: true })), []);
-  return [slides.map((s, i) => (s.image && !failed[i] ? s.image : painted[i] || "")), fail];
+  // Landscapes need a canvas, so they are painted only once the browser has taken over.
+  const painted = React.useMemo(
+    () => slides.map((s, i) => (canPaint ? paintLandscape(s.seed ?? i + 1, s.palette || "dawn") : "")),
+    [slides, canPaint],
+  );
+  // Failures belong to one slide set; a new set starts clean without resetting state in an effect.
+  const [failed, setFailed] = React.useState<{ key: string; slides: Record<number, boolean> }>({ key, slides: {} });
+  const current = failed.key === key ? failed.slides : {};
+  const fail = React.useCallback((i: number) => setFailed((f) => {
+    const base = f.key === key ? f.slides : {};
+    return base[i] ? f : { key, slides: { ...base, [i]: true } };
+  }), [key]);
+  return [slides.map((s, i) => (s.image && !current[i] ? s.image : painted[i] || "")), fail];
 }
 
 const PL_CSS = [
@@ -224,7 +237,7 @@ export default function PolaroidLineCarousel({
   const lastTouch = React.useRef(0);
   const activeRef = React.useRef(0);
   const opts = React.useRef({ sag, swing });
-  opts.current = { sag, swing };
+  React.useLayoutEffect(() => { opts.current = { sag, swing }; }, [sag, swing]);
   const spacing = size.cw * 1.08;
   const goTo = React.useCallback((i: number) => {
     sim.current.target = clamp(i, 0, n - 1) * spacing;
