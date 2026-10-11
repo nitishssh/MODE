@@ -47,6 +47,7 @@ const MIGRATIONS: Migration[] = [
   { version: 14, up: splitPeopleFromMemberships, rebuildsTables: true },
   { version: 15, up: addListPaginationIndexes },
   { version: 16, up: addJoinCodesAndLeaving },
+  { version: 17, up: addWhatsAppQueue },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -61,6 +62,53 @@ function addListPaginationIndexes(db: SqlDatabase) {
     CREATE INDEX IF NOT EXISTS expenses_owner_page_idx ON expenses (club_id, submitter_id, submitted_at DESC, id ASC);
     CREATE INDEX IF NOT EXISTS expenses_status_page_idx ON expenses (club_id, status, submitted_at DESC, id ASC);
     CREATE INDEX IF NOT EXISTS transactions_page_idx ON transactions (club_id, occurred_at DESC, id ASC);
+  `);
+}
+
+// v17 — WhatsApp delivery queue: per-membership opt-in, one club group, idempotent deliveries.
+function addWhatsAppQueue(db: SqlDatabase) {
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS members_club_identity_idx ON members (club_id, id);
+    CREATE TABLE IF NOT EXISTS whatsapp_preferences (
+      member_id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      phone TEXT,
+      enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (club_id, member_id) REFERENCES members(club_id, id),
+      CHECK (enabled = 0 OR phone IS NOT NULL)
+    );
+    CREATE TABLE IF NOT EXISTS whatsapp_groups (
+      club_id TEXT PRIMARY KEY REFERENCES clubs(id),
+      destination TEXT,
+      enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+      updated_at TEXT NOT NULL,
+      CHECK (enabled = 0 OR destination IS NOT NULL)
+    );
+    CREATE TABLE IF NOT EXISTS whatsapp_deliveries (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id),
+      source_key TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('announcement', 'membership_renewal')),
+      audience TEXT NOT NULL CHECK (audience IN ('member', 'group')),
+      member_id TEXT,
+      destination TEXT NOT NULL,
+      body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sending', 'accepted', 'uncertain', 'failed', 'cancelled')),
+      attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+      claim_token TEXT,
+      claimed_at TEXT,
+      provider_message_id TEXT,
+      error_code TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (club_id, member_id) REFERENCES members(club_id, id),
+      CHECK ((audience = 'member' AND member_id IS NOT NULL) OR (audience = 'group' AND member_id IS NULL)),
+      CHECK (kind <> 'membership_renewal' OR audience = 'member')
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_member_source_idx ON whatsapp_deliveries (club_id, source_key, member_id) WHERE audience = 'member';
+    CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_group_source_idx ON whatsapp_deliveries (club_id, source_key) WHERE audience = 'group';
+    CREATE INDEX IF NOT EXISTS whatsapp_pending_idx ON whatsapp_deliveries (club_id, status, created_at, id);
   `);
 }
 

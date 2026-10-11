@@ -8,6 +8,8 @@ import { parseInput } from "../validation";
 import { assertPermission, type Actor, type IdentityModule } from "./identity";
 import { SOURCE_RESOLVERS, postLedgerEntry } from "./ledger";
 import { MEMBERSHIP_STATE_SQL, membershipState } from "./membership-state";
+import type { WhatsAppModule } from "./whatsapp";
+import { assertPaymentReferenceAvailable, lockPaymentReferences } from "./payment-reference";
 
 export const MEMBERSHIP_DAYS = 365;
 export const REMINDER_WINDOW_DAYS = 30;
@@ -31,7 +33,7 @@ function mapPayment(row: Row): DuesPayment {
 }
 
 /** Membership dues (P1, #4): officer-recorded, club-priced, ledger-bound, reminder-tracked. */
-export function createDuesModule(ctx: DbContext, identity: IdentityModule) {
+export function createDuesModule(ctx: DbContext, identity: IdentityModule, whatsapp?: WhatsAppModule) {
   const { db } = ctx;
 
   function duesAmount(clubId: string): number {
@@ -50,6 +52,7 @@ export function createDuesModule(ctx: DbContext, identity: IdentityModule) {
     assertPermission(actor, "membership:record_payment");
     const data = parseInput(recordDuesSchema, input);
     return transaction(ctx, () => {
+      lockPaymentReferences(ctx, actor.clubId);
       const member = identity.requireMember(actor.clubId, data.memberId);
       const existing = db.prepare("SELECT * FROM dues_payments WHERE club_id = ? AND reference = ?").get(actor.clubId, data.reference) as Row | undefined;
       if (existing) {
@@ -59,6 +62,7 @@ export function createDuesModule(ctx: DbContext, identity: IdentityModule) {
         return { payment: mapPayment(existing), created: false, membership: current.membership, expiresOn: current.expiresOn! };
       }
       const today = clubDate(ctx.now());
+      assertPaymentReferenceAvailable(ctx, actor.clubId, data.reference);
       const amountPaise = duesAmount(actor.clubId);
       const newExpiresOn = nextExpiry(member.expiresOn, today);
       const id = randomUUID();
@@ -129,6 +133,7 @@ export function createDuesModule(ctx: DbContext, identity: IdentityModule) {
         const body = `Hi ${member.name}, your club membership ends in ${member.daysLeft} day(s). Renew with any officer to keep member pricing.`;
         notify.run(randomUUID(), actor.clubId, member.id, title, body, nowIso);
         outbox.run(randomUUID(), actor.clubId, member.id, member.email, title, body, nowIso);
+        whatsapp?.queueRenewal(actor.clubId, member.id, member.expiresOn, title, body);
         sent += 1;
       }
     });

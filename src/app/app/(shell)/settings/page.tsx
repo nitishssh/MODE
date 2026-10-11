@@ -7,6 +7,7 @@ import { useT } from "../../_lib/i18n";
 import { useSession } from "../../_lib/session";
 import { Alert, Button, Card, KeyValue, PageHead, PreviewNote, Skeleton, StatusBadge } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
+import { WhatsAppSettings } from "./whatsapp-settings";
 
 export default function SettingsPage() {
   const { t } = useT();
@@ -45,6 +46,14 @@ export default function SettingsPage() {
               {user.permissions.length ? user.permissions.map((p) => <span key={p} className="badge neutral">{p}</span>) : <span className="mx-muted mx-small">{t("settings.account.noPermissions")}</span>}
             </div>
           </Card>
+
+          <Card kicker="YOUR CHOICES" title="Privacy & device permissions">
+            <p>Your profile and club records are shown only where your role allows. Camera access and saved preferences are optional; selected receipt files are shared with authorized reviewers.</p>
+            <p style={{ marginTop: 12 }}><Link href="/privacy">Read the privacy policy & manage cookies →</Link></p>
+            <p className="mx-muted mx-small" style={{ marginTop: 12 }}>To revoke camera permission, open this site&apos;s permissions in your browser settings. You can always type a door code instead. Microphone, location, contacts and push notifications are not requested.</p>
+          </Card>
+
+          <WhatsAppSettings />
 
           <section className="panel">
             <div className="panel-heading">

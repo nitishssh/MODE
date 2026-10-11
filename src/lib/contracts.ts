@@ -284,6 +284,30 @@ export interface Dashboard {
   access: { members: boolean; finance: boolean };
 }
 
+/** Small authenticated payload used by persistent workspace chrome. */
+export interface WorkspaceChromeSummary {
+  club: { name: string; demo: boolean };
+  counts: {
+    members: number;
+    tasks: number;
+    completedTasks: number;
+    unreadNotifications: number;
+  };
+}
+
+/** One bounded workspace-search result. The server applies club and permission scope. */
+export interface WorkspaceSearchResult {
+  id: string;
+  kind: "task" | "member" | "event" | "announcement";
+  label: string;
+  detail: string;
+  href: string;
+}
+
+export interface WorkspaceSearchResponse {
+  results: WorkspaceSearchResult[];
+}
+
 export interface CreateMemberInput {
   name: string;
   email: string;
@@ -311,6 +335,25 @@ export interface ClubMembership {
   clubName: string;
   role: Role;
   membership: "active" | "expired" | "none";
+}
+
+/** The exact notice shown before self-service account creation. */
+export const PRIVACY_POLICY_VERSION = "2026-10-11";
+
+export interface RegisterInput {
+  name: string;
+  email: string;
+  password: string;
+  privacyPolicyVersion: typeof PRIVACY_POLICY_VERSION;
+}
+
+export interface PrivacyPolicyResponse {
+  version: string;
+  effectiveDate: string;
+  organization: string;
+  contactEmail: string;
+  localContact: boolean;
+  sections: { title: string; text: string }[];
 }
 
 export interface AuthMeResponse {
@@ -348,12 +391,6 @@ export interface LeaveClubResponse {
   clubId: string;
   activeClubId: string | null;
   signedOut: boolean;
-}
-
-export interface RegisterInput {
-  name: string;
-  email: string;
-  password: string;
 }
 
 export interface LoginInput {
@@ -401,6 +438,8 @@ export interface Notification {
 export type EventStatus = "draft" | "published" | "cancelled";
 
 export interface EventDetails extends Event {
+  /** Zero means that no fundraising target has been set. */
+  fundraiserGoalPaise: number;
   description: string;
   status: EventStatus;
   /** Seats not held or sold: capacity minus registered. */
@@ -513,4 +552,29 @@ export interface MemberPass {
   shortCode: string;
   membership: "active" | "expired" | "none";
   expiresOn: string | null;
+}
+
+/** Private, self-service WhatsApp preferences. Never include in a public member list. */
+export interface WhatsAppPreference {
+  phone: string | null;
+  enabled: boolean;
+}
+
+export interface WhatsAppGroup {
+  destination: string | null;
+  enabled: boolean;
+}
+
+export type WhatsAppStatus = "pending" | "sending" | "accepted" | "uncertain" | "failed" | "cancelled";
+
+/** Officer queue summary deliberately excludes recipient addresses and message bodies. */
+export interface WhatsAppDelivery {
+  id: string;
+  kind: "announcement" | "membership_renewal";
+  audience: "member" | "group";
+  status: WhatsAppStatus;
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
+  errorCode: string | null;
 }

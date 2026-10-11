@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,7 +18,7 @@ await new Promise(resolve => probe.close(resolve));
 const origin = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '--hostname', '127.0.0.1', '--port', String(port)], {
   cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, DATABASE_URL: '', MODE_TEST_DATABASE_URL: '', MODE_RECEIPTS_DIR: join(directory, 'receipts'), MODE_EXPO_WEB: '1', MODE_DEMO_PASSWORD: 'mode-synthetic-check-2026', SQLITE_PATH: join(directory, 'mode.sqlite') },
+  env: { ...process.env, DATABASE_URL: '', MODE_TEST_DATABASE_URL: '', MODE_RECEIPTS_DIR: join(directory, 'receipts'), MODE_EXPO_WEB: '1', MODE_JWT_SECRET: randomBytes(32).toString('hex'), MODE_DEMO_PASSWORD: 'mode-synthetic-check-2026', SQLITE_PATH: join(directory, 'mode.sqlite') },
 });
 let output = ''; child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { output += chunk; });
 try {

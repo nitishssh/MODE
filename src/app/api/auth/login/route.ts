@@ -4,6 +4,7 @@ import { readJson, route } from "../../../../lib/http";
 import { loginSchema } from "../../../../lib/modules/identity";
 import { assertSameOrigin } from "../../../../lib/mutation-guard";
 import { sessionResponse } from "../_shared";
+import { applyRateLimitHeaders, enforceLoginRateLimit } from "../../../../lib/traffic-control";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,10 +12,12 @@ export const dynamic = "force-dynamic";
 export const POST = route("login", async (request) => {
   assertSameOrigin(request);
   const input = await readJson(request, loginSchema);
+  const limit = enforceLoginRateLimit(request, input.email);
   const db = getDatabase();
   const issued = db.login(input);
+  const successfulLimit = limit.refundSuccessfulEmail();
   // Signing in again replaces any previous session carried by this browser.
   db.logout(readSessionToken(request));
   const actor = db.getActor(issued.token);
-  return sessionResponse(request, issued, actor?.clubId ?? "", 200);
-});
+  return applyRateLimitHeaders(sessionResponse(request, issued, actor?.clubId ?? "", 200), successfulLimit);
+}, { admission: "critical" });

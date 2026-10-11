@@ -1,4 +1,4 @@
-import { Redirect, useRootNavigationState, usePathname } from 'expo-router';
+import { Link, Redirect, useRootNavigationState, usePathname } from 'expo-router';
 import { View } from 'react-native';
 import { useSession } from '../../lib/session';
 import { Action, ErrorNotice, LoadingRows, Screen } from '../../components/ui';
@@ -15,6 +15,6 @@ export default function AuthenticatedLayout() {
   if (status === 'unavailable') return <Unavailable />;
   if (!user) return <Redirect href={authHref('/login', returnTargetForLocation(pathname, parameters))} />;
   if (!canVisitPath(user, pathname)) return <ForbiddenPage />;
-  return <View style={{ flex: 1 }}><ErrorNotice error={error} /><AppTabs key={`${user.clubId}:${user.id}`} /></View>;
+  return <View style={{ flex: 1 }}><ErrorNotice error={error} /><AppTabs key={`${user.clubId}:${user.id}`} /><Link href="/privacy" style={{ padding: 12, textAlign: 'center' }}>Privacy policy & permissions</Link></View>;
   function Unavailable() { return <Screen title="Connection needed"><ErrorNotice error={client.snapshot().error} /><Action onPress={() => void client.bootstrap()}>Try again</Action></Screen>; }
 }

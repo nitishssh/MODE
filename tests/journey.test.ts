@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PRIVACY_POLICY_VERSION } from "../src/lib/contracts";
 import { test } from "node:test";
 import { getDatabase } from "../src/lib/database";
 import { demoPassword } from "../src/lib/db/migrations";
@@ -43,6 +44,7 @@ test("fresh semester journey carries identity, permissions and exactly-once mone
     const baseline = db.ledger.reconcile();
     const issued = await register(apiRequest("/api/auth/register", { body: {
       name: "Journey Member", email: "journey@example.com", password: "journey-test-only-123",
+      privacyPolicyVersion: PRIVACY_POLICY_VERSION,
     } }));
     const memberCookie = cookieFrom(issued);
     const member = await body(issued, 201);

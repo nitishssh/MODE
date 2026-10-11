@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { readOptionalPreference, writeOptionalPreference } from "@/lib/privacy-preferences";
 import { LanguageSwitcher, useI18n } from "@/i18n/client";
 
 export default function NotFound() {
@@ -9,7 +10,7 @@ export default function NotFound() {
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("mode-theme");
+    const stored = readOptionalPreference("mode-theme");
     if (stored === "dark") {
       setIsDark(true);
       document.documentElement.classList.add("mode-dark");
@@ -20,7 +21,7 @@ export default function NotFound() {
     setIsDark((prev) => {
       const next = !prev;
       document.documentElement.classList.toggle("mode-dark", next);
-      window.localStorage.setItem("mode-theme", next ? "dark" : "light");
+      writeOptionalPreference("mode-theme", next ? "dark" : "light");
       return next;
     });
   }

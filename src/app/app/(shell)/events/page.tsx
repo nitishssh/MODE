@@ -8,7 +8,7 @@ import { api, useLoad } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
 import { useT } from "../../_lib/i18n";
 import { useNow } from "../../_lib/use-now";
-import { Button, EmptyState, ErrorState, PageHead, PreviewNote, Skeleton, StatusBadge, Tabs } from "../../_components/ui";
+import { EmptyState, ErrorState, PageHead, PreviewNote, Skeleton, StatusBadge, Tabs } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
 
 /* Azman's Events section: .event-cards grid of .panel.event-card articles. */
@@ -89,7 +89,7 @@ function EventsList() {
       <Tabs value={tab} onChange={setTab} items={tabs} />
       {events.error ? <ErrorState error={events.error} onRetry={events.reload} /> : events.loading && !events.data ? <Skeleton rows={6} /> : !list.length ? (
         <section className="panel">
-          <EmptyState title={emptyTitle} icon="calendar" action={tab === "upcoming" && can("events:write") ? <Button variant="primary" onClick={() => { window.location.href = "/app/events/new"; }}>{t("events.empty.createCta")}</Button> : undefined}>
+          <EmptyState title={emptyTitle} icon="calendar" action={tab === "upcoming" && can("events:write") ? <Link className="button primary" href="/app/events/new">{t("events.empty.createCta")}</Link> : undefined}>
             {emptyBody}
           </EmptyState>
         </section>

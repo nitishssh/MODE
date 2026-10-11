@@ -85,17 +85,18 @@ export function LoginPage({ returnTo, registrationEnabled }: { returnTo: string;
         <h1 id="login-title">Welcome back!</h1>
         <p>Sign in to your Student Organization System (SOS).<br />Events · Members · Money in one place.</p>
         <form onSubmit={signIn} noValidate>
-          <label htmlFor="email">Email or Student ID</label>
+          <label htmlFor="email">Email address</label>
           <input id="email" name="email" type="email" autoComplete="username" aria-invalid={Boolean(fieldErrors.email)} aria-describedby={fieldErrors.email ? "email-error" : undefined} onChange={() => setFieldErrors((current) => ({ ...current, email: undefined }))} />
           {fieldErrors.email && <span className="mode-field-error" id="email-error">{fieldErrors.email}</span>}
           <label htmlFor="password">Password</label>
           <span className="mode-password-field"><input id="password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" aria-invalid={Boolean(fieldErrors.password)} aria-describedby={fieldErrors.password ? "password-error" : undefined} onChange={() => setFieldErrors((current) => ({ ...current, password: undefined }))} /><button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? "Hide" : "Show"}</button></span>
           {fieldErrors.password && <span className="mode-field-error" id="password-error">{fieldErrors.password}</span>}
-          <div className="mode-login-options"><label><input type="checkbox" name="remember" />Remember me</label><span>Forgot password?</span></div>
+          <p className="mode-login-options">Need a password reset? Contact your club administrator.</p>
           {error && <p className="mode-login-error" role="alert">{error}</p>}
           <button type="submit" disabled={busy || checking}>{checking ? "Checking session…" : busy ? "Signing in…" : "Log In"}</button>
         </form>
         <p className="mode-login-help">New student? {registrationEnabled ? <a href={`/register?${registerQuery}`}><strong>Join the Association</strong></a> : <strong>Join the Association</strong>}<br />Treasurer &amp; Admin Help</p>
+        <p className="mode-login-help"><a href="/status">Service status · No sign-in required</a></p>
         </>}
       </section>
     </section>

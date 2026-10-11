@@ -90,6 +90,8 @@ function MyTicketCard({ ticket, event, reload }: { ticket: Ticket; event: EventD
 function GuestBookingCard({ event }: { event: EventDetails }) {
   const { t, apiError } = useT();
   const price$ = usePrice();
+  const { can } = useSession();
+  const needsOrganizer = event.guestPricePaise === 0 && !can("events:write");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [result, setResult] = useState<{ ticket: Ticket; url: string } | null>(null);
@@ -114,6 +116,7 @@ function GuestBookingCard({ event }: { event: EventDetails }) {
 
   return (
     <FormPanel title={t("events.guest.title")} description={t("events.guest.description", { price: price$(event.guestPricePaise) })}>
+      {needsOrganizer ? <p role="status">Ask an organizer at the desk to issue a free guest ticket. Members can book their own ticket above.</p> : null}
       {result ? (
         <Alert tone="success" onDismiss={() => setResult(null)}>
           {t("events.guest.created", { name: result.ticket.holderName, code: result.ticket.shortCode })}{" "}
@@ -127,7 +130,7 @@ function GuestBookingCard({ event }: { event: EventDetails }) {
           <label>{t("events.guest.email")}<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={254} disabled={action.busy === "guest"} /></label>
         </div>
         <div className="form-actions">
-          <Button type="submit" variant="primary" loading={action.busy === "guest"} disabled={!open || event.available === 0}>{!open ? t("events.detail.bookingsClosed") : event.available === 0 ? t("events.card.soldOut") : t("events.guest.submit")}</Button>
+          <Button type="submit" variant="primary" loading={action.busy === "guest"} disabled={needsOrganizer || !open || event.available === 0}>{needsOrganizer ? "Organizer verification required" : !open ? t("events.detail.bookingsClosed") : event.available === 0 ? t("events.card.soldOut") : t("events.guest.submit")}</Button>
         </div>
         {action.error ? <p className="form-error" role="alert">{action.error}</p> : null}
       </form>

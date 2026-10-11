@@ -7,13 +7,17 @@ export class ApiError extends Error {
   status: number;
   code: string | null;
   details: { field: string; message: string }[];
+  retryAfterSeconds: number | null;
+  requestId: string | null;
 
-  constructor(status: number, message: string, code: string | null = null, details: { field: string; message: string }[] = []) {
+  constructor(status: number, message: string, code: string | null = null, details: { field: string; message: string }[] = [], retryAfterSeconds: number | null = null, requestId: string | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.details = details;
+    this.retryAfterSeconds = retryAfterSeconds;
+    this.requestId = requestId;
   }
 
   get unauthenticated() { return this.status === 401; }
@@ -29,6 +33,12 @@ const CODE_MESSAGES: Record<string, string> = {
   unauthenticated: "Your session has ended. Sign in again to continue.",
   forbidden: "Your role does not allow this action.",
   too_many_attempts: "Too many sign-in attempts. Wait 15 minutes and try again.",
+  rate_limited: "Too many requests. Waiting briefly before trying again.",
+  server_busy: "The server is busy. Please try again shortly.",
+  request_timeout: "The server took too long to respond. Please try again.",
+  network_error: "Could not reach MODE. Check your connection and try again.",
+  unknown_outcome: "The connection was lost. The operation may have completed; refresh before trying again.",
+  invalid_response: "The server returned an unreadable response. Please try again.",
   duplicate_ticket: "There is already a live ticket for this event under this name.",
   sold_out: "This event is sold out.",
   event_not_open: "Bookings are not open for this event.",
@@ -54,6 +64,23 @@ export function describeError(error: unknown, fallback = "Something went wrong. 
 
 type Json = Record<string, unknown> | unknown[] | null;
 
+const REQUEST_TIMEOUT_MS = 15_000;
+
+function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  const at = Date.parse(value);
+  return Number.isFinite(at) ? Math.max(0, Math.ceil((at - Date.now()) / 1000)) : null;
+}
+
+function waitBeforeRetry(attempt: number, retryAfterSeconds: number | null): Promise<void> {
+  const serverDelay = (retryAfterSeconds ?? 0) * 1000;
+  const backoff = 250 * 2 ** attempt;
+  const delay = Math.min(2_000, Math.max(serverDelay, backoff)) + Math.random() * 250;
+  return new Promise((resolve) => globalThis.setTimeout(resolve, delay));
+}
+
 async function request<T>(method: string, path: string, body?: Json | FormData): Promise<T> {
   const init: RequestInit = { method, cache: "no-store", credentials: "same-origin", headers: {} };
   if (body instanceof FormData) {
@@ -62,25 +89,71 @@ async function request<T>(method: string, path: string, body?: Json | FormData):
     init.headers = { "Content-Type": "application/json" };
     init.body = JSON.stringify(body);
   }
-  const response = await fetch(path, init);
-  const text = await response.text();
-  let parsed: unknown = null;
-  if (text) {
-    try { parsed = JSON.parse(text); } catch { parsed = null; }
-  }
-  if (!response.ok) {
-    const payload = (parsed ?? {}) as { error?: string; code?: string; details?: { field: string; message: string }[] };
+  const attempts = method === "GET" ? 3 : 1;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(path, { ...init, signal: controller.signal });
+    } catch {
+      globalThis.clearTimeout(timeout);
+      const code = timedOut ? "request_timeout" : method === "GET" ? "network_error" : "unknown_outcome";
+      if (method === "GET" && attempt + 1 < attempts) {
+        await waitBeforeRetry(attempt, null);
+        continue;
+      }
+      throw new ApiError(0, CODE_MESSAGES[code], code);
+    } finally {
+      globalThis.clearTimeout(timeout);
+    }
+    const text = await response.text();
+    let parsed: unknown = null;
+    let readable = true;
+    if (text) {
+      try { parsed = JSON.parse(text); } catch { readable = false; }
+    }
+    const requestId = response.headers.get("x-request-id");
+    if (response.ok) {
+      if (!readable) throw new ApiError(502, CODE_MESSAGES.invalid_response, "invalid_response", [], null, requestId);
+      return parsed as T;
+    }
+
+    const payload = (parsed ?? {}) as { error?: string; code?: string; requestId?: string; details?: { field: string; message: string }[] };
     const code = typeof payload.code === "string" ? payload.code : response.status === 401 ? "unauthenticated" : response.status === 403 ? "forbidden" : null;
     const message = typeof payload.error === "string" ? payload.error : `Request failed (${response.status}).`;
-    throw new ApiError(response.status, message, code, Array.isArray(payload.details) ? payload.details : []);
+    const retryAfterSeconds = parseRetryAfter(response.headers.get("retry-after"));
+    const retryableRead = method === "GET" && (response.status === 429 || response.status === 503) && attempt + 1 < attempts;
+    if (retryableRead) {
+      await waitBeforeRetry(attempt, retryAfterSeconds);
+      continue;
+    }
+    throw new ApiError(response.status, message, code, Array.isArray(payload.details) ? payload.details : [], retryAfterSeconds, requestId ?? (typeof payload.requestId === "string" ? payload.requestId : null));
   }
-  return parsed as T;
+  throw new ApiError(503, "The server is busy. Please try again shortly.", "server_busy");
+}
+
+// Coalesce identical reads that overlap during navigation/chrome refreshes. This
+// is deliberately not a response cache: the entry disappears when the request settles.
+const inflightReads = new Map<string, Promise<unknown>>();
+
+function get<T>(path: string): Promise<T> {
+  const current = inflightReads.get(path) as Promise<T> | undefined;
+  if (current) return current;
+  const pending = request<T>("GET", path);
+  inflightReads.set(path, pending);
+  void pending.finally(() => {
+    if (inflightReads.get(path) === pending) inflightReads.delete(path);
+  }).catch(() => { /* the original caller receives the rejection */ });
+  return pending;
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>("GET", path),
+  get,
   post: <T>(path: string, body?: Json | FormData) => request<T>("POST", path, body ?? {}),
   patch: <T>(path: string, body: Json) => request<T>("PATCH", path, body),
+  put: <T>(path: string, body: Json) => request<T>("PUT", path, body),
   delete: <T>(path: string) => request<T>("DELETE", path),
 };
 

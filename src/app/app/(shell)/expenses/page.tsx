@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { MAX_RECEIPT_SIZE_BYTES, type EventDetails, type Expense, type Receipt } from "@/lib/contracts";
-import { api, newId, useAction, useLoad } from "../../_lib/api";
+import { api, ApiError, newId, useAction, useLoad } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
 import { useT } from "../../_lib/i18n";
 import { Alert, Button, Card, EmptyState, ErrorState, FormPanel, Loading, Modal, PageHead, PreviewNote, Stat, Tabs } from "../../_components/ui";
@@ -46,6 +46,7 @@ export default function ExpensesPage() {
   const [uploadProgress, setUploadProgress] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [submissionId, setSubmissionId] = useState(() => newId());
+  const [pendingSubmission, setPendingSubmission] = useState<Record<string, unknown> | null>(null);
 
   const [reject, setReject] = useState<{ expense: Expense; note: string } | null>(null);
   const [pay, setPay] = useState<{ expense: Expense; reference: string } | null>(null);
@@ -69,7 +70,16 @@ export default function ExpensesPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting) return;
     const form = event.currentTarget;
+    if (pendingSubmission) {
+      setSubmitting(true);
+      setSubmitError("");
+      try { await sendClaim(pendingSubmission, form); }
+      catch (caught) { handleClaimError(caught); }
+      finally { setSubmitting(false); }
+      return;
+    }
     const fd = new FormData(form);
     const amountRupees = Number(fd.get("amount"));
     const amountPaise = Math.round(amountRupees * 100);
@@ -93,19 +103,50 @@ export default function ExpensesPage() {
       const body: Record<string, unknown> = { submissionId, amountPaise, purpose, receiptId: receipt.id };
       if (receiptReference) body.receiptReference = receiptReference;
       if (eventId) body.eventId = eventId;
-      const created = await api.post<Expense>("/api/expenses", body);
-      expenses.setData((current) => [created, ...(current ?? []).filter((e) => e.id !== created.id)]);
-      form.reset();
-      setShowForm(false);
-      setSubmissionId(newId());
-      setView("mine");
-      action.setNotice(t("expenses.submitted"));
+      setPendingSubmission(body);
+      await sendClaim(body, form);
     } catch (caught) {
-      setSubmitError(apiError(caught, "expenses.error.submitFailed"));
+      handleClaimError(caught);
     } finally {
       setSubmitting(false);
       setUploadProgress("");
     }
+  }
+
+  function handleClaimError(caught: unknown) {
+    // A timeout, lost response or unreadable success may already have committed.
+    // Keep the exact receipt and payload until the server resolves that attempt.
+    if (caught instanceof ApiError && [400, 401, 403, 404, 413, 415].includes(caught.status)) setPendingSubmission(null);
+    setSubmitError(apiError(caught, "expenses.error.submitFailed"));
+  }
+
+  async function sendClaim(body: Record<string, unknown>, form: HTMLFormElement) {
+    let created: Expense;
+    try { created = await api.post<Expense>("/api/expenses", body); }
+    catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 409) throw error;
+      // A conflict is definitive, but may describe an already saved claim.
+      // If reconciliation itself fails, retain the immutable attempt for retry.
+      let claims: Expense[];
+      try { claims = await api.get<Expense[]>("/api/expenses"); }
+      catch (cause) {
+        throw new Error("Could not confirm whether the claim was saved. Retry the same claim when your connection and session are restored.", { cause });
+      }
+      const saved = claims.find((claim) => claim.id === body.submissionId);
+      if (!saved) {
+        setPendingSubmission(null);
+        setSubmissionId(newId());
+        throw error;
+      }
+      created = saved;
+    }
+    expenses.setData((current) => [created, ...(current ?? []).filter((e) => e.id !== created.id)]);
+    setPendingSubmission(null);
+    form.reset();
+    setShowForm(false);
+    setSubmissionId(newId());
+    setView("mine");
+    action.setNotice(t("expenses.submitted"));
   }
 
   async function approve(expense: Expense) {
@@ -272,16 +313,20 @@ export default function ExpensesPage() {
       {showForm && canSubmit ? (
         <FormPanel title={t("expenses.form.title")} description={<>{t("expenses.form.submittingAs")} <strong>{user?.name ?? t("expenses.form.you")}</strong>. {t("expenses.form.description")}</>} onClose={() => setShowForm(false)}>
           <form onSubmit={handleSubmit}>
+            {pendingSubmission ? <p role="status">This claim is awaiting confirmation. Retry the same claim before changing its details; the receipt will not be uploaded again.</p> : null}
+            <fieldset disabled={submitting || pendingSubmission !== null} style={{ border: 0, padding: 0, margin: 0 }}>
             <div className="task-form-grid">
               <label>{t("expenses.form.amount")}<input name="amount" type="number" step="0.01" min="0.01" placeholder={t("expenses.form.amountPlaceholder")} required disabled={submitting} /></label>
               <label>{t("col.purpose")}<input name="purpose" placeholder={t("expenses.form.purposePlaceholder")} minLength={3} maxLength={500} required disabled={submitting} /></label>
               <label>{t("expenses.form.receiptReference")}<input name="receiptReference" placeholder={t("expenses.form.receiptReferencePlaceholder")} maxLength={200} disabled={submitting} /></label>
               <label>{t("col.event")}<select name="eventId" disabled={submitting}><option value="">{t("expenses.form.noEvent")}</option>{eventOptions.map((ev) => <option key={ev.id} value={ev.id}>{ev.title}</option>)}</select></label>
-              <label>{t("expenses.form.receiptFile")}<input name="receiptFile" type="file" accept="image/jpeg,image/png,application/pdf" required disabled={submitting} /></label>
+              <label>{t("expenses.form.receiptFile")}<input name="receiptFile" type="file" accept="image/jpeg,image/png,application/pdf" aria-describedby="receipt-privacy-note" required disabled={submitting} /></label>
             </div>
+            <p id="receipt-privacy-note" className="mx-muted mx-small">Only the file you select is read. Selecting it does not upload it; Submit expense uploads it for you and authorized club reviewers. Remove unrelated personal details first. <a href="/privacy" target="_blank" rel="noopener">Privacy policy (new tab)</a></p>
             {uploadProgress ? <p className="upload-progress" aria-live="polite"><span className="loader" />{uploadProgress}</p> : null}
+            </fieldset>
             <div className="form-actions">
-              <button type="submit" className="button primary" disabled={submitting}>{submitting ? t("expenses.form.submitting") : t("expenses.submitExpense")}</button>
+              <button type="submit" className="button primary" disabled={submitting}>{submitting ? t("expenses.form.submitting") : pendingSubmission ? "Retry same claim" : t("expenses.submitExpense")}</button>
               <button type="button" className="button secondary" onClick={() => setShowForm(false)} disabled={submitting}>{t("action.cancel")}</button>
             </div>
             {submitError ? <p className="form-error" role="alert">{submitError}</p> : null}

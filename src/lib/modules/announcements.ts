@@ -6,6 +6,7 @@ import { ConflictError, NotFoundError } from "../errors";
 import { parseInput } from "../validation";
 import { assertPermission, type Actor, type IdentityModule } from "./identity";
 import { MEMBERSHIP_ACTIVE_SQL } from "./membership-state";
+import type { WhatsAppModule } from "./whatsapp";
 
 export const publishAnnouncementSchema = z.object({
   idempotencyKey: z.string().trim().min(1).max(120),
@@ -17,7 +18,7 @@ function mapAnnouncement(row: Row): Announcement {
   return { id: text(row.id), title: text(row.title), body: text(row.body), publishedAt: text(row.published_at) };
 }
 
-export function createAnnouncementsModule(ctx: DbContext, identity: IdentityModule) {
+export function createAnnouncementsModule(ctx: DbContext, identity: IdentityModule, whatsapp?: WhatsAppModule) {
   const { db } = ctx;
 
   function requireRow(clubId: string, id: string): Row {
@@ -64,6 +65,7 @@ export function createAnnouncementsModule(ctx: DbContext, identity: IdentityModu
         outbox.run(randomUUID(), actor.clubId, text(recipient.id), text(recipient.email), data.title, data.body, publishedAt, id);
         notify.run(randomUUID(), actor.clubId, text(recipient.id), data.title, data.body, publishedAt, id);
       }
+      whatsapp?.queueAnnouncement(actor.clubId, id, data.title, data.body, recipients.map((recipient) => text(recipient.id)));
       identity.recordAudit(actor, "announcement.published", "announcement", id, { recipientCount: recipients.length, delivery: "simulated" });
       return { announcement: getPublished(actor.clubId, id), created: true, recipientCount: recipients.length, delivery: "simulated" };
     });

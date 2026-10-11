@@ -17,10 +17,11 @@ export type EventPayload = {
   capacity: number;
   memberPricePaise: number;
   guestPricePaise: number;
+  fundraiserGoalPaise: number;
   status: EventStatus;
 };
 
-type Form = { title: string; description: string; startsAt: string; venue: string; capacity: string; memberPrice: string; guestPrice: string; status: EventStatus };
+type Form = { title: string; description: string; startsAt: string; venue: string; capacity: string; memberPrice: string; guestPrice: string; fundraiserGoal: string; status: EventStatus };
 type Errors = Partial<Record<keyof Form, string>>;
 
 function toForm(event?: EventDetails): Form {
@@ -32,11 +33,12 @@ function toForm(event?: EventDetails): Form {
     capacity: event ? String(event.capacity) : "",
     memberPrice: event ? paiseToRupees(event.memberPricePaise) : "",
     guestPrice: event ? paiseToRupees(event.guestPricePaise) : "",
+    fundraiserGoal: event ? paiseToRupees(event.fundraiserGoalPaise) : "0",
     status: event?.status ?? "published",
   };
 }
 
-const FIELD_MAP: Record<string, keyof Form> = { title: "title", description: "description", startsAt: "startsAt", venue: "venue", capacity: "capacity", memberPricePaise: "memberPrice", guestPricePaise: "guestPrice", status: "status" };
+const FIELD_MAP: Record<string, keyof Form> = { title: "title", description: "description", startsAt: "startsAt", venue: "venue", capacity: "capacity", memberPricePaise: "memberPrice", guestPricePaise: "guestPrice", fundraiserGoalPaise: "fundraiserGoal", status: "status" };
 
 function FieldError({ message }: { message?: string }) {
   return message ? <span className="error-text" role="alert" style={{ fontSize: 10, color: "#ac5140", fontWeight: 500 }}>{message}</span> : null;
@@ -68,12 +70,14 @@ export function EventForm({ initial, submitLabel, onSubmit, onCancel }: { initia
     if (memberPricePaise === null) next.memberPrice = t("events.form.errMemberPrice");
     const guestPricePaise = rupeesToPaise(form.guestPrice);
     if (guestPricePaise === null) next.guestPrice = t("events.form.errGuestPrice");
+    const fundraiserGoalPaise = rupeesToPaise(form.fundraiserGoal);
+    if (fundraiserGoalPaise === null) next.fundraiserGoal = "Enter a nonnegative rupee amount. Use 0 for no target.";
     setErrors(next);
-    if (Object.keys(next).length || !startsAt || memberPricePaise === null || guestPricePaise === null) return;
+    if (Object.keys(next).length || !startsAt || memberPricePaise === null || guestPricePaise === null || fundraiserGoalPaise === null) return;
     setBusy(true);
     setError("");
     try {
-      await onSubmit({ title: form.title.trim(), description: form.description.trim(), startsAt, venue: form.venue.trim(), capacity, memberPricePaise, guestPricePaise, status: form.status });
+      await onSubmit({ title: form.title.trim(), description: form.description.trim(), startsAt, venue: form.venue.trim(), capacity, memberPricePaise, guestPricePaise, fundraiserGoalPaise, status: form.status });
     } catch (caught) {
       if (caught instanceof ApiError && caught.details.length) {
         setErrors(Object.fromEntries(caught.details.map((d) => [FIELD_MAP[d.field] ?? d.field, d.message])));
@@ -124,6 +128,11 @@ export function EventForm({ initial, submitLabel, onSubmit, onCancel }: { initia
             <option value="cancelled">{t("status.cancelled")}</option>
           </select>
           {errors.status ? <FieldError message={errors.status} /> : <span className="subtext">{t("events.form.statusHint")}</span>}
+        </label>
+        <label>
+          Fundraising target (₹)
+          <input inputMode="decimal" value={form.fundraiserGoal} onChange={(e) => update("fundraiserGoal", e.target.value)} disabled={busy} aria-invalid={Boolean(errors.fundraiserGoal)} />
+          {errors.fundraiserGoal ? <FieldError message={errors.fundraiserGoal} /> : <span className="subtext">Use 0 when this event has no fundraising target.</span>}
         </label>
         <label style={{ gridColumn: "1 / -1" }}>
           {t("col.description")}

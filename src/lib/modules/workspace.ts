@@ -397,7 +397,7 @@ export function createWorkspaceModule(ctx: DbContext, identity: IdentityModule, 
     const tasks = getTasks(actor, {eventId});
     const goalPaise = Number(event.fundraiser_goal_paise);
     const raisedPaise = ledgerRows(actor).filter(r => r.eventId === eventId && r.type === "income").reduce((sum,r)=>sum+r.amountPaise,0);
-    return {eventId,eventTitle: String(event.title),fundraiser:{goalPaise,raisedPaise,remainingPaise:Math.max(0,goalPaise-raisedPaise),percent:goalPaise ? Math.min(100,Math.round(100*raisedPaise/goalPaise)) : 0,onTrack:goalPaise === 0 || raisedPaise >= goalPaise*0.5},
+    return {eventId,eventTitle: String(event.title),fundraiser:{goalPaise,raisedPaise,remainingPaise:Math.max(0,goalPaise-raisedPaise),percent:goalPaise ? Math.min(100,Math.round(100*raisedPaise/goalPaise)) : 0,onTrack:goalPaise > 0 && raisedPaise >= goalPaise*0.5},
       tasks:{total:tasks.length,todo:tasks.filter(t=>t.status === "todo").length,inProgress:tasks.filter(t=>t.status === "in_progress").length,done:tasks.filter(t=>t.status === "done").length,overdue:tasks.filter(t=>t.overdue).length}};
   }
   return {getTasks,getTasksPage,getTaskById,createTask,patchTask,updateTaskStatus,saveReceipt,getReceiptById,getReceiptFile,getExpenses,getExpensesPage,getExpenseById,submitExpense,

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { readOptionalPreference, writeOptionalPreference } from "@/lib/privacy-preferences";
 import type { Announcement, AnnouncementPublication } from "@/lib/contracts";
 import { api, ApiError, newId, useAction, useLoad } from "../../_lib/api";
 import { useT } from "../../_lib/i18n";
@@ -18,7 +19,7 @@ type Draft = { key: string; title: string; body: string };
 
 function loadDraft(): Draft {
   try {
-    const raw = window.localStorage.getItem(DRAFT_KEY);
+    const raw = readOptionalPreference(DRAFT_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<Draft>;
       if (typeof parsed.key === "string" && parsed.key) return { key: parsed.key, title: parsed.title ?? "", body: parsed.body ?? "" };
@@ -36,7 +37,7 @@ function PublishPanel({ onClose, onPublished }: { onClose: () => void; onPublish
   const action = useAction();
 
   useEffect(() => {
-    try { window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* storage full or unavailable */ }
+    writeOptionalPreference(DRAFT_KEY, JSON.stringify(draft));
   }, [draft]);
 
   function freshDraft() {
@@ -81,7 +82,7 @@ function PublishPanel({ onClose, onPublished }: { onClose: () => void; onPublish
           <label style={{ gridColumn: "1 / -1" }}>{t("announcements.publish.titleLabel")}<input value={draft.title} maxLength={160} placeholder={t("announcements.publish.titlePlaceholder")} disabled={busy} onChange={(e) => { setDraft((d) => ({ ...d, title: e.target.value })); setErrors((c) => ({ ...c, title: undefined })); }} /></label>
           <label style={{ gridColumn: "1 / -1" }}>{t("announcements.publish.message")}<textarea value={draft.body} maxLength={10000} rows={6} style={{ height: 150 }} placeholder={t("announcements.publish.messagePlaceholder")} disabled={busy} onChange={(e) => { setDraft((d) => ({ ...d, body: e.target.value })); setErrors((c) => ({ ...c, body: undefined })); }} /></label>
         </div>
-        <p className="upload-progress">{t("announcements.publish.counter", { count: fmt.number(draft.body.length) })}</p>
+        <p className="upload-progress">{t("announcements.publish.counter", { count: fmt.number(draft.body.length) })} <Link href="/privacy">Manage privacy choices</Link></p>
         {errors.title || errors.body ? <p className="form-error" role="alert">{[errors.title, errors.body].filter(Boolean).join(" ")}</p> : null}
         {action.error ? <p className="form-error" role="alert">{action.error}{keyReused ? <> <button type="button" className="text-button" onClick={freshDraft}>{t("announcements.publish.freshDraft")}</button></> : null}</p> : null}
         <div className="form-actions">

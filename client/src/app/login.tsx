@@ -93,6 +93,7 @@ export default function Login() {
         app.
       </Copy>
       <Link replace href={authHref("/register", returnTo)}>Create an account</Link>
+      <Link href="/privacy">Privacy policy & permissions</Link>
       <Link href="/booking">Guest event booking</Link>
       <Link href="/archive">Public announcement archive</Link>
     </Screen>

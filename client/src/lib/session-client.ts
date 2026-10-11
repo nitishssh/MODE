@@ -19,6 +19,9 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public code: string | null = null,
+    public retryAfterSeconds: number | null = null,
+    public requestId: string | null = null,
   ) {
     super(message);
   }
@@ -34,6 +37,20 @@ type Options = {
   store: TokenStore;
   fetch?: typeof fetch;
 };
+
+function retryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  const at = Date.parse(value);
+  return Number.isFinite(at) ? Math.max(0, Math.ceil((at - Date.now()) / 1000)) : null;
+}
+
+function retryDelay(attempt: number, retryAfterSeconds: number | null): Promise<void> {
+  const serverDelay = (retryAfterSeconds ?? 0) * 1000;
+  const backoff = 250 * 2 ** attempt;
+  return new Promise((resolve) => setTimeout(resolve, Math.min(2_000, Math.max(serverDelay, backoff)) + Math.random() * 250));
+}
 function sessionUser(value: unknown): SessionUser {
   const user = value as SessionUser | null;
   if (
@@ -131,42 +148,63 @@ export class SessionClient {
     headers.delete("Authorization");
     if (native && this.token)
       headers.set("Authorization", `Bearer ${this.token}`);
-    let response: Response;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    try {
-      response = await (this.options.fetch ?? fetch)(`${base}${path}`, {
-        ...init,
-        headers,
-        credentials: native ? "omit" : "same-origin",
-        cache: "no-store",
-        signal: init.signal ?? controller.signal,
-      });
-    } catch {
-      throw new Error(
-        "Could not reach MODE. Check your connection and try again.",
-      );
-    } finally {
-      clearTimeout(timeout);
+    const method = (init.method ?? "GET").toUpperCase();
+    const attempts = method === "GET" ? 3 : 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      let response: Response;
+      let timedOut = false;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 15000);
+      try {
+        response = await (this.options.fetch ?? fetch)(`${base}${path}`, {
+          ...init,
+          headers,
+          credentials: native ? "omit" : "same-origin",
+          cache: "no-store",
+          signal: init.signal ?? controller.signal,
+        });
+      } catch {
+        clearTimeout(timeout);
+        if (method === "GET" && attempt + 1 < attempts) {
+          await retryDelay(attempt, null);
+          continue;
+        }
+        const code = timedOut ? "request_timeout" : method === "GET" ? "network_error" : "unknown_outcome";
+        const message = code === "request_timeout"
+          ? "The server took too long to respond. Please try again."
+          : code === "unknown_outcome"
+            ? "The connection was lost. The operation may have completed; refresh before trying again."
+            : "Could not reach MODE. Check your connection and try again.";
+        throw new ApiError(0, message, code);
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (binary && response.ok) return response.blob();
+      const body = await response.json().catch(() => null);
+      const requestId = response.headers.get("x-request-id") ?? (typeof body?.requestId === "string" ? body.requestId : null);
+      if (!response.ok) {
+        const wait = retryAfter(response.headers.get("retry-after"));
+        if (method === "GET" && (response.status === 429 || response.status === 503) && attempt + 1 < attempts) {
+          await retryDelay(attempt, wait);
+          continue;
+        }
+        throw new ApiError(
+          response.status,
+          typeof body?.error === "string" ? body.error : "Request failed. Please try again.",
+          typeof body?.code === "string" ? body.code : null,
+          wait,
+          requestId,
+        );
+      }
+      if (response.status !== 204 && body === null && !native)
+        throw new Error(
+          "This web preview is not connected to MODE's same-origin API. Run npm run build:client, then start MODE with MODE_EXPO_WEB=1 and open the Next server URL.",
+        );
+      if (response.status !== 204 && body === null)
+        throw new ApiError(502, "The server returned an unreadable response. Please retry.", "invalid_response", null, requestId);
+      return body;
     }
-    if (binary && response.ok) return response.blob();
-    const body = await response.json().catch(() => null);
-    if (!response.ok)
-      throw new ApiError(
-        response.status,
-        typeof body?.error === "string"
-          ? body.error
-          : "Request failed. Please try again.",
-      );
-    if (response.status !== 204 && body === null && !native)
-      throw new Error(
-        "This web preview is not connected to MODE's same-origin API. Run npm run build:client, then start MODE with MODE_EXPO_WEB=1 and open the Next server URL.",
-      );
-    if (response.status !== 204 && body === null)
-      throw new Error(
-        "The server returned an unreadable response. Please retry.",
-      );
-    return body;
+    throw new ApiError(503, "The server is busy. Please try again shortly.", "server_busy");
   }
   private async expire() {
     this.generation++;
@@ -266,11 +304,12 @@ export class SessionClient {
       password,
     });
   }
-  async signUp(name: string, email: string, password: string) {
+  async signUp(name: string, email: string, password: string, privacyPolicyVersion: string) {
     return this.authenticate("/api/auth/register", {
       name: name.trim(),
       email: email.trim(),
       password,
+      privacyPolicyVersion,
     });
   }
   private async authenticate(path: string, input: Record<string, string>) {

@@ -19,6 +19,7 @@ export const pageRoutes = [
   { name: "register", path: "/register", label: "Register", permission: null, access: "public" },
   { name: "booking", path: "/booking", label: "Guest booking", permission: null, access: "public" },
   { name: "archive", path: "/archive", label: "Announcement archive", permission: null, access: "public" },
+  { name: "privacy", path: "/privacy", label: "Privacy policy", permission: null, access: "public" },
 ] as const;
 
 export type PagePath = (typeof pageRoutes)[number]["path"];

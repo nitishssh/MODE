@@ -5,8 +5,9 @@ import { CROCKFORD, allocateUniqueTokens, normalizeShortCode } from "../auth/tok
 import { MEMBERSHIP_STATE_SQL, membershipState } from "./membership-state";
 import { clubDate } from "../db/core";
 import { ROLES, hasPermission, type Permission, type Role } from "../auth/permissions";
-import { SESSION_TTL_MS, generateSessionToken, hashSessionToken } from "../auth/session";
-import type { ClubJoinCode, ClubMembership, CreateMemberInput, JoinClubResponse, LeaveClubResponse, Member } from "../contracts";
+import { SESSION_TTL_MS, hashSessionToken } from "../auth/session";
+import { signSessionJwt, verifySessionJwt } from "../auth/jwt";
+import { PRIVACY_POLICY_VERSION, type ClubJoinCode, type ClubMembership, type CreateMemberInput, type JoinClubResponse, type LeaveClubResponse, type Member, type RegisterInput } from "../contracts";
 import {
   DEFAULT_CLUB_ID,
 } from "../db/migrations";
@@ -64,7 +65,10 @@ export const passwordSchema = z
   .min(8, "Use a password with at least 8 characters.")
   .max(200, "Use a password with at most 200 characters.");
 
-export const registerSchema = createMemberSchema.extend({ password: passwordSchema }).strict();
+export const registerSchema = createMemberSchema.extend({
+  password: passwordSchema,
+  privacyPolicyVersion: z.literal(PRIVACY_POLICY_VERSION, { error: "Read and acknowledge the current privacy policy before creating an account." }),
+}).strict();
 export const loginSchema = z
   .object({ email: z.string().trim().max(254).toLowerCase(), password: z.string().min(1).max(200) })
   .strict();
@@ -236,20 +240,23 @@ export function createIdentityModule(ctx: DbContext) {
   }
 
   function issueSession(member: Member, clubId: string): IssuedSession {
-    const token = generateSessionToken();
     const createdAt = ctx.now();
-    const expiresAt = new Date(createdAt.getTime() + SESSION_TTL_MS).toISOString();
+    const sessionId = randomUUID();
+    const token = signSessionJwt(member.id, clubId, sessionId, createdAt);
+    // JWT NumericDate uses whole seconds; keep the cookie and database in sync.
+    const expiresAt = new Date(Math.floor(createdAt.getTime() / 1000) * 1000 + SESSION_TTL_MS).toISOString();
     db.prepare(
       "INSERT INTO sessions (id, club_id, member_id, token_hash, created_at, expires_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, NULL)",
-    ).run(randomUUID(), clubId, member.id, hashSessionToken(token), createdAt.toISOString(), expiresAt);
+    ).run(sessionId, clubId, member.id, hashSessionToken(token), createdAt.toISOString(), expiresAt);
     return { member, token, expiresAt };
   }
 
   /** Self-service sign-up. New accounts always start as plain members of the default club. */
-  function register(input: { name: string; email: string; password: string }): IssuedSession {
+  function register(input: RegisterInput): IssuedSession {
     const parsed = registerSchema.parse(input);
     return transaction(ctx, () => {
       const member = insertMember({ ...parsed, role: "member", clubId: DEFAULT_CLUB_ID });
+      recordAudit(null, "member.privacy_acknowledged", "member", member.id, { policyVersion: parsed.privacyPolicyVersion });
       return issueSession(member, DEFAULT_CLUB_ID);
     });
   }
@@ -368,13 +375,18 @@ export function createIdentityModule(ctx: DbContext) {
   /** Resolve a session token to an actor; expired or revoked sessions are treated as signed out. */
   function getActor(token: string | null): Actor | null {
     if (!token) return null;
+    const claims = verifySessionJwt(token, ctx.now());
+    if (!claims) return null;
     const row = db
       .prepare(
+        // The session row, not the JWT's sub/clubId, names the active membership:
+        // switching or leaving a club moves the session without reissuing the token.
         `SELECT s.id AS session_id, s.expires_at, m.id, m.club_id, m.role, p.id AS person_id, p.name, p.email
          FROM sessions s JOIN members m ON m.id = s.member_id JOIN people p ON p.id = m.person_id
-         WHERE s.token_hash = ? AND s.revoked_at IS NULL AND m.left_at IS NULL`,
+         WHERE s.token_hash = ? AND s.id = ? AND s.revoked_at IS NULL AND m.left_at IS NULL
+           AND m.club_id = s.club_id`,
       )
-      .get(hashSessionToken(token)) as Row | undefined;
+      .get(hashSessionToken(token), claims.jti) as Row | undefined;
     if (!row || text(row.expires_at) <= ctx.now().toISOString()) return null;
     return {
       sessionId: text(row.session_id),

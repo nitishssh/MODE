@@ -25,7 +25,7 @@ Run `npm run build` again after code changes before repeating the foundation che
 
 ## Short browser demo
 
-1. Run `npm run dev` and open `http://127.0.0.1:3000`.
+1. Run `npm run auth:setup` once to configure the JWT signing key, then `npm run dev` and open `http://127.0.0.1:3000`.
 2. Sign in as `organizer@example.com` with `MODE_DEMO_PASSWORD` (development default: `mode-demo-2026`).
 3. Open Members and create a fictional member with a unique email. Submit that email again and confirm the duplicate error. Invalid inputs must not add a member.
 4. Stop and restart `npm run dev`, sign in if needed, and confirm the member remains.

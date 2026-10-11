@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { access, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -18,6 +18,7 @@ await access(join(root, ".next", "BUILD_ID")).catch(() => {
 });
 const directory = await mkdtemp(join(tmpdir(), "mode-foundation-"));
 const password = randomBytes(24).toString("hex");
+const jwtSecret = randomBytes(32).toString("hex");
 const cancellation = new AbortController();
 const cancel = () => cancellation.abort();
 process.once("SIGINT", cancel);
@@ -26,6 +27,7 @@ let server;
 let closed;
 let output = "";
 let base;
+let demoNow = "2026-10-10T08:00:00.000Z";
 
 async function stopServer() {
   if (!server) return;
@@ -50,7 +52,7 @@ async function startServer() {
       ...process.env, NODE_ENV: "production", MODE_EXPO_WEB: "0",
       DATABASE_URL: "", MODE_TEST_DATABASE_URL: "",
       SQLITE_PATH: join(directory, "mode.sqlite"), MODE_RECEIPTS_DIR: join(directory, "receipts"),
-      MODE_DEMO_PASSWORD: password, MODE_DEMO_NOW: "2026-10-10T08:00:00.000Z",
+      MODE_DEMO_PASSWORD: password, MODE_JWT_SECRET: jwtSecret, MODE_DEMO_NOW: demoNow,
     },
   });
   let spawnError;
@@ -118,6 +120,7 @@ try {
   const volunteer = authHeaders(volunteerSession);
   const studentSession = await jsonRequest("/api/auth/register", { "Content-Type": "application/json" }, {
     name: "Restart Student", email: "restart-student@example.com", password,
+    privacyPolicyVersion: (await jsonRequest("/api/privacy-policy")).version,
   }, 201);
   const student = authHeaders(studentSession);
   assert.equal(studentSession.user.role, "member");
@@ -127,11 +130,14 @@ try {
   const dues = await jsonRequest("/api/membership/dues", treasurer, duesBody, 201);
   const { event } = await jsonRequest("/api/events", headers, {
     title: "Synthetic restart gala", venue: "Test hall", startsAt: "2026-11-01T13:30:00Z",
-    capacity: 2, memberPricePaise: 5000, guestPricePaise: 10000,
+    capacity: 2, memberPricePaise: 5000, guestPricePaise: 10000, fundraiserGoalPaise: 200000,
   }, 201);
+  assert.equal(event.fundraiserGoalPaise, 200000);
   const { ticket } = await jsonRequest(`/api/events/${event.id}/tickets`, student, {}, 201);
   const ticketPath = `/api/tickets/${ticket.id}/confirm`;
   const ticketBody = { reference: "RESTART-TICKET" };
+  const reusedDues = await jsonRequest(ticketPath, treasurer, { reference: duesBody.reference }, 409);
+  assert.equal(reusedDues.code, "payment_reference_reused");
   await jsonRequest(ticketPath, treasurer, ticketBody, 201);
   const admission = await jsonRequest(`/api/events/${event.id}/scan`, volunteer, { credential: ticket.shortCode });
   assert.equal(admission.outcome, "admitted");
@@ -141,7 +147,11 @@ try {
   const { order } = await jsonRequest("/api/orders", student, { variantId: product.variants[0].id }, 201);
   const orderPath = `/api/orders/${order.id}/confirm`;
   const orderBody = { reference: "RESTART-ORDER" };
+  const reusedTicket = await jsonRequest(orderPath, treasurer, ticketBody, 409);
+  assert.equal(reusedTicket.code, "payment_reference_reused");
   await jsonRequest(orderPath, treasurer, orderBody, 201);
+  const reusedOrder = await jsonRequest("/api/membership/dues", treasurer, { ...duesBody, reference: orderBody.reference }, 409);
+  assert.equal(reusedOrder.code, "payment_reference_reused");
   await jsonRequest(`/api/orders/${order.id}/fulfil`, headers, {});
   const task = await jsonRequest("/api/tasks", headers, {
     title: "Synthetic restart door duty", assigneeId: volunteerSession.user.id, eventId: event.id,
@@ -153,9 +163,21 @@ try {
   const receipt = await (await request("/api/receipts", 201, {
     method: "POST", headers: { Authorization: student.Authorization }, body: form,
   })).json();
-  const expense = await jsonRequest("/api/expenses", student, {
+  const expenseSubmission = {
+    submissionId: randomUUID(),
     amountPaise: 12345, purpose: "Synthetic restart supplies", receiptId: receipt.id, eventId: event.id,
-  }, 201);
+  };
+  const expense = await jsonRequest("/api/expenses", student, expenseSubmission, 201);
+  // Repeat exactly what a client retains after losing the first response.
+  const recoveredExpense = await jsonRequest("/api/expenses", student, expenseSubmission, 201);
+  assert.equal(recoveredExpense.id, expense.id);
+  assert.equal((await jsonRequest("/api/expenses", student)).filter(row => row.id === expense.id).length, 1);
+  await jsonRequest("/api/expenses", student, { ...expenseSubmission, purpose: "Changed retry payload" }, 409);
+  const conflictingSubmissionId = randomUUID();
+  await jsonRequest("/api/expenses", student, { ...expenseSubmission, submissionId: conflictingSubmissionId }, 409);
+  const claimsAfterConflict = await jsonRequest("/api/expenses", student);
+  assert.equal(claimsAfterConflict.find(row => row.id === expenseSubmission.submissionId)?.purpose, expenseSubmission.purpose);
+  assert.equal(claimsAfterConflict.some(row => row.id === conflictingSubmissionId), false);
   await jsonRequest(`/api/expenses/${expense.id}/approve`, treasurer, {});
   const expensePath = `/api/expenses/${expense.id}/pay`;
   const expenseBody = { paymentReference: "RESTART-EXPENSE" };
@@ -238,6 +260,53 @@ try {
   assert.deepEqual(await jsonRequest("/api/ledger/entries", treasurer), settledEntries);
   for (const [id, source] of sources) assert.deepEqual(await jsonRequest(`/api/ledger/entries/${id}/source`, treasurer), source);
   console.log("PASS: money sources, private receipt bytes, tasks and admission survive restart; payment retries never duplicate ledger entries");
+
+  const editEvent = async (body, actorHeaders = headers, expected = 200) =>
+    (await request(`/api/events/${event.id}`, expected, { method: "PATCH", headers: actorHeaders, body: JSON.stringify(body) })).json();
+  const updatedEvent = await editEvent({ fundraiserGoalPaise: 400000 });
+  assert.equal(updatedEvent.event.fundraiserGoalPaise, 400000);
+  await editEvent({ fundraiserGoalPaise: -1 }, headers, 400);
+  await editEvent({ fundraiserGoalPaise: 1.5 }, headers, 400);
+  await editEvent({ fundraiserGoalPaise: Number.MAX_SAFE_INTEGER + 1 }, headers, 400);
+  await editEvent({ fundraiserGoalPaise: 1 }, student, 403);
+  await editEvent({ fundraiserGoalPaise: 0 });
+  const noGoal = await jsonRequest(`/api/events/${event.id}/report`, headers);
+  assert.equal(noGoal.fundraiser.goalPaise, 0);
+  assert.equal(noGoal.fundraiser.onTrack, false);
+  const { event: freeEvent } = await jsonRequest("/api/events", headers, {
+    title: "Verified free guest meetup", venue: "Test hall", startsAt: "2026-11-01T13:30:00Z",
+    capacity: 2, memberPricePaise: 0, guestPricePaise: 0,
+  }, 201);
+  assert.equal(freeEvent.fundraiserGoalPaise, 0, "Existing create callers keep a zero default");
+  const freeGuestPath = `/api/events/${freeEvent.id}/guest-tickets`;
+  const guestDetails = { name: "Verified Guest", email: "jury-guest@example.com" };
+  for (const actorHeaders of [{ "Content-Type": "application/json" }, student]) {
+    const rejected = await jsonRequest(freeGuestPath, actorHeaders, guestDetails, 409);
+    assert.equal(rejected.code, "guest_verification_required");
+  }
+  const { ticket: freeGuest } = await jsonRequest(freeGuestPath, headers, guestDetails, 201);
+  assert.equal(freeGuest.status, "paid");
+  await jsonRequest(`/api/events/${freeEvent.id}/tickets`, student, {}, 201);
+  await jsonRequest(freeGuestPath, headers, { name: "Second Guest", email: "jury-guest-2@example.com" }, 409);
+  assert.deepEqual(await jsonRequest("/api/ledger/summary", treasurer), settledLedger, "Free verified tickets add no income");
+  console.log("PASS: cross-module payment-reference conflicts, retained-receipt claim recovery, editable fundraiser targets and verified free guests");
+
+  const lapsedEvents = [];
+  for (const suffix of ["detail", "list"]) {
+    const { event: pendingEvent } = await jsonRequest("/api/events", headers, {
+      title: `Lapsed hold ${suffix}`, venue: "Test hall", startsAt: "2026-11-01T13:30:00Z",
+      capacity: 1, memberPricePaise: 1000, guestPricePaise: 2000,
+    }, 201);
+    await jsonRequest(`/api/events/${pendingEvent.id}/tickets`, student, {}, 201);
+    assert.equal((await jsonRequest(`/api/events/${pendingEvent.id}`, headers)).event.available, 0, "Live holds still occupy seats");
+    lapsedEvents.push(pendingEvent.id);
+  }
+  await stopServer();
+  demoNow = "2026-10-10T08:31:00.000Z";
+  await startServer();
+  assert.equal((await jsonRequest(`/api/events/${lapsedEvents[0]}`, headers)).event.available, 1);
+  assert.equal((await jsonRequest("/api/events", headers)).events.find(row => row.id === lapsedEvents[1]).available, 1);
+  console.log("PASS: detail and list reads release expired holds while preserving active reservations");
 
 } catch (error) {
   console.error("Foundation check failed:", error.message);

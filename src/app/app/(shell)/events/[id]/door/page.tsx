@@ -9,7 +9,7 @@ import type { EventDetails, ScanOutcome, ScanResult } from "@/lib/contracts";
 import { api, useLoad } from "../../../../_lib/api";
 import { useSession } from "../../../../_lib/session";
 import { useT } from "../../../../_lib/i18n";
-import { Alert, Button, Card, EmptyState, ErrorState, LinkButton, PageHead, Skeleton } from "../../../../_components/ui";
+import { Alert, Button, Card, EmptyState, ErrorState, LinkButton, Modal, PageHead, Skeleton } from "../../../../_components/ui";
 import { Icon } from "../../../../_components/icons";
 import { credentialFromScan } from "../../../../_components/qr";
 
@@ -50,6 +50,7 @@ function DoorScanner() {
   const [error, setError] = useState("");
   const [log, setLog] = useState<LogEntry[]>([]);
   const [camera, setCamera] = useState(false);
+  const [cameraPrompt, setCameraPrompt] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -90,6 +91,7 @@ function DoorScanner() {
     if (!trimmed || submitting.current) return;
     submitting.current = true;
     setBusy(true);
+    setResult(null);
     setError("");
     try {
       const outcome = await api.post<ScanResult>(`/api/events/${encodeURIComponent(id)}/scan`, { credential: credentialFromScan(trimmed) });
@@ -118,6 +120,11 @@ function DoorScanner() {
   }
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    const stopWhenHidden = () => { if (document.hidden) setCamera(false); };
+    document.addEventListener("visibilitychange", stopWhenHidden);
+    return () => document.removeEventListener("visibilitychange", stopWhenHidden);
+  }, []);
 
   function toggleCamera() {
     if (camera) { setCamera(false); return; }
@@ -198,8 +205,13 @@ function DoorScanner() {
         eyebrow={<><Link href={`/app/events/${id}`}>{t("events.door.eventEyebrow")}</Link> <span>/</span> {t("events.door.eyebrow")}</>}
         title={e ? e.title : t("events.door.title")}
         description={e ? t("events.door.description", { when: fmt.dateTime(e.startsAt), venue: e.venue }) : undefined}
-        actions={<Button variant={camera ? "default" : "primary"} onClick={toggleCamera}><Icon name="scan" size={18} />{camera ? t("events.door.stopCamera") : t("events.door.useCamera")}</Button>}
+        actions={<Button variant={camera ? "default" : "primary"} onClick={() => camera ? toggleCamera() : setCameraPrompt(true)}><Icon name="scan" size={18} />{camera ? t("events.door.stopCamera") : t("events.door.useCamera")}</Button>}
       />
+      <Modal open={cameraPrompt} title="Allow camera for QR scanning?" onClose={() => setCameraPrompt(false)} description="Your camera reads member and ticket QR codes on this device. Only the decoded code is sent to MODE for check-in. Video and audio are not uploaded or recorded.">
+        <p>You can decline and type the short code instead. Your browser controls camera permission; you can revoke it in site settings.</p>
+        <p><Link href="/privacy" target="_blank" rel="noopener">Read the privacy policy (new tab)</Link></p>
+        <div className="form-actions"><Button onClick={() => setCameraPrompt(false)}>Not now — type a code</Button><Button variant="primary" onClick={() => { setCameraPrompt(false); toggleCamera(); }}>Continue to camera</Button></div>
+      </Modal>
       {event.error ? <ErrorState error={event.error} onRetry={event.reload} title={t("events.door.eventLoadFailed")} /> : null}
       {cameraError ? <Alert tone="warning" onDismiss={() => setCameraError("")}>{cameraError}</Alert> : null}
 
