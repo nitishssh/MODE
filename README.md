@@ -53,7 +53,7 @@ Open http://127.0.0.1:3000. The first request creates `.data/mode.sqlite`, appli
 
 ```sh
 npm run build
-MODE_DEMO_PASSWORD=choose-a-password npm start
+MODE_DEMO_PASSWORD="<your-password>" npm start
 ```
 
 Production refuses to seed a new database with the public demo password, so set `MODE_DEMO_PASSWORD` first (PowerShell: `$env:MODE_DEMO_PASSWORD="…"`).
@@ -63,7 +63,7 @@ Production refuses to seed a new database with the public demo password, so set 
 Each release publishes an image to GitHub Packages:
 
 ```sh
-docker run -p 3000:3000 -e MODE_DEMO_PASSWORD=choose-a-password -e MODE_JWT_SECRET=<64-hex-chars> -v mode-data:/data ghcr.io/nitishssh/mode:latest
+docker run -p 3000:3000 -e MODE_DEMO_PASSWORD="<your-password>" -e MODE_JWT_SECRET=<64-hex-chars> -v mode-data:/data ghcr.io/nitishssh/mode:latest
 ```
 
 Generate the key with `openssl rand -hex 32`. Or build locally with `docker compose up --build`. See [docs/LOCAL-CONTAINER.md](docs/LOCAL-CONTAINER.md).
