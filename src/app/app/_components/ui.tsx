@@ -404,12 +404,12 @@ export function Table({ head, children, empty }: { head: ReactNode; children: Re
   );
 }
 
-/** Avatar + name + subtext cell, like the member directory. */
-export function Person({ name, sub, small }: { name: string; sub?: ReactNode; small?: boolean }) {
+/** Avatar + name + subtext cell, like the member directory. `avatar` is an image URL (the role picture); initials otherwise. */
+export function Person({ name, sub, small, avatar }: { name: string; sub?: ReactNode; small?: boolean; avatar?: string }) {
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
   return (
     <div className="person">
-      <span className={`avatar ${small ? "small" : ""}`.trim()}>{initials}</span>
+      <span className={`avatar ${small ? "small" : ""} ${avatar ? "mx-avatar" : ""}`.trim()}>{avatar ? <img src={avatar} alt="" width={small ? 24 : 32} height={small ? 24 : 32} /> : initials}</span>
       <span><strong>{name}</strong>{sub ? <span className="subtext">{sub}</span> : null}</span>
     </div>
   );

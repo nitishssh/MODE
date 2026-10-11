@@ -9,6 +9,7 @@ import { useSession } from "../../_lib/session";
 import { useT } from "../../_lib/i18n";
 import { Alert, Button, Card, EmptyState, ErrorState, FormPanel, LinkButton, PageHead, Person, PreviewNote, Skeleton, Stat, StatusBadge, TextLink } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
+import { roleAvatar } from "@/lib/avatars";
 
 type MembershipFilter = "all" | Member["membership"];
 type RoleFilter = "all" | Role;
@@ -139,7 +140,7 @@ function MembersView() {
                 <tbody>
                   {filtered.map((m) => (
                     <tr key={m.id} className="mx-row-link" onClick={() => router.push(`/app/members/${m.id}`)}>
-                      <td><Link href={`/app/members/${m.id}`} onClick={(e) => e.stopPropagation()}><Person name={m.name} sub={m.email} /></Link></td>
+                      <td><Link href={`/app/members/${m.id}`} onClick={(e) => e.stopPropagation()}><Person name={m.name} sub={m.email} avatar={roleAvatar(m.role)} /></Link></td>
                       <td data-label={t("col.role")}><StatusBadge status={m.role} label={t(`role.${m.role}`)} /></td>
                       <td data-label={t("col.joined")}>{fmt.date(m.joinedAt)}</td>
                       <td data-label={t("members.col.dues")}>

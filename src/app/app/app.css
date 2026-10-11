@@ -117,6 +117,31 @@
 .mode-dark .mx-list-item { border-color: #3c3836; }
 .mode-dark .mx-skel { background: linear-gradient(90deg, #302b27 0%, #3e3833 50%, #302b27 100%); background-size: 200% 100%; }
 
+/* Club switcher dropdown in sidebar profile. */
+.club-switcher { position: relative; display: flex; flex-direction: column; margin-top: 8px; }
+.club-switcher-button { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); font-size: 11px; font-weight: 500; cursor: pointer; text-align: left; }
+.club-switcher-button:hover { background: var(--paper-deep); }
+.club-switcher-button .club-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.club-switcher-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 1000; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); overflow: hidden; }
+.club-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 10px 12px; border: none; background: transparent; color: var(--ink); font-size: 11px; cursor: pointer; text-align: left; border-bottom: 1px solid var(--line); }
+.club-option:last-child { border-bottom: none; }
+.club-option:hover:not(:disabled) { background: var(--paper-deep); }
+.club-option:disabled { opacity: 0.6; cursor: not-allowed; }
+.club-option.active { background: var(--paper-deep); font-weight: 600; }
+.club-option-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.club-option-role { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.active-indicator { color: #2e7d5b; font-weight: 700; }
+.error-message { padding: 8px 12px; font-size: 10px; color: #b57b5f; background: #fbede6; border-bottom: 1px solid var(--line); }
+
+/* Dark theme for club switcher. */
+.mode-dark .club-switcher-button { background: #302b27; border-color: #4a4541; }
+.mode-dark .club-switcher-button:hover { background: #3e3833; }
+.mode-dark .club-switcher-menu { background: #292524; border-color: #4a4541; }
+.mode-dark .club-option { border-bottom-color: #3c3836; }
+.mode-dark .club-option:hover:not(:disabled) { background: #3e3833; }
+.mode-dark .club-option.active { background: #3e3833; }
+.mode-dark .error-message { background: #4a3a35; color: #f4a890; border-bottom-color: #4a4541; }
+
 /* ── Sign-in and registration: the product's own paper, type and terracotta ── */
 .mx-login { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(420px, .9fr); background: var(--paper); color: var(--ink); font-family: var(--font); }
 .mx-login-story { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: clamp(32px, 5vw, 64px); background: #f5f0e8; border-right: 1px solid var(--line); background-image: radial-gradient(circle, #b8785d20 1px, transparent 1.25px); background-size: 16px 16px; }
@@ -135,6 +160,17 @@
 .mx-login-sheet li strong { font-weight: 600; }
 .mx-login-sheet li small { margin-left: auto; color: #8b8178; font-size: 11px; }
 .mx-login-foot { font-size: 11px; color: #8b8178; margin-top: 28px; }
+/* The member pass on its lanyard, hanging over the story panel; the compact sheet sits beneath it. */
+.mx-login-lanyard { position: absolute; top: 0; right: 0; width: min(46%, 440px); height: min(78vh, 680px); pointer-events: auto; z-index: 1; }
+.mx-login-story > div:first-of-type { max-width: 54%; }
+.mx-login-story > div:first-of-type h1 { font-size: clamp(34px, 3.4vw, 50px); max-width: 14ch; }
+.mx-login-story > div:first-of-type > p { max-width: 36ch; }
+.mx-login-lanyard .lanyard { width: 100%; height: 100%; }
+.mx-login-lanyard-fallback { width: 100%; height: 100%; }
+.mx-login-sheet-compact { margin-top: clamp(18px, 3vh, 32px); width: min(100%, 360px); transform: rotate(-1.2deg); }
+.mx-login-story h1 { position: relative; z-index: 2; }
+@media (max-width: 1240px) { .mx-login-lanyard { width: 46%; height: 60vh; } }
+@media (max-width: 900px) { .mx-login-lanyard { position: relative; width: 100%; height: 360px; margin-top: 16px; } .mx-login-sheet-compact { display: none; } .mx-login-story > div:first-of-type { max-width: none; } .mx-login-story > div:first-of-type h1 { max-width: none; } }
 .mx-login-form { display: grid; place-items: center; padding: clamp(28px, 5vw, 64px) clamp(22px, 4vw, 56px); }
 .mx-login-card { width: min(100%, 430px); }
 .mx-login-card h2 { font-family: "Crimson Pro", Georgia, serif; font-size: 36px; font-weight: 620; letter-spacing: -.9px; line-height: 1.1; }

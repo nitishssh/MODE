@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 256" width="2048" height="256">
+  <rect width="2048" height="256" fill="#24201e"/>
+  <rect x="0" y="0" width="2048" height="14" fill="#cc785c"/>
+  <rect x="0" y="242" width="2048" height="14" fill="#cc785c"/>
+  <g font-family="Crimson Pro, Georgia, serif" font-size="118" font-weight="700" fill="#fdfaf5" letter-spacing="-3">
+    <text x="60" y="170">MODE<tspan fill="#cc785c">.</tspan></text>
+    <text x="572" y="170">MODE<tspan fill="#f0a500">.</tspan></text>
+    <text x="1084" y="170">MODE<tspan fill="#cc785c">.</tspan></text>
+    <text x="1596" y="170">MODE<tspan fill="#f0a500">.</tspan></text>
+  </g>
+  <g fill="#f0a500">
+    <circle cx="430" cy="128" r="12"/><circle cx="942" cy="128" r="12"/><circle cx="1454" cy="128" r="12"/><circle cx="1966" cy="128" r="12"/>
+  </g>
+</svg>

@@ -11,6 +11,7 @@ import { useT } from "../_lib/i18n";
 import { useSession } from "../_lib/session";
 import { Icon } from "../_components/icons";
 import { useToast } from "../_components/toast";
+import { roleAvatar } from "@/lib/avatars";
 import { Button, Card, EmptyState, ErrorState, PageHead, Person, PreviewNote, Stat, TextLink } from "../_components/ui";
 
 /* Azman's overview, section for section: metrics, calendar panel, team to-dos
@@ -68,6 +69,12 @@ export default function OverviewPage() {
   const openTasks = tasks.filter((task) => task.status !== "done").length;
   const myOpenTasks = tasks.filter((task) => task.status !== "done" && task.assigneeId === user.id).length;
   const unread = inbox.data?.notifications.filter((item) => !item.readAt).length ?? 0;
+  const calendarEvents = data ? [...data.events].sort((a, b) => {
+    const now = Date.now();
+    const aPast = new Date(a.startsAt).getTime() < now, bPast = new Date(b.startsAt).getTime() < now;
+    if (aPast !== bPast) return aPast ? 1 : -1;
+    return aPast ? b.startsAt.localeCompare(a.startsAt) : a.startsAt.localeCompare(b.startsAt);
+  }).slice(0, 4) : [];
   const nextEvent = data ? [...data.events].filter((event) => new Date(event.startsAt).getTime() >= Date.now()).sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? data.events[0] : undefined;
   const doneTasks = tasks.filter((task) => task.status === "done").length;
   const assigneeLabel = (task: Task) => (saving.includes(task.id) ? t("state.saving") : task.assignee || t("state.unassigned"));
@@ -130,7 +137,7 @@ export default function OverviewPage() {
               </div>
               {data.events.length ? (
                 <div className="event-list">
-                  {data.events.slice(0, 4).map((event, index) => (
+                  {calendarEvents.map((event, index) => (
                     <Link key={event.id} href={`/app/events/${event.id}`} className="event-row">
                       <div className={`date-tile ${index % 2 ? "purple" : "coral"}`}><span>{fmt.month(event.startsAt).toUpperCase()}</span><strong>{fmt.day(event.startsAt)}</strong></div>
                       <div className="event-info">
@@ -205,7 +212,7 @@ export default function OverviewPage() {
                     <tbody>
                       {data.members.slice(0, 6).map((member) => (
                         <tr key={member.id} className="mx-row-link" onClick={() => router.push(`/app/members/${member.id}`)}>
-                          <td><Link href={`/app/members/${member.id}`} onClick={(e) => e.stopPropagation()}><Person name={member.name} sub={member.email} /></Link></td>
+                          <td><Link href={`/app/members/${member.id}`} onClick={(e) => e.stopPropagation()}><Person name={member.name} sub={member.email} avatar={roleAvatar(member.role)} /></Link></td>
                           <td>{fmt.date(member.joinedAt)}</td>
                           <td><span className={`badge ${member.duesStatus === "paid" ? "green" : "amber"}`}>{member.duesStatus === "paid" ? t("status.paid") : t("status.unpaid")}</span></td>
                           <td>{member.expiresOn ? fmt.date(member.expiresOn) : t("state.notSet")}</td>
