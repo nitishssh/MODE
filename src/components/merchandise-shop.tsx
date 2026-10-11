@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { MerchOrder, ProductDetails, ProductVariant, SessionUser } from "@/lib/contracts";
 import PolaroidLineCarousel, { type LandPalette } from "@/components/ui/polaroid-line-carousel";
+import { merchImage } from "@/lib/merch-art";
 
 type ProductResponse = { products: ProductDetails[] };
 type OrderResponse = { orders: MerchOrder[] };
@@ -78,6 +79,7 @@ export default function MerchandiseShop({ user }: { user: SessionUser }) {
 
   const slides = useMemo(() => visibleProducts.map((item, index) => ({
     title: item.name,
+    image: merchImage(item.name),
     caption: `${money(item.memberPricePaise ?? item.pricePaise)} · ${item.variants.reduce((sum, variant) => sum + variant.stock, 0)} available`,
     alt: `${item.name} from the MODE club collection`,
     palette: palettes[index % palettes.length],

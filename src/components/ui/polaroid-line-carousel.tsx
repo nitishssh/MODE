@@ -155,13 +155,17 @@ const DEFAULT_SLIDES: Slide[] = [
   { title: "Field Notes", caption: "The collection, arranged on the line.", palette: "alpine", seed: 8 },
 ];
 
-function useSlideImages(slides: Slide[]): string[] {
+/** Each slide's own image, or a painted landscape; an image that fails to load falls back to the painting. */
+function useSlideImages(slides: Slide[]): [string[], (i: number) => void] {
   const key = slides.map((s) => s.image || `${s.palette || "dawn"}:${s.seed ?? 1}`).join("|");
   const [painted, setPainted] = React.useState(() => slides.map(() => ""));
+  const [failed, setFailed] = React.useState<Record<number, boolean>>({});
   React.useEffect(() => {
-    setPainted(slides.map((s, i) => (s.image ? "" : paintLandscape(s.seed ?? i + 1, s.palette || "dawn"))));
+    setFailed({});
+    setPainted(slides.map((s, i) => paintLandscape(s.seed ?? i + 1, s.palette || "dawn")));
   }, [key, slides]);
-  return slides.map((s, i) => s.image || painted[i] || "");
+  const fail = React.useCallback((i: number) => setFailed((f) => (f[i] ? f : { ...f, [i]: true })), []);
+  return [slides.map((s, i) => (s.image && !failed[i] ? s.image : painted[i] || "")), fail];
 }
 
 const PL_CSS = [
@@ -208,7 +212,7 @@ export default function PolaroidLineCarousel({
   ariaLabel = "Image carousel",
 }: PolaroidLineCarouselProps) {
   const n = slides.length;
-  const srcs = useSlideImages(slides);
+  const [srcs, failImage] = useSlideImages(slides);
   const [active, setActive] = React.useState(0);
   const [dragging, setDragging] = React.useState(false);
   const [size, setSize] = React.useState({ w: 1200, h: 800, cw: cardWidth });
@@ -353,7 +357,7 @@ export default function PolaroidLineCarousel({
       <svg className="pl-string" aria-hidden="true"><path ref={pathRef} fill="none" stroke={string} strokeWidth="1.5" strokeLinecap="round" /></svg>
       {slides.map((slide, i) => (
         <div key={`${slide.title}-${i}`} className="pl-card" data-i={i} data-on={i === active ? "1" : "0"} ref={(el) => { cards.current[i] = el; }} aria-hidden={i === active ? undefined : true}>
-          <div className="pl-print"><div className="pl-shot">{srcs[i] ? <img src={srcs[i]} alt={slide.alt || slide.title || ""} draggable={false} /> : null}</div><div className="pl-note">{slide.title || ""}</div></div>
+          <div className="pl-print"><div className="pl-shot">{srcs[i] ? <img src={srcs[i]} alt={slide.alt || slide.title || ""} draggable={false} onError={() => failImage(i)} /> : null}</div><div className="pl-note">{slide.title || ""}</div></div>
           <div className="pl-peg" />
         </div>
       ))}
