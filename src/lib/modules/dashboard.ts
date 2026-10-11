@@ -19,7 +19,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule, 
     const canSeeMembers = actor !== null && hasPermission(actor.role, "members:read");
     const canSeeFinance = actor !== null && hasPermission(actor.role, "ledger:read");
     const members = identity.getMembers(clubId);
-    const club = db.prepare("SELECT name, description FROM clubs WHERE id = ?").get(clubId) as Row | undefined;
+    const club = identity.getClub(clubId);
 
     const events: Event[] = (db.prepare("SELECT * FROM events WHERE club_id = ? ORDER BY starts_at, id").all(clubId) as Row[]).map((row) => ({
       id: text(row.id),
@@ -69,8 +69,9 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule, 
 
     return {
       club: {
-        name: club ? text(club.name) : "Sample Student Club",
-        description: club ? text(club.description) : "",
+        name: club ? club.name : "Sample Student Club",
+        description: club ? club.description : "",
+        demo: club ? club.demo : true,
       },
       metrics: {
         members: members.length,

@@ -46,6 +46,9 @@ Copy `.env.example` to `.env.local` only when you need overrides and that file d
 |---|---|
 | `SQLITE_PATH` | `.data/mode.sqlite`, resolved from the process directory. The adjacent `receipts` directory stores attachments. A new path creates a separate dataset. |
 | `MODE_DEMO_PASSWORD` | Synthetic seed password. Development fallback is `mode-demo-2026`; production seeding requires a nonempty configured value. Choose a private value before a shared demo. Existing hashes do not rotate when this changes. |
+| `MODE_SEED` | `demo` seeds the fictional sample club when a database is first created; `none` creates only the club row (named from `MODE_CLUB_NAME` / `MODE_CLUB_DESCRIPTION`) with no members, so `MODE_DEMO_PASSWORD` is not needed. `npm run club:init` sets this for you. |
+| `MODE_CLUB_NAME`, `MODE_CLUB_DESCRIPTION` | Club record written when `MODE_SEED=none` creates a database. `npm run club:init` can also rename an existing club. |
+| `MODE_ADMIN_PASSWORD` | Read by `npm run club:init` when `--admin-password` is omitted, so the password never appears in shell history. |
 | `MODE_DEMO_NOW` | Optional parseable timestamp for the application clock. Invalid values fall back to the real clock. Useful for expiry/deadline demonstrations. |
 | `MODE_CORS_ORIGINS` | Optional comma-separated exact HTTP(S) browser origins, applied only in development. No wildcard or credentialed cross-origin cookie support. |
 | `EXPO_PUBLIC_API_URL` | Reserved for a future Expo client. `resolveExpoApiUrl()` defaults to `http://127.0.0.1:3000`; browser MODE uses relative URLs instead. This is public configuration. |

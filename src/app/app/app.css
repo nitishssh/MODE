@@ -1,0 +1,118 @@
+/*
+ * /app workspace additions. The look comes entirely from Azman's shared
+ * stylesheet (globals.css, login-page.css, shiny-button.css); this file only
+ * adds a few layout helpers and the handful of widgets the legacy workspace
+ * never had (modal, QR pass, door result, countdown). Everything uses the
+ * same paper/ink/terracotta tokens so it reads as the same product.
+ */
+
+/* ── Layout helpers (no visual identity of their own) ──────────────── */
+.mx-grid { display: grid; gap: 23px; }
+.mx-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mx-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mx-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.mx-grid-main { grid-template-columns: 1.65fr 1fr; }
+.mx-grid-side { grid-template-columns: 1fr 1.65fr; }
+@media (max-width: 1200px) { .mx-grid { gap: 17px; } .mx-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 960px) { .mx-grid-2, .mx-grid-3, .mx-grid-4, .mx-grid-main, .mx-grid-side { grid-template-columns: 1fr; } }
+.mx-stack { display: flex; flex-direction: column; gap: 23px; }
+.mx-stack-sm { display: flex; flex-direction: column; gap: 10px; }
+.mx-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mx-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.mx-right { margin-left: auto; }
+.mx-mt { margin-top: 20px; }
+.mx-mb { margin-bottom: 23px; }
+.mx-muted { color: var(--muted); }
+.mx-small { font-size: 11px; }
+.mx-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; letter-spacing: .4px; }
+.mx-strong { font-weight: 600; color: var(--ink); }
+.mx-num { font-variant-numeric: tabular-nums; }
+.mx-link { color: #a95638; font-weight: 600; }
+.mx-link:hover { text-decoration: underline; }
+.mx-prose { white-space: pre-wrap; line-height: 1.8; font-size: 12px; color: #7b8b90; max-width: 800px; }
+.mx-eyebrow { font-size: 9px; font-weight: 700; letter-spacing: 1.7px; text-transform: uppercase; color: #8b8178; }
+.mx-h2 { font-family: "Crimson Pro", Georgia, serif; font-size: 25px; font-weight: 600; letter-spacing: -.4px; }
+.mx-h3 { font-size: 13px; font-weight: 600; color: var(--ink); }
+.mx-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Panel body: the legacy panel has no padding of its own (tables bleed to the edge). */
+.panel-body { padding: 0 25px 25px; }
+.panel-body.flush { padding: 0; }
+.panel > .panel-body:first-child { padding-top: 25px; }
+@media (max-width: 1200px) { .panel-body { padding: 0 20px 20px; } .panel > .panel-body:first-child { padding-top: 20px; } }
+
+/* List rows inside a panel, matching .event-row / .task-row rhythm. */
+.mx-list { padding: 0 25px; }
+.mx-list-item { display: flex; align-items: center; gap: 14px; padding: 16px 0; border-bottom: 1px solid #ebe5dd; color: inherit; }
+.mx-list-item:last-child { border-bottom: 0; }
+.mx-list-item .mx-grow { flex: 1; min-width: 0; }
+.mx-list-item strong { display: block; font-size: 13px; font-weight: 600; color: var(--ink); }
+.mx-list-item small { display: block; font-size: 10px; color: #817870; margin-top: 5px; }
+.mx-kv { display: grid; grid-template-columns: max-content 1fr; gap: 9px 20px; font-size: 12px; }
+.mx-kv dt { color: #817870; }
+.mx-kv dd { margin: 0; color: var(--ink); font-weight: 500; }
+
+/* Buttons the legacy sheet does not define: a quiet secondary pill. */
+.button.secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); box-shadow: none; }
+.button.secondary:hover:not(:disabled) { background: var(--paper-deep); transform: none; }
+.button.danger { background: #fbede6; color: #b57b5f; border: 1px solid #ead7ce; box-shadow: none; }
+.button.danger:hover:not(:disabled) { background: #f4e2d9; transform: none; }
+.button.block { width: 100%; }
+.button.sm { min-height: 32px; padding: 6px 12px; font-size: 10px; }
+
+/* Generic field stack reusing the task-form-grid input look. */
+.mx-form { display: flex; flex-direction: column; gap: 14px; }
+.mx-form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.mx-field { display: flex; flex-direction: column; gap: 8px; font-size: 11px; font-weight: 600; color: #687c80; }
+.mx-field > label { font-size: 11px; font-weight: 600; color: #687c80; }
+.mx-field .mx-hint { font-size: 10px; font-weight: 400; color: #8c9a9d; }
+.mx-field .mx-error { font-size: 11px; font-weight: 500; color: #ac5140; }
+.mx-input, .mx-select, .mx-textarea { width: 100%; height: 38px; border: 1px solid #dfe5df; border-radius: 6px; padding: 8px 12px; font-size: 11px; color: #29404a; background: #fcfdfa; outline: none; font-weight: 400; }
+.mx-textarea { height: auto; min-height: 90px; resize: vertical; font-family: inherit; line-height: 1.5; }
+.mx-input:focus, .mx-select:focus, .mx-textarea:focus { border-color: #8fa3a8; }
+.mx-input[aria-invalid="true"], .mx-select[aria-invalid="true"], .mx-textarea[aria-invalid="true"] { border-color: #d49a88; }
+.mx-input.sm, .mx-select.sm { height: 32px; }
+.mx-check { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); cursor: pointer; }
+.mx-check input { width: 15px; height: 15px; accent-color: var(--navy); }
+.mx-file { border: 1px dashed #d9d1c8; border-radius: 9px; padding: 14px; background: #fcfdfa; font-size: 11px; color: #8c9a9d; font-weight: 400; }
+.mx-file input { display: block; margin-top: 8px; font-size: 11px; }
+
+/* Segmented control, styled like the treasury tab pills. */
+.mx-seg { display: inline-flex; gap: 4px; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--paper); }
+.mx-seg button { border: 0; background: transparent; border-radius: 999px; min-height: 28px; padding: 0 12px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.mx-seg button.active { background: var(--navy); color: var(--paper); }
+
+/* Modal: a floating panel. */
+.mx-modal-backdrop { position: fixed; inset: 0; background: #24201e80; z-index: 100; display: grid; place-items: center; padding: 20px; }
+.mx-modal { width: 100%; max-width: 560px; max-height: calc(100vh - 40px); overflow-y: auto; background: #fefcf9; border: 1px solid var(--line); border-radius: 16px; padding: 26px 28px; box-shadow: 0 24px 60px #24201e40; }
+.mx-modal.wide { max-width: 820px; }
+.mx-modal .form-heading { margin-bottom: 20px; }
+
+/* Progress bar reused from capacity-bar; alias for clarity. */
+.mx-progress { height: 6px; background: #ede8df; border-radius: 8px; overflow: hidden; }
+.mx-progress > i { display: block; height: 100%; background: #2e7d5b; border-radius: 8px; }
+.mx-progress.accent > i { background: #cc785c; }
+
+/* Skeleton rows. */
+.mx-skel { display: block; height: 14px; border-radius: 6px; background: linear-gradient(90deg, #ede7df 0%, #f7f2ea 50%, #ede7df 100%); background-size: 200% 100%; animation: skeleton-shimmer 1.6s cubic-bezier(.4, 0, .2, 1) infinite; }
+
+/* Member pass, QR and door scanner. */
+.mx-qr { width: 220px; height: 220px; border-radius: 12px; border: 1px solid var(--line); background: #fff; padding: 8px; }
+.mx-code-big { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 28px; letter-spacing: 4px; font-weight: 600; color: var(--ink); }
+.mx-countdown { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 600; }
+.mx-scan-result { border-radius: 16px; padding: 28px; text-align: center; color: #fff; }
+.mx-scan-result.ok { background: #2e7d5b; }
+.mx-scan-result.warn { background: #b8771f; }
+.mx-scan-result.bad { background: #b8453a; }
+.mx-scan-result h2 { font-family: "Crimson Pro", Georgia, serif; font-size: 40px; color: inherit; }
+
+/* Auth demo shortcuts row below the legacy login form. */
+.mx-demo { margin-top: 18px; padding: 10px 12px; border: 2px solid #17110c; background: #f8e9c9; font-family: "DM Sans", Arial, sans-serif; font-size: 11px; color: #17110c; text-align: left; }
+.mx-demo button { background: transparent; border: 0; color: #234c6c; font-weight: 700; padding: 2px 6px; text-decoration: underline; cursor: pointer; }
+
+/* Dark theme follow-through for the additions. */
+.mode-dark .mx-input, .mode-dark .mx-select, .mode-dark .mx-textarea { background: #302b27; border-color: #4a4541; color: var(--ink); }
+.mode-dark .mx-modal { background: #292524; }
+.mode-dark .mx-list-item strong, .mode-dark .mx-kv dd { color: var(--ink); }
+.mode-dark .mx-list-item { border-color: #3c3836; }
+.mode-dark .mx-skel { background: linear-gradient(90deg, #302b27 0%, #3e3833 50%, #302b27 100%); background-size: 200% 100%; }

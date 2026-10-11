@@ -225,7 +225,8 @@ export interface WorkspaceEventReport {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 export interface Dashboard {
-  club: { name: string; description: string };
+  /** `demo` is true while the fictional starter records are present (see `npm run club:init`). */
+  club: { name: string; description: string; demo: boolean };
   metrics: {
     members: number;
     activeMembers: number;

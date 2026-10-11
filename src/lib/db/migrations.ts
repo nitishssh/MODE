@@ -4,6 +4,22 @@ import { clubDate, addDays, type SqlDatabase } from "./core";
 
 export const DEFAULT_CLUB_ID = "club-sample";
 
+/**
+ * MODE_SEED=none creates a fresh database without any fictional records: just the club row
+ * (named from MODE_CLUB_NAME / MODE_CLUB_DESCRIPTION) and an empty register. `npm run club:init`
+ * sets this for you. The default, "demo", keeps the documented sample club for development.
+ * The switch only matters when a database is first created; existing files are never re-seeded.
+ */
+export function seedDemoData(): boolean {
+  return (process.env.MODE_SEED ?? "demo").trim().toLowerCase() !== "none";
+}
+
+function configuredClub(): { name: string; description: string } {
+  const name = process.env.MODE_CLUB_NAME?.trim();
+  if (!seedDemoData()) return { name: name || "Your club", description: process.env.MODE_CLUB_DESCRIPTION?.trim() ?? "" };
+  return { name: "Sample Student Club", description: "Fictional demo data for the MODE student organization starter." };
+}
+
 interface Migration {
   version: number;
   up: (db: SqlDatabase, now: Date) => void;
@@ -197,7 +213,7 @@ function createStarterSchema(db: SqlDatabase, now: Date) {
       occurred_at TEXT NOT NULL
     );
   `);
-  seedStarterDemo(db, now);
+  if (seedDemoData()) seedStarterDemo(db, now);
 }
 
 function seedStarterDemo(db: SqlDatabase, now: Date) {
@@ -290,12 +306,9 @@ function addIdentityAndRoles(db: SqlDatabase, now: Date) {
     );
     CREATE INDEX audit_events_entity_idx ON audit_events (club_id, entity_type, entity_id);
   `);
-  db.prepare("INSERT INTO clubs VALUES (?, ?, ?, ?)").run(
-    DEFAULT_CLUB_ID,
-    "Sample Student Club",
-    "Fictional demo data for the MODE student organization starter.",
-    now.toISOString(),
-  );
+  const club = configuredClub();
+  db.prepare("INSERT INTO clubs VALUES (?, ?, ?, ?)").run(DEFAULT_CLUB_ID, club.name, club.description, now.toISOString());
+  if (!seedDemoData()) return;
   const passwordHash = hashPassword(demoPassword());
   const insertOfficer = db.prepare(
     "INSERT OR IGNORE INTO members (id, name, email, joined_at, expires_on, dues_status, club_id, role, password_hash) VALUES (?, ?, ?, ?, NULL, 'unpaid', ?, ?, ?)",
@@ -331,13 +344,15 @@ function addLedgerSourcesAndMemberPasses(db: SqlDatabase, now: Date) {
   db.exec(`
     CREATE UNIQUE INDEX transactions_source_idx ON transactions (source_type, source_id);
   `);
-  const today = clubDate(now);
-  const passwordHash = hashPassword(demoPassword());
-  const insert = db.prepare(
-    "INSERT OR IGNORE INTO members (id, name, email, joined_at, expires_on, dues_status, club_id, role, password_hash) VALUES (?, ?, ?, ?, ?, 'paid', ?, 'member', ?)",
-  );
-  for (const demo of DEMO_MEMBERS) {
-    insert.run(demo.id, demo.name, demo.email, now.toISOString(), addDays(today, demo.expiresInDays), DEFAULT_CLUB_ID, passwordHash);
+  if (seedDemoData()) {
+    const today = clubDate(now);
+    const passwordHash = hashPassword(demoPassword());
+    const insert = db.prepare(
+      "INSERT OR IGNORE INTO members (id, name, email, joined_at, expires_on, dues_status, club_id, role, password_hash) VALUES (?, ?, ?, ?, ?, 'paid', ?, 'member', ?)",
+    );
+    for (const demo of DEMO_MEMBERS) {
+      insert.run(demo.id, demo.name, demo.email, now.toISOString(), addDays(today, demo.expiresInDays), DEFAULT_CLUB_ID, passwordHash);
+    }
   }
   // Every member, old or new, gets a unique pass: QR token + short code.
   const exists = db.prepare("SELECT 1 FROM members WHERE qr_token = ? OR short_code = ?");

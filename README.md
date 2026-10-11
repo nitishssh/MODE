@@ -21,6 +21,22 @@ Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, a
 
 Optional configuration is documented in `.env.example`; copy it to `.env.local` if needed. Never commit `.env.local` or the local database. To try a separate dataset without changing the existing one, set `SQLITE_PATH` to a new filename.
 
+## Real club data
+
+The starter seeds clearly fictional records so the flows can be tried immediately. To run your own club instead, create a fresh database with no sample data and your real administrator:
+
+```sh
+npm run club:init -- --name "Robotics Society" --description "NMIT robotics club" --dues 500 --admin-name "Priya Nair" --admin-email priya@college.edu --admin-password "a-private-password" --reset
+```
+
+`--reset` deletes the existing SQLite file (and its receipts) only when it still holds the sample data; a database with real members is left alone unless you add `--force`. `--dues` is the annual membership fee in rupees. Then import the existing register from a CSV with `name,email` columns and optional `role`, `expires_on` (YYYY-MM-DD, for members who have already paid) and `password` columns:
+
+```sh
+npm run club:import -- members.csv            # add --dry-run to preview
+```
+
+Everything else (events, products, announcements, tasks, dues, tickets) is entered through the workspace at `/app`. The "Fictional sample data" indicator disappears once the sample records are gone. Setting `MODE_SEED=none` (plus `MODE_CLUB_NAME`) before the first request has the same effect as `club:init` for a hosted deployment; `MODE_DEMO_PASSWORD` is then not required.
+
 The repository's `.nvmrc` selects Node 24 for version managers that support it. To verify a fresh checkout, follow [the foundation acceptance check](docs/FOUNDATION.md), including the automated server restart test.
 
 ```sh

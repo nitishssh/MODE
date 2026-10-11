@@ -2660,5 +2660,5 @@ export default function Home() {
   }
   if (loading) return <main className="loading-state" role="status">{t("auth.loading")}</main>;
   if (user) return <>{error && <p role="alert">{error}</p>}<Workspace key={user.id} user={user} onLogout={() => void signOut()} /></>;
-  return <LandingPage onSignIn={() => { window.location.href = "/login"; }} />;
+  return <LandingPage onSignIn={() => { window.location.href = "/app/login"; }} />;
 }
