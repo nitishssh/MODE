@@ -32,7 +32,7 @@ jobs:
             type=sha
           labels: |
             org.opencontainers.image.description=MODE club workspace (local synthetic-data demo image)
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           push: true
