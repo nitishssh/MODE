@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { assertSafeDemoPasswords } from "./auth/demo-safety";
 import { transaction, type DbContext, type SqlDatabase } from "./db/core";
 import { SCHEMA_VERSION, migrate } from "./db/migrations";
 import { isPostgresUrl, openPostgresSync } from "./db/postgres-sync";
@@ -40,6 +41,7 @@ export function openClubDatabase(target: string, options: { now?: () => Date; re
 
   try {
     migrate(db, now());
+    assertSafeDemoPasswords(db);
   } catch (error) {
     db.close();
     throw error;

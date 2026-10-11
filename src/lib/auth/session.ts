@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { configuredPublicOrigin } from "./public-origin";
 
 export const SESSION_COOKIE = "mode_session";
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -35,6 +36,7 @@ export function sessionCookie(token: string, expiresAt: string, request: Request
   // A hosting proxy terminates TLS and forwards plain HTTP; trusting the header here only
   // ever adds Secure, so a spoofed value cannot weaken the cookie.
   const https =
+    configuredPublicOrigin()?.startsWith("https:") === true ||
     new URL(request.url).protocol === "https:" || request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() === "https";
   const secure = https ? "; Secure" : "";
   const expires = new Date(expiresAt).toUTCString();
