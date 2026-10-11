@@ -1,27 +1,218 @@
 # MODE — Student Organization System
 
-A runnable team starter for the Odoo x NMIT student organization problem: memberships, events, announcements, merchandise, volunteer work and club finances.
+[![Quality checks](https://github.com/nitishssh/MODE/actions/workflows/ci.yml/badge.svg)](https://github.com/nitishssh/MODE/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/nitishssh/MODE)](https://github.com/nitishssh/MODE/releases/latest)
+
+One calm workspace for a student club: memberships and dues, event tickets with door check-in, announcements, merchandise, volunteer tasks, and club finances with receipt-backed reimbursements. One person can belong to several clubs and switch between them.
+
+**🎬 [Watch the demo video](https://drive.google.com/drive/folders/1LAnTXMWYU4UIek7Oo2Egs73zMjsNzxPr?usp=drive_link)** · [Latest release](https://github.com/nitishssh/MODE/releases/latest) · [Phase 2 board](https://github.com/users/nitishssh/projects/15)
+
+![MODE workspace overview](docs/screenshots/dashboard.png)
+
+## Screenshots
+
+| Landing | Sign-in with demo accounts |
+|---|---|
+| ![Landing page](docs/screenshots/landing.png) | ![Sign-in](docs/screenshots/login.png) |
+| **Member pass (door QR)** | **Events and tickets** |
+| ![Member pass](docs/screenshots/member-pass.png) | ![Events](docs/screenshots/events.png) |
+| **Merchandise shop** | **Volunteer tasks** |
+| ![Shop](docs/screenshots/shop.png) | ![Tasks](docs/screenshots/tasks.png) |
+| **Treasury and ledger** | **Members** |
+| ![Treasury](docs/screenshots/treasury.png) | ![Members](docs/screenshots/members.png) |
+| **Announcements** | **Mobile** |
+| ![Announcements](docs/screenshots/announcements.png) | <img src="docs/screenshots/mobile.png" alt="Mobile workspace" width="260"> |
+
+## Install
+
+You need **Node.js 24 LTS** (22.13+ on the 22.x line also works; Node 23 does not) and Git. No external database, cloud account or email provider is required.
+
+```sh
+git clone https://github.com/nitishssh/MODE.git
+cd MODE
+npm ci
+npm ci --prefix client
+npm run auth:setup
+```
+
+`auth:setup` writes a private JWT signing key (`MODE_JWT_SECRET`) to `.env.local`; it never overwrites an existing key. See [JWT authentication](docs/AUTHENTICATION.md).
+
+The repository's `.nvmrc` selects Node 24 for `nvm`/`fnm`. Optional settings live in `.env.example`; copy it to `.env.local` if you need them, and never commit that file.
+
+## Run
+
+### Development
+
+```sh
+npm run dev
+```
+
+Open http://127.0.0.1:3000. The first request creates `.data/mode.sqlite`, applies schema version 17 and loads clearly fictional sample data once. Data persists across restarts.
+
+### Production mode
+
+```sh
+npm run build
+MODE_DEMO_PASSWORD=choose-a-password npm start
+```
+
+Production refuses to seed a new database with the public demo password, so set `MODE_DEMO_PASSWORD` first (PowerShell: `$env:MODE_DEMO_PASSWORD="…"`).
+
+### Docker (prebuilt package)
+
+Each release publishes an image to GitHub Packages:
+
+```sh
+docker run -p 3000:3000 -e MODE_DEMO_PASSWORD=choose-a-password -e MODE_JWT_SECRET=<64-hex-chars> -v mode-data:/data ghcr.io/nitishssh/mode:latest
+```
+
+Generate the key with `openssl rand -hex 32`. Or build locally with `docker compose up --build`. See [docs/LOCAL-CONTAINER.md](docs/LOCAL-CONTAINER.md).
+
+### Phones on the same Wi-Fi
+
+`npm run dev:lan`, then open `http://<your-computer-LAN-IP>:3000` on the phone. The Expo app in `client/` works with Expo Go; see the [client README](client/README.md).
+
+### PostgreSQL (optional)
+
+Set `DATABASE_URL=postgres://…`. `npm run postgres:up` starts a local server and `npm run postgres:push` copies an existing SQLite database across. See [docs/POSTGRESQL.md](docs/POSTGRESQL.md).
+
+## How to use it
+
+### 1. Sign in
+
+Go to **Sign in** (`/app/login`). The demo panel fills in a synthetic account with one click. All demo accounts share the password `mode-demo-2026` in development (or your `MODE_DEMO_PASSWORD`).
+
+| Account | Role | Try |
+|---|---|---|
+| `lead@example.com` | Club lead (admin) | Everything, including roles and join codes |
+| `organizer@example.com` | Organizer | Members, events, announcements, tasks |
+| `treasurer@example.com` | Treasurer | Dues, reimbursements, treasury, CSV export |
+| `volunteer@example.com` | Volunteer | Door scanner, assigned tasks |
+| `active@example.com` | Paid member | Member pass, tickets, shop, expense claims |
+| `expired@example.com` | Lapsed member | Renewal reminder flow |
+
+New students use **Join the Association** to register.
+
+### 2. A semester in MODE
+
+1. **Members** — officers add members (or import a CSV with `npm run club:import`). Recording dues extends membership by 365 days and posts income to the ledger.
+2. **Join codes** — a club lead turns on a join code; students who already have a MODE login join with it and appear as members. Anyone can leave a club; their history stays intact.
+3. **Events** — create an event with capacity and member/guest prices. Members book a ticket, which holds a seat for 30 minutes until an officer confirms payment.
+4. **Door scanner** — volunteers scan the member pass QR (or type the door code). Each ticket admits once; a second scan shows the original check-in time.
+5. **Announcements** — publish to the website archive and every active member's notifications in one step.
+6. **Merchandise** — add products with sizes and stock. Orders hold stock for 30 minutes; officers confirm payment and mark orders fulfilled.
+7. **Tasks** — assign volunteer work and track progress from To do to Done.
+8. **Expenses** — members submit claims with a JPG, PNG or PDF receipt; the treasurer approves and pays them.
+9. **Treasury** — one ledger for dues, tickets, orders and reimbursements, each entry linked to its source. Export CSV for the faculty adviser.
+10. **Several clubs** — if you belong to more than one club, switch from the profile menu in the sidebar.
+
+The interface is available in English and eleven Indian languages from the switcher in the top bar.
+
+### 3. Use it for your real club
+
+The sample data is for trying things out. To start fresh with your own club, see [Real club data](#real-club-data) below.
+
+## Flowcharts
+
+### Getting started
+
+```mermaid
+flowchart LR
+  A[Clone repo] --> B[npm ci + npm ci --prefix client]
+  B --> C{How to run?}
+  C -->|Develop| D[npm run dev]
+  C -->|Production| E[npm run build → npm start]
+  C -->|Docker| F[docker run ghcr.io/nitishssh/mode]
+  D & E & F --> G[Open http://127.0.0.1:3000]
+  G --> H{Data}
+  H -->|Try it| I[Sign in with a demo account]
+  H -->|Real club| J[npm run club:init → club:import]
+```
+
+### Membership, joining and leaving
+
+```mermaid
+flowchart TD
+  S[Student] --> R{Has a MODE login?}
+  R -->|No| REG[Register: Join the Association]
+  R -->|Yes| CODE[Enter club join code]
+  REG --> M[Member]
+  CODE -->|valid| M
+  CODE -->|unknown / disabled| X[404 — no club revealed]
+  O[Officer adds email] --> M
+  M --> DUES[Treasurer records dues]
+  DUES --> ACT[Active for 365 days] --> L1[(Ledger: dues income)]
+  ACT -->|expiry nears| REM[Renewal reminder] --> DUES
+  M --> LEAVE[Leave club] --> SOFT[History kept, access removed]
+  M --> SW[Switch between clubs]
+```
+
+### Event ticket to door check-in
+
+```mermaid
+sequenceDiagram
+  actor Member
+  participant App as MODE
+  actor Officer
+  actor Volunteer
+  Member->>App: Book ticket
+  App-->>Member: Seat held for 30 minutes
+  Officer->>App: Confirm payment (reference)
+  App->>App: Ticket paid + ledger income (once)
+  Volunteer->>App: Scan member pass QR / door code
+  alt first scan
+    App-->>Volunteer: Admitted
+  else repeated scan
+    App-->>Volunteer: Already checked in (original time)
+  end
+```
+
+### Merchandise order
+
+```mermaid
+flowchart LR
+  P[Officer adds product + sizes] --> SH[Shop]
+  SH --> OR[Member orders a size]
+  OR --> HOLD[Stock held 30 min]
+  HOLD -->|not paid| REL[Hold expires, stock returns]
+  HOLD -->|officer confirms| PAID[Paid] --> LG[(Ledger income)]
+  PAID --> FUL[Marked fulfilled]
+```
+
+### Expense claim to reimbursement
+
+```mermaid
+flowchart LR
+  C[Member submits claim + receipt] --> T{Treasurer review}
+  T -->|reject| RJ[Rejected]
+  T -->|approve| AP[Approved, unpaid]
+  AP --> PAY[Paid out] --> LG[(Ledger expense, linked to receipt)]
+  LG --> CSV[Treasury view + CSV export]
+```
+
+### Announcements and tasks
+
+```mermaid
+flowchart LR
+  A[Organizer publishes] --> W[Public website archive]
+  A --> N[Notifications for every active member]
+  A --> OB[Delivery outbox, safe retries]
+  T[Officer creates task] --> AS[Assign volunteer] --> TD[To do] --> IP[In progress] --> D[Done]
+```
+
+## Verify
+
+```sh
+npm run check:all
+```
+
+This runs the same checks as CI: version consistency, lint, types and tests for server and Expo client, contract checks, generated schema checks, production builds and restart persistence. Use `npm run check` for a faster backend loop.
 
 ## Historical codebase documentation
 
 Start with the [historical codebase guide](docs/CODEBASE.md): architecture and feature status, [source files and shared types](docs/CODE-REFERENCE.md), [database tables and migrations](docs/DATA-MODEL.md), [HTTP APIs](docs/HTTP-API.md), and [setup, walkthroughs and testing](docs/DEVELOPMENT.md). These guides cover commit `a62c6e2` (10 October 2026), with pinned source links. That snapshot predates the Expo client and schema 13; its inventories and setup instructions do not describe current `main`. For current setup, use this README and the [client README](client/README.md).
 
 [Project board](https://github.com/users/nitishssh/projects/14) · [Implementation tickets](https://github.com/nitishssh/MODE/issues) · [Task map](docs/TASKS.md) · [Team ownership](docs/TEAM.md) · [API contracts](docs/API.md) · [Demo checklist](docs/DEMO.md) · [Agent instructions](AGENTS.md)
-
-## Run locally
-
-Use **Node.js 24 LTS**. Node 22.13+ within the 22.x line and Node 24+ are supported because the backend uses native `node:sqlite`; Node 23 is excluded. No external database, cloud credentials or email provider is required. PostgreSQL is optional (`DATABASE_URL`).
-
-```sh
-npm ci
-npm ci --prefix client
-npm run auth:setup
-npm run dev
-```
-
-Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 17 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
-
-`auth:setup` generates the required private JWT signing key in `.env.local`. Additional configuration is documented in `.env.example`; add needed values to `.env.local` without replacing the generated key. Never commit `.env.local` or the local database. To try a separate SQLite dataset without changing the existing one, clear `DATABASE_URL` and set `SQLITE_PATH` to a new filename. PostgreSQL takes precedence when `DATABASE_URL` is set.
 
 ## Real club data
 
