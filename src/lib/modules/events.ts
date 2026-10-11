@@ -290,7 +290,7 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
     return transaction(ctx, () => {
       releaseExpiredHolds(eventId);
       const event = requireEvent(clubId, eventId);
-      if (db.prepare("SELECT 1 FROM members WHERE club_id = ? AND email = ?").get(clubId, data.email)) {
+      if (db.prepare("SELECT 1 FROM members WHERE club_id = ? AND email = ? AND left_at IS NULL").get(clubId, data.email)) {
         throw new ConflictError("This email belongs to a club member. Sign in to book at the member price.", "member_email");
       }
       const pendingGuests = int((db.prepare("SELECT COUNT(*) AS n FROM tickets WHERE event_id = ? AND guest_email IS NOT NULL AND status = 'pending_payment'").get(event.id) as Row).n);

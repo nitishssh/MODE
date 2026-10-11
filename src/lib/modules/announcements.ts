@@ -51,7 +51,7 @@ export function createAnnouncementsModule(ctx: DbContext, identity: IdentityModu
 
       const now = ctx.now();
       const publishedAt = now.toISOString();
-      const recipients = db.prepare(`SELECT id, email FROM members WHERE club_id = ? AND ${MEMBERSHIP_ACTIVE_SQL} ORDER BY id`)
+      const recipients = db.prepare(`SELECT id, email FROM members WHERE club_id = ? AND left_at IS NULL AND ${MEMBERSHIP_ACTIVE_SQL} ORDER BY id`)
         .all(actor.clubId, clubDate(now)) as Row[];
       const id = randomUUID();
       db.prepare(`INSERT INTO announcements (id, club_id, title, body, published_at, published_by, idempotency_key, recipient_count)

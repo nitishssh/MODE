@@ -76,7 +76,7 @@ export function createDashboardModule(ctx: DbContext, identity: IdentityModule, 
       metrics: {
         members: members.length,
         activeMembers: int(
-          (db.prepare(`SELECT COUNT(*) AS n FROM members WHERE club_id = ? AND ${MEMBERSHIP_ACTIVE_SQL}`).get(clubId, clubDate(ctx.now())) as Row).n,
+          (db.prepare(`SELECT COUNT(*) AS n FROM members WHERE club_id = ? AND left_at IS NULL AND ${MEMBERSHIP_ACTIVE_SQL}`).get(clubId, clubDate(ctx.now())) as Row).n,
         ),
         upcomingEvents: events.filter((event) => event.startsAt >= timestamp).length,
         balancePaise: canSeeFinance ? int(balance?.balance ?? 0) : 0,

@@ -18,7 +18,7 @@ npm ci --prefix client
 npm run dev
 ```
 
-Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 15 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
+Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 16 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
 
 Optional configuration is documented in `.env.example`; copy it to `.env.local` if needed. Never commit `.env.local` or the local database. To try a separate SQLite dataset without changing the existing one, clear `DATABASE_URL` and set `SQLITE_PATH` to a new filename. PostgreSQL takes precedence when `DATABASE_URL` is set.
 
@@ -126,7 +126,7 @@ The web manifest provides the MODE icon and standalone display metadata. On a su
 
 ### Authenticated tasks and reimbursements
 
-The web workspace now has sign-in, a task board, personal expense submissions and treasury review. Task assignment and status changes respect the signed-in member’s permissions. New claims require a JPG, PNG or PDF receipt up to 5 MB, private to their uploader and club finance reviewers. Reimbursements post exactly once to the shared ledger, alongside dues and ticket income. The register links to exact source records and shows the paying officer; its CSV export matches the register totals. Schema v13 hardens the data model (club foreign keys, unique payment references, receipt single-use) on top of v12, which preserved older workflow and ledger records; back up `.data/` before upgrading from an older schema because v13 rebuilds tables. Schema v14 splits login identities (`people`) from club memberships, and v15 adds pagination indexes without rebuilding tables. See [API](docs/API.md), [demo walkthrough](docs/DEMO.md) and [local reimbursement verification](docs/REIMBURSEMENT-VERIFICATION.md).
+The web workspace now has sign-in, a task board, personal expense submissions and treasury review. Task assignment and status changes respect the signed-in member’s permissions. New claims require a JPG, PNG or PDF receipt up to 5 MB, private to their uploader and club finance reviewers. Reimbursements post exactly once to the shared ledger, alongside dues and ticket income. The register links to exact source records and shows the paying officer; its CSV export matches the register totals. Schema v13 hardens the data model (club foreign keys, unique payment references, receipt single-use) on top of v12, which preserved older workflow and ledger records; back up `.data/` before upgrading from an older schema because v13 rebuilds tables. Schema v14 splits login identities (`people`) from club memberships, v15 adds pagination indexes and v16 adds club join codes and membership leaving, neither rebuilding tables. See [API](docs/API.md), [demo walkthrough](docs/DEMO.md) and [local reimbursement verification](docs/REIMBURSEMENT-VERIFICATION.md).
 
 ## Languages
 

@@ -19,6 +19,9 @@ const requiredRoutes = [
   "/api/announcements/{id}",
   "/api/announcements/{id}/outbox",
   "/api/notifications",
+  "/api/clubs/join",
+  "/api/clubs/join-code",
+  "/api/clubs/{id}/leave",
 ];
 const missing = requiredRoutes.filter((route) => !apiDoc.includes(route));
 if (missing.length) throw new Error(`docs/API.md is missing documented routes: ${missing.join(", ")}`);

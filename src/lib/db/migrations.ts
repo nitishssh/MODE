@@ -46,7 +46,7 @@ const MIGRATIONS: Migration[] = [
   { version: 13, up: hardenSchema, rebuildsTables: true },
   { version: 14, up: splitPeopleFromMemberships, rebuildsTables: true },
   { version: 15, up: addListPaginationIndexes },
-  { version: 16, up: addJoinCodesAndLeavingTracking, rebuildsTables: true },
+  { version: 16, up: addJoinCodesAndLeaving },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -715,25 +715,10 @@ function splitPeopleFromMemberships(db: SqlDatabase) {
   db.exec("CREATE INDEX IF NOT EXISTS members_person_idx ON members (person_id)");
 }
 
-function addJoinCodesAndLeavingTracking(db: SqlDatabase, now: Date) {
-  const postgres = db.dialect === "postgres";
-  if (hasTable(db, "clubs")) {
-    if (!hasColumn(db, "clubs", "join_code")) {
-      if (postgres) {
-        db.exec("ALTER TABLE clubs ADD COLUMN join_code TEXT UNIQUE");
-      } else {
-        // SQLite: rebuild table to add UNIQUE column
-        rebuildTable(db, "clubs", (sql) =>
-          sql.replace("created_at TEXT NOT NULL", "created_at TEXT NOT NULL, join_code TEXT UNIQUE")
-        );
-      }
-    }
-  }
-  if (hasTable(db, "members")) {
-    addColumnIfMissing(db, "members", "left_at", "left_at TEXT");
-  }
-  if (postgres) {
-    // Create unique index on join_code where it is not null (partial index)
-    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS clubs_join_code_idx ON clubs (join_code) WHERE join_code IS NOT NULL");
-  }
+// v16 — self-service joining and leaving. A club may publish one join code (unique while set;
+// NULL means joining by code is off). Leaving keeps the membership row for history and stamps left_at.
+function addJoinCodesAndLeaving(db: SqlDatabase) {
+  addColumnIfMissing(db, "clubs", "join_code", "join_code TEXT");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS clubs_join_code_idx ON clubs (join_code)");
+  addColumnIfMissing(db, "members", "left_at", "left_at TEXT");
 }

@@ -325,6 +325,32 @@ export interface SwitchClubInput {
   clubId: string;
 }
 
+/** A club's self-service join code; `joinCode: null` means joining by code is off. */
+export interface ClubJoinCode {
+  clubId: string;
+  joinCode: string | null;
+}
+
+export interface JoinClubInput {
+  joinCode: string;
+}
+
+/** The new (or rejoined) membership. The session stays on its current club; switch to open the new one. */
+export interface JoinClubResponse {
+  membership: ClubMembership;
+  rejoined: boolean;
+}
+
+/**
+ * Leaving keeps the membership's history but ends access. When the session was on the club being
+ * left it moves to another club (`activeClubId`), or signs out when none remain.
+ */
+export interface LeaveClubResponse {
+  clubId: string;
+  activeClubId: string | null;
+  signedOut: boolean;
+}
+
 export interface RegisterInput {
   name: string;
   email: string;

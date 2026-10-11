@@ -1,12 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { hashPassword, verifyPassword } from "../auth/password";
-import { allocateUniqueTokens, normalizeShortCode } from "../auth/tokens";
+import { CROCKFORD, allocateUniqueTokens, normalizeShortCode } from "../auth/tokens";
 import { MEMBERSHIP_STATE_SQL, membershipState } from "./membership-state";
 import { clubDate } from "../db/core";
 import { ROLES, hasPermission, type Permission, type Role } from "../auth/permissions";
 import { SESSION_TTL_MS, generateSessionToken, hashSessionToken } from "../auth/session";
-import type { ClubMembership, CreateMemberInput, Member } from "../contracts";
+import type { ClubJoinCode, ClubMembership, CreateMemberInput, JoinClubResponse, LeaveClubResponse, Member } from "../contracts";
 import {
   DEFAULT_CLUB_ID,
 } from "../db/migrations";
@@ -70,7 +70,16 @@ export const loginSchema = z
   .strict();
 export const roleSchema = z.object({ role: z.enum(ROLES) }).strict();
 export const switchClubSchema = z.object({ clubId: z.string().trim().min(1).max(200) }).strict();
-export const joinClubSchema = z.object({ joinCode: z.string().trim().min(1).max(200) }).strict();
+export const joinClubSchema = z.object({ joinCode: z.string().trim().min(1).max(40) }).strict();
+
+/** Join codes are Crockford base32 like door codes, so they survive being read aloud or written on a board. */
+const JOIN_CODE_LENGTH = 8;
+function generateJoinCode(): string {
+  const raw = randomBytes(JOIN_CODE_LENGTH);
+  let code = "";
+  for (let i = 0; i < JOIN_CODE_LENGTH; i += 1) code += CROCKFORD[raw[i] % CROCKFORD.length];
+  return code;
+}
 export const changePasswordSchema = z
   .object({ currentPassword: z.string().min(1).max(200), newPassword: passwordSchema })
   .strict();
@@ -99,7 +108,7 @@ export function createIdentityModule(ctx: DbContext) {
 
   function getMembers(clubId: string = DEFAULT_CLUB_ID): Member[] {
     return db
-      .prepare("SELECT * FROM members WHERE club_id = ? ORDER BY joined_at DESC, name COLLATE NOCASE, id")
+      .prepare("SELECT * FROM members WHERE club_id = ? AND left_at IS NULL ORDER BY joined_at DESC, name COLLATE NOCASE, id")
       .all(clubId)
       .map((row) => mapMember(row as Row, clubDate(ctx.now())));
   }
@@ -109,7 +118,7 @@ export function createIdentityModule(ctx: DbContext) {
     const filters = parseInput(membersPageSchema, input);
     const page = pageContext(actor, "members", filters, ctx.now());
     const date = clubDate(new Date(page.asOf));
-    const clauses = ["club_id = ?"], values: (string | number)[] = [actor.clubId];
+    const clauses = ["club_id = ?", "left_at IS NULL"], values: (string | number)[] = [actor.clubId];
     if (filters.role) { clauses.push("role = ?"); values.push(filters.role); }
     if (filters.membership) { clauses.push(`(${MEMBERSHIP_STATE_SQL}) = ?`); values.push(date, filters.membership); }
     if (filters.q) { clauses.push(`(${containsTextPredicate("name", db)} OR ${containsTextPredicate("email", db)})`); values.push(containsText(filters.q), containsText(filters.q)); }
@@ -124,7 +133,7 @@ export function createIdentityModule(ctx: DbContext) {
   }
 
   function findMember(clubId: string, memberId: string): Member | null {
-    const row = db.prepare("SELECT * FROM members WHERE club_id = ? AND id = ?").get(clubId, memberId) as Row | undefined;
+    const row = db.prepare("SELECT * FROM members WHERE club_id = ? AND id = ? AND left_at IS NULL").get(clubId, memberId) as Row | undefined;
     return row ? mapMember(row, clubDate(ctx.now())) : null;
   }
 
@@ -151,6 +160,10 @@ export function createIdentityModule(ctx: DbContext) {
     try {
       const existing = db.prepare("SELECT id, name, email FROM people WHERE email = ?").get(email) as Row | undefined;
       if (existing && onExistingPerson === "create") throw new DuplicateMemberError();
+      if (existing) {
+        const returning = rejoin(text(existing.id), clubId, input.role ?? "member");
+        if (returning) return returning;
+      }
       const person = existing
         ? { id: text(existing.id), name: text(existing.name), email: text(existing.email) }
         : { id: randomUUID(), name, email };
@@ -202,7 +215,7 @@ export function createIdentityModule(ctx: DbContext) {
   function findMemberByPass(clubId: string, credential: string): Member | null {
     const trimmed = credential.trim();
     const row = db
-      .prepare("SELECT * FROM members WHERE club_id = ? AND (qr_token = ? OR short_code = ?)")
+      .prepare("SELECT * FROM members WHERE club_id = ? AND left_at IS NULL AND (qr_token = ? OR short_code = ?)")
       .get(clubId, trimmed, normalizeShortCode(trimmed)) as Row | undefined;
     return row ? mapMember(row, clubDate(ctx.now())) : null;
   }
@@ -269,7 +282,7 @@ export function createIdentityModule(ctx: DbContext) {
     }
     // Open the club this person used most recently; a first login opens the oldest membership.
     const row = db.prepare(
-      `SELECT m.* FROM members m WHERE m.person_id = ?
+      `SELECT m.* FROM members m WHERE m.person_id = ? AND m.left_at IS NULL
        ORDER BY COALESCE((SELECT MAX(s.created_at) FROM sessions s WHERE s.member_id = m.id), '') DESC, m.joined_at, m.id`,
     ).get(text(person.id)) as Row | undefined;
     if (!row) throw new UnauthorizedError("This account is not a member of any club.");
@@ -294,7 +307,7 @@ export function createIdentityModule(ctx: DbContext) {
     return (db.prepare(
       `SELECT m.id, m.club_id, m.role, m.expires_on, c.name AS club_name
        FROM members m JOIN clubs c ON c.id = m.club_id
-       WHERE m.person_id = ? ORDER BY c.name COLLATE NOCASE, m.club_id`,
+       WHERE m.person_id = ? AND m.left_at IS NULL ORDER BY c.name COLLATE NOCASE, m.club_id`,
     ).all(personId) as Row[]).map((row) => ({
       memberId: text(row.id),
       clubId: text(row.club_id),
@@ -309,7 +322,7 @@ export function createIdentityModule(ctx: DbContext) {
    * membership's role, so nothing carries over between clubs. 403 when the person is not a member.
    */
   function switchClub(actor: Actor, clubId: string): Actor {
-    const target = db.prepare("SELECT id, role FROM members WHERE person_id = ? AND club_id = ?").get(actor.personId, clubId) as Row | undefined;
+    const target = db.prepare("SELECT id, role FROM members WHERE person_id = ? AND club_id = ? AND left_at IS NULL").get(actor.personId, clubId) as Row | undefined;
     if (!target) throw new ForbiddenError("You are not a member of that club.");
     if (text(target.id) === actor.memberId) return actor;
     return transaction(ctx, () => {
@@ -359,7 +372,7 @@ export function createIdentityModule(ctx: DbContext) {
       .prepare(
         `SELECT s.id AS session_id, s.expires_at, m.id, m.club_id, m.role, p.id AS person_id, p.name, p.email
          FROM sessions s JOIN members m ON m.id = s.member_id JOIN people p ON p.id = m.person_id
-         WHERE s.token_hash = ? AND s.revoked_at IS NULL`,
+         WHERE s.token_hash = ? AND s.revoked_at IS NULL AND m.left_at IS NULL`,
       )
       .get(hashSessionToken(token)) as Row | undefined;
     if (!row || text(row.expires_at) <= ctx.now().toISOString()) return null;
@@ -510,27 +523,109 @@ export function createIdentityModule(ctx: DbContext) {
     }));
   }
 
-  function joinClub(joinCode: string): ClubMembership {
-    const club = db.prepare("SELECT id, name FROM clubs WHERE join_code = ?").get(joinCode) as { id: string; name: string } | undefined;
-    if (!club) throw new NotFoundError("Join code not found");
-
-    // This is public, so we need to get the authenticated person from session context (handled by middleware)
-    // For now, throw NotFoundError if no authenticated session - client will redirect to login
-    throw new NotFoundError("Not authenticated for club join");
+  /**
+   * A person who left a club and comes back gets their old membership row back (history,
+   * pass and dues stay attached) with a fresh role. Returns null when there is nothing to
+   * reactivate; throws when the person is still a current member.
+   */
+  function rejoin(personId: string, clubId: string, role: Role): Member | null {
+    const row = db.prepare("SELECT id, left_at FROM members WHERE person_id = ? AND club_id = ?").get(personId, clubId) as Row | undefined;
+    if (!row) return null;
+    if (row.left_at === null) throw new DuplicateMemberError();
+    db.prepare("UPDATE members SET left_at = NULL, role = ? WHERE id = ?").run(role, text(row.id));
+    return findMember(clubId, text(row.id));
   }
 
-  function leaveClub(actor: Actor, clubId: string) {
-    const member = findMember(clubId, actor.memberId);
-    if (!member) throw new NotFoundError("Not a member of this club");
+  function membershipFor(personId: string, clubId: string): ClubMembership {
+    const membership = listMemberships(personId).find((item) => item.clubId === clubId);
+    if (!membership) throw new NotFoundError("Membership not found.");
+    return membership;
+  }
 
-    // Check if this is the last admin of the club
-    const adminCount = db.prepare("SELECT COUNT(*) as n FROM members WHERE club_id = ? AND role = 'admin' AND left_at IS NULL").get(clubId) as { n: number };
-    if (adminCount.n === 1 && member.role === "admin") {
-      throw new ForbiddenError("Cannot leave: you are the last admin of this club");
-    }
+  /** Club leads see, rotate or switch off their club's join code. */
+  function getJoinCode(actor: Actor): ClubJoinCode {
+    assertPermission(actor, "roles:manage");
+    const row = db.prepare("SELECT join_code FROM clubs WHERE id = ?").get(actor.clubId) as Row | undefined;
+    if (!row) throw new NotFoundError("Club not found.");
+    return { clubId: actor.clubId, joinCode: nullableText(row.join_code) };
+  }
 
-    db.prepare("UPDATE members SET left_at = ? WHERE id = ? AND club_id = ?").run(ctx.now().toISOString(), actor.memberId, clubId);
-    recordAudit(actor, "member.left_club", "member", actor.memberId);
+  function rotateJoinCode(actor: Actor): ClubJoinCode {
+    assertPermission(actor, "roles:manage");
+    return transaction(ctx, () => {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const joinCode = generateJoinCode();
+        if (db.prepare("SELECT 1 FROM clubs WHERE join_code = ?").get(joinCode)) continue;
+        db.prepare("UPDATE clubs SET join_code = ? WHERE id = ?").run(joinCode, actor.clubId);
+        recordAudit(actor, "club.join_code_rotated", "club", actor.clubId);
+        return { clubId: actor.clubId, joinCode };
+      }
+      throw new ConflictError("Could not allocate a unique join code. Try again.", "join_code_collision");
+    });
+  }
+
+  function disableJoinCode(actor: Actor): ClubJoinCode {
+    assertPermission(actor, "roles:manage");
+    return transaction(ctx, () => {
+      db.prepare("UPDATE clubs SET join_code = NULL WHERE id = ?").run(actor.clubId);
+      recordAudit(actor, "club.join_code_disabled", "club", actor.clubId);
+      return { clubId: actor.clubId, joinCode: null };
+    });
+  }
+
+  /**
+   * The signed-in person joins the club that published this code, always as a plain member.
+   * The session stays where it is; the client switches clubs when it wants to open the new one.
+   */
+  function joinClub(actor: Actor, joinCode: string): JoinClubResponse {
+    const code = normalizeShortCode(joinClubSchema.parse({ joinCode }).joinCode);
+    const club = db.prepare("SELECT id FROM clubs WHERE join_code = ?").get(code) as Row | undefined;
+    // One message for unknown and disabled codes, so codes cannot be probed for clubs.
+    if (!club) throw new NotFoundError("That join code is not valid. Ask a club lead for the current code.");
+    const clubId = text(club.id);
+    return transaction(ctx, () => {
+      const person = db.prepare("SELECT name, email FROM people WHERE id = ?").get(actor.personId) as Row;
+      let rejoined = true;
+      let member = rejoin(actor.personId, clubId, "member");
+      if (!member) {
+        rejoined = false;
+        member = insertMember({ name: text(person.name), email: text(person.email), role: "member", clubId }, "attach");
+      }
+      recordAudit({ ...actor, memberId: member.id, clubId }, rejoined ? "member.rejoined_club" : "member.joined_club", "member", member.id);
+      return { membership: membershipFor(actor.personId, clubId), rejoined };
+    });
+  }
+
+  /**
+   * The signed-in person leaves one of their clubs. Records that point at the membership
+   * (tickets, orders, ledger, claims) keep it; access ends. The last admin cannot leave.
+   */
+  function leaveClub(actor: Actor, clubId: string): LeaveClubResponse {
+    return transaction(ctx, () => {
+      const member = db.prepare("SELECT id, role FROM members WHERE person_id = ? AND club_id = ? AND left_at IS NULL").get(actor.personId, clubId) as Row | undefined;
+      if (!member) throw new NotFoundError("You are not a member of that club.");
+      const memberId = text(member.id);
+      if (member.role === "admin") {
+        const admins = int((db.prepare("SELECT COUNT(*) AS n FROM members WHERE club_id = ? AND role = 'admin' AND left_at IS NULL").get(clubId) as Row).n);
+        if (admins <= 1) throw new ConflictError("You are the club's last admin. Make someone else an admin before leaving.", "last_admin");
+      }
+      const nowIso = ctx.now().toISOString();
+      db.prepare("UPDATE members SET left_at = ? WHERE id = ?").run(nowIso, memberId);
+      recordAudit({ ...actor, memberId, clubId }, "member.left_club", "member", memberId);
+      // Move this session to the person's most recently used remaining club; sign out if none remain.
+      let activeClubId: string | null = actor.clubId;
+      if (actor.clubId === clubId) {
+        const next = db.prepare(
+          `SELECT m.id, m.club_id FROM members m WHERE m.person_id = ? AND m.left_at IS NULL
+           ORDER BY COALESCE((SELECT MAX(s.created_at) FROM sessions s WHERE s.member_id = m.id), '') DESC, m.joined_at, m.id`,
+        ).get(actor.personId) as Row | undefined;
+        activeClubId = next ? text(next.club_id) : null;
+        if (next) db.prepare("UPDATE sessions SET member_id = ?, club_id = ? WHERE id = ?").run(text(next.id), activeClubId, actor.sessionId);
+      }
+      // Every other session still pointing at the departed membership ends (getActor also refuses them).
+      db.prepare("UPDATE sessions SET revoked_at = ? WHERE member_id = ? AND revoked_at IS NULL").run(nowIso, memberId);
+      return { clubId, activeClubId, signedOut: activeClubId === null };
+    });
   }
 
   return {
@@ -547,6 +642,9 @@ export function createIdentityModule(ctx: DbContext) {
     login,
     listMemberships,
     switchClub,
+    getJoinCode,
+    rotateJoinCode,
+    disableJoinCode,
     joinClub,
     leaveClub,
     changePassword,
