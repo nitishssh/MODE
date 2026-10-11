@@ -238,8 +238,10 @@ export function createIdentityModule(ctx: DbContext) {
     const lockedUntil = nullableText(attempt?.locked_until ?? null);
     if (lockedUntil && lockedUntil > nowIso) throw new TooManyAttemptsError(lockedUntil);
     const row = db.prepare("SELECT * FROM members WHERE email = ?").get(parsed.email) as Row | undefined;
+    // Unknown accounts must run the dummy derivation too; avoid short-circuiting it.
+    const passwordMatches = verifyPassword(parsed.password, row ? nullableText(row.password_hash) : null);
     // Same error for unknown email and wrong password; both count towards the lockout.
-    if (!row || !verifyPassword(parsed.password, nullableText(row.password_hash))) {
+    if (!row || !passwordMatches) {
       recordLoginFailure(parsed.email);
       throw new UnauthorizedError("Incorrect email or password.");
     }

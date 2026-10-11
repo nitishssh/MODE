@@ -5,11 +5,15 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Dashboard, Notification } from "@/lib/contracts";
 import { LanguageSwitcher } from "@/i18n/client";
+import type { AppKey } from "@/i18n/app";
 import { Icon, type IconName } from "./icons";
 import { api } from "../_lib/api";
 import { initials } from "../_lib/format";
+import { useT } from "../_lib/i18n";
 import { useRequireSession, type Permission } from "../_lib/session";
 import { ClubSwitcher } from "./club-switcher";
+import { allowedSections, homeFor, sectionFor, type Section } from "../_lib/access";
+import { EmptyState } from "./ui";
 
 /*
  * Azman's workspace chrome, verbatim: .workspace > .sidebar (brand, club
@@ -21,7 +25,8 @@ import { ClubSwitcher } from "./club-switcher";
 
 interface NavItem {
   href: string;
-  label: string;
+  section: Section;
+  label: AppKey;
   icon: IconName;
   anyOf?: Permission[];
   exact?: boolean;
@@ -29,33 +34,33 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { href: "/app", label: "Overview", icon: "grid", exact: true },
-  { href: "/app/members", label: "Members", icon: "people", anyOf: ["members:read"], count: (d) => d?.metrics.members },
-  { href: "/app/events", label: "Events", icon: "calendar" },
-  { href: "/app/announcements", label: "Announcements", icon: "megaphone" },
-  { href: "/app/shop", label: "Merchandise", icon: "bag" },
-  { href: "/app/tasks", label: "Tasks", icon: "check", count: (d) => { const open = d?.tasks.filter((t) => t.status !== "done").length ?? 0; return open || undefined; } },
-  { href: "/app/expenses", label: "My Expenses", icon: "receipt" },
-  { href: "/app/treasury", label: "Treasury", icon: "wallet", anyOf: ["ledger:read"] },
-  { href: "/app/tickets", label: "My tickets", icon: "ticket" },
-  { href: "/app/pass", label: "My pass", icon: "coin" },
-  { href: "/app/notifications", label: "Notifications", icon: "bell", count: (_d, unread) => unread || undefined },
+  { href: "/app", section: "overview", label: "nav.overview", icon: "grid", exact: true },
+  { href: "/app/members", section: "members", label: "nav.members", icon: "people", anyOf: ["members:read"], count: (d) => d?.metrics.members },
+  { href: "/app/events", section: "events", label: "nav.events", icon: "calendar" },
+  { href: "/app/door", section: "door", label: "nav.doorScanner", icon: "scan" },
+  { href: "/app/announcements", section: "announcements", label: "nav.announcements", icon: "megaphone" },
+  { href: "/app/shop", section: "shop", label: "nav.merchandise", icon: "bag" },
+  { href: "/app/tasks", section: "tasks", label: "nav.tasks", icon: "check", count: (d) => { const open = d?.tasks.filter((t) => t.status !== "done").length ?? 0; return open || undefined; } },
+  { href: "/app/expenses", section: "expenses", label: "nav.myExpenses", icon: "receipt" },
+  { href: "/app/treasury", section: "treasury", label: "nav.treasury", icon: "wallet", anyOf: ["ledger:read"] },
+  { href: "/app/tickets", section: "tickets", label: "nav.myTickets", icon: "ticket" },
+  { href: "/app/pass", section: "pass", label: "nav.myPass", icon: "coin" },
+  { href: "/app/notifications", section: "notifications", label: "nav.notifications", icon: "bell", count: (_d, unread) => unread || undefined },
 ];
 
-const TITLES: [RegExp, string][] = [
-  [/^\/app$/, "Overview"], [/^\/app\/members/, "Members"], [/^\/app\/events\/[^/]+\/door/, "Door scanner"], [/^\/app\/events/, "Events"],
-  [/^\/app\/announcements/, "Announcements"], [/^\/app\/tasks/, "Tasks"], [/^\/app\/shop/, "Merchandise"], [/^\/app\/tickets/, "My tickets"],
-  [/^\/app\/expenses/, "My Expenses"], [/^\/app\/treasury/, "Treasury"], [/^\/app\/pass/, "My pass"], [/^\/app\/notifications/, "Notifications"], [/^\/app\/settings/, "Settings"],
+const TITLES: [RegExp, AppKey][] = [
+  [/^\/app$/, "nav.overview"], [/^\/app\/door/, "nav.doorScanner"], [/^\/app\/members/, "nav.members"], [/^\/app\/events\/[^/]+\/door/, "nav.doorScanner"], [/^\/app\/events/, "nav.events"],
+  [/^\/app\/announcements/, "nav.announcements"], [/^\/app\/tasks/, "nav.tasks"], [/^\/app\/shop/, "nav.merchandise"], [/^\/app\/tickets/, "nav.myTickets"],
+  [/^\/app\/expenses/, "nav.myExpenses"], [/^\/app\/treasury/, "nav.treasury"], [/^\/app\/pass/, "nav.myPass"], [/^\/app\/notifications/, "nav.notifications"], [/^\/app\/settings/, "nav.settings"],
 ];
 
-export function sectionTitle(pathname: string): string {
-  return TITLES.find(([pattern]) => pattern.test(pathname))?.[1] ?? "Workspace";
+export function sectionTitleKey(pathname: string): AppKey {
+  return TITLES.find(([pattern]) => pattern.test(pathname))?.[1] ?? "shell.sectionFallback";
 }
-
-const ROLE_LABEL: Record<string, string> = { admin: "Club lead", organizer: "Organizer", treasurer: "Treasurer", volunteer: "Volunteer", member: "Member" };
 
 export function Shell({ children }: { children: ReactNode }) {
   const session = useRequireSession();
+  const { t } = useT();
   const pathname = usePathname() ?? "/app";
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
@@ -67,6 +72,13 @@ export function Shell({ children }: { children: ReactNode }) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setNavOpen(false); setMenuOpen(false); setSearch(""); }, [pathname]);
+
+  // Roles whose slice has no overview land on their first section instead.
+  useEffect(() => {
+    if (session.status === "authenticated" && session.user && pathname === "/app" && !allowedSections(session.user).has("overview")) {
+      router.replace(homeFor(session.user));
+    }
+  }, [session.status, session.user, pathname, router]);
 
   // Theme: same localStorage key and html class as the legacy workspace.
   useEffect(() => { setIsDark(window.localStorage.getItem("mode-theme") === "dark"); }, []);
@@ -98,77 +110,76 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [session.status, loadChrome, pathname]);
 
   if (session.status !== "authenticated" || !session.user) {
-    return <main className="loading-state" role="status"><span className="loader" /><span>Opening your workspace…</span></main>;
+    return <main className="loading-state" role="status"><span className="loader" /><span>{t("shell.opening")}</span></main>;
   }
 
   const { user, can } = session;
-  const clubName = dashboard?.club.name ?? "Sample Student Club";
+  const clubName = dashboard?.club.name ?? t("shell.defaultClub");
   const clubInitials = initials(clubName);
-  const roleLabel = ROLE_LABEL[user.role] ?? user.role;
-  const visible = (item: NavItem) => !item.anyOf || item.anyOf.some((permission) => can(permission));
-  const isActive = (item: NavItem) => (item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`));
+  const roleLabel = user.role === "admin" ? t("role.adminLong") : t(`role.${user.role}` as AppKey);
+  const allowed = allowedSections(user);
+  const visible = (item: NavItem) => allowed.has(item.section) && (!item.anyOf || item.anyOf.some((permission) => can(permission)));
+  const currentSection = sectionFor(pathname);
+  const sectionAllowed = currentSection === null || allowed.has(currentSection);
+  const isActive = (item: NavItem) => (item.exact ? pathname === item.href : item.section === currentSection);
   const totalTasks = dashboard?.tasks.length ?? 0;
   const completedTasks = dashboard?.tasks.filter((task) => task.status === "done").length ?? 0;
   const taskProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-  const themeLabel = isDark ? "Switch to light theme" : "Switch to dark theme";
+  const themeLabel = isDark ? t("topbar.lightTheme") : t("topbar.darkTheme");
+  const progressVars = { done: completedTasks, total: totalTasks, percent: taskProgress };
 
   const query = search.trim().toLowerCase();
   const results = query && dashboard ? [
-    ...dashboard.tasks.filter((t) => `${t.title} ${t.assignee}`.toLowerCase().includes(query)).map((t) => ({ label: t.title, detail: t.assignee || "Unassigned", href: "/app/tasks" })),
+    ...dashboard.tasks.filter((task) => `${task.title} ${task.assignee}`.toLowerCase().includes(query)).map((task) => ({ label: task.title, detail: task.assignee || t("state.unassigned"), href: "/app/tasks" })),
     ...dashboard.members.filter((m) => `${m.name} ${m.email}`.toLowerCase().includes(query)).map((m) => ({ label: m.name, detail: m.email, href: `/app/members/${m.id}` })),
     ...dashboard.events.filter((e) => `${e.title} ${e.venue}`.toLowerCase().includes(query)).map((e) => ({ label: e.title, detail: e.venue, href: `/app/events/${e.id}` })),
-    ...dashboard.announcements.filter((a) => `${a.title} ${a.body}`.toLowerCase().includes(query)).map((a) => ({ label: a.title, detail: "Announcement", href: `/app/announcements/${a.id}` })),
+    ...dashboard.announcements.filter((a) => `${a.title} ${a.body}`.toLowerCase().includes(query)).map((a) => ({ label: a.title, detail: t("topbar.resultAnnouncement"), href: `/app/announcements/${a.id}` })),
   ].slice(0, 6) : [];
 
   async function signOut() {
     setMenuOpen(false);
     try { await session.logout(); } catch { /* idempotent */ }
-    router.replace("/app/login");
+    window.location.assign("/");
   }
 
   return (
     <div className="workspace">
-      <a className="skip-link" href="#main-content">Skip to content</a>
-      {navOpen ? <button className="nav-scrim" type="button" aria-label="Close navigation" onClick={() => setNavOpen(false)} /> : null}
-      <aside className={`sidebar ${navOpen ? "mobile-open" : ""}`.trim()} aria-label="Workspace navigation">
-        <Link className="brand" href="/app" aria-label="MODE home">
+      <a className="skip-link" href="#main-content">{t("shell.skipToContent")}</a>
+      {navOpen ? <button className="nav-scrim" type="button" aria-label={t("shell.closeNavigation")} onClick={() => setNavOpen(false)} /> : null}
+      <aside className={`sidebar ${navOpen ? "mobile-open" : ""}`.trim()} aria-label={t("shell.workspaceNavigation")}>
+        <Link className="brand" href="/app" aria-label={t("shell.brandHome")}>
           <span className="brand-mark"><span /><span /><span /></span>
           MODE<span className="brand-dot">.</span>
         </Link>
         <div className="workspace-switch">
           <span className="club-monogram">{clubInitials}</span>
-          <span><strong>{clubName}</strong><small>Student organization</small></span>
+          <span><strong>{clubName}</strong><small>{t("shell.studentOrganization")}</small></span>
         </div>
-        <p className="nav-caption">YOUR WORKSPACE</p>
-        <nav aria-label="Main navigation">
+        <p className="nav-caption">{t("shell.navCaption")}</p>
+        <nav aria-label={t("shell.mainNavigation")}>
           {NAV.filter(visible).map((item) => {
             const active = isActive(item);
             const count = item.count?.(dashboard, unread);
             return (
               <Link key={item.href} href={item.href} className={`nav-item ${active ? "active" : ""}`.trim()} aria-current={active ? "page" : undefined} onClick={() => setNavOpen(false)}>
                 <Icon name={item.icon} />
-                <span>{item.label}</span>
+                <span>{t(item.label)}</span>
                 {count ? <span className="nav-count">{count}</span> : null}
               </Link>
             );
           })}
-          {can("tickets:check_in") ? (
-            <Link href="/app/events?door=1" className={`nav-item ${pathname.endsWith("/door") ? "active" : ""}`.trim()} onClick={() => setNavOpen(false)}>
-              <Icon name="scan" /><span>Door scanner</span>
-            </Link>
-          ) : null}
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-note">
             <span className="small-star">✳</span>
-            <h3>Made for the<br />people who make it happen.</h3>
-            <p>Members, events, money and tasks in one calm place.</p>
+            <h3>{t("shell.noteTitleLine1")}<br />{t("shell.noteTitleLine2")}</h3>
+            <p>{t("shell.noteBody")}</p>
           </div>
           <div className="sidebar-profile">
             <span className="profile-avatar">{initials(user.name)}</span>
             <div className="profile-info">
               <strong>{user.name}</strong>
-              <small>Signed in as {roleLabel}</small>
+              <small>{t("shell.signedInAs", { role: roleLabel })}</small>
             </div>
             <ClubSwitcher memberships={session.memberships} currentClubId={user.clubId} />
           </div>
@@ -177,12 +188,12 @@ export function Shell({ children }: { children: ReactNode }) {
 
       <div className="workspace-body">
         <header className="topbar">
-          <button className="mobile-menu" type="button" aria-label="Open navigation" onClick={() => setNavOpen(true)}><span /><span /><span /></button>
-          <div className="breadcrumb">Workspace <Icon name="chevron" size={13} /><span>{sectionTitle(pathname)}</span></div>
-          <div className="workspace-search-wrap">
+          <button className="mobile-menu" type="button" aria-label={t("shell.openNavigation")} onClick={() => setNavOpen(true)}><span /><span /><span /></button>
+          <div className="breadcrumb">{t("shell.workspace")} <Icon name="chevron" size={13} /><span>{t(sectionTitleKey(pathname))}</span></div>
+          {allowed.has("overview") ? <div className="workspace-search-wrap">
             <label className="workspace-search">
               <Icon name="search" size={15} />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search workspace" aria-label="Search workspace" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("topbar.searchPlaceholder")} aria-label={t("topbar.searchLabel")} />
             </label>
             {query ? (
               <div className="workspace-search-results" role="listbox">
@@ -190,23 +201,23 @@ export function Shell({ children }: { children: ReactNode }) {
                   <button key={`${result.href}:${result.label}`} type="button" role="option" aria-selected={false} onClick={() => { setSearch(""); router.push(result.href); }}>
                     <strong>{result.label}</strong><span>{result.detail}</span>
                   </button>
-                )) : <p>No matching workspace records.</p>}
+                )) : <p>{t("topbar.noResults")}</p>}
               </div>
             ) : null}
-          </div>
+          </div> : <div className="workspace-search-wrap" aria-hidden="true" />}
           <div className="topbar-right">
             <LanguageSwitcher />
             <button className="theme-toggle" type="button" onClick={() => setIsDark((value) => !value)} aria-label={themeLabel} title={themeLabel}>
               <Icon name={isDark ? "sun" : "moon"} size={16} />
             </button>
-            <span className="demo-indicator"><span />{dashboard?.club.demo === false ? "Live club data" : "Fictional sample data"}</span>
+            <span className="demo-indicator"><span />{dashboard?.club.demo === false ? t("topbar.liveData") : t("topbar.demoData")}</span>
             <div className="topbar-user-section" ref={menuRef}>
-              <div className="topbar-progress-bar" title={`Tasks completed: ${completedTasks}/${totalTasks} (${taskProgress}%)`}>
+              <div className="topbar-progress-bar" title={t("topbar.tasksCompletedTitle", progressVars)}>
                 <div className="topbar-progress-fill" style={{ width: `${taskProgress}%` }} />
               </div>
-              <button type="button" className={`topbar-avatar-btn ${menuOpen ? "active" : ""}`.trim()} onClick={() => setMenuOpen((open) => !open)} aria-label="Account menu" aria-expanded={menuOpen}>
+              <button type="button" className={`topbar-avatar-btn ${menuOpen ? "active" : ""}`.trim()} onClick={() => setMenuOpen((open) => !open)} aria-label={t("topbar.accountMenu")} aria-expanded={menuOpen}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                {unread ? <span className="nav-count" style={{ position: "absolute", top: -6, right: -6 }}>{unread}</span> : null}
+                {unread ? <span className="nav-count" style={{ position: "absolute", top: -6, right: -6 }} aria-label={t("topbar.unreadNotifications", { count: unread })}>{unread}</span> : null}
               </button>
               {menuOpen ? (
                 <div className="topbar-user-dropdown" role="menu">
@@ -217,19 +228,19 @@ export function Shell({ children }: { children: ReactNode }) {
                     <div className="dropdown-user-info"><strong>{user.name}</strong><span className="dropdown-role-badge">{roleLabel}</span></div>
                   </div>
                   <div className="dropdown-progress-stats">
-                    <div className="dropdown-progress-label"><span>Tasks completed</span><b>{completedTasks}/{totalTasks} ({taskProgress}%)</b></div>
+                    <div className="dropdown-progress-label"><span>{t("topbar.tasksCompleted")}</span><b>{t("topbar.tasksProgress", progressVars)}</b></div>
                     <div className="dropdown-progress-bar"><div className="dropdown-progress-fill" style={{ width: `${taskProgress}%` }} /></div>
                   </div>
                   <div className="dropdown-divider" />
                   <button type="button" className="dropdown-subscription-btn" role="menuitem" onClick={() => { setMenuOpen(false); router.push("/app/pass"); }}>
-                    <span aria-hidden="true">✦</span><span>My pass</span><small>QR &amp; door code</small>
+                    <span aria-hidden="true">✦</span><span>{t("topbar.menuPass")}</span><small>{t("topbar.menuPassHint")}</small>
                   </button>
                   <button type="button" className="dropdown-subscription-btn" role="menuitem" onClick={() => { setMenuOpen(false); router.push("/app/settings"); }}>
-                    <span aria-hidden="true">⚙</span><span>Settings</span><small>Password &amp; account</small>
+                    <span aria-hidden="true">⚙</span><span>{t("topbar.menuSettings")}</span><small>{t("topbar.menuSettingsHint")}</small>
                   </button>
                   <button type="button" className="dropdown-signout-btn" role="menuitem" onClick={() => void signOut()}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
-                    <span>Sign out</span>
+                    <span>{t("action.signOut")}</span>
                   </button>
                 </div>
               ) : null}
@@ -237,10 +248,10 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main id="main-content" tabIndex={-1}>
-          {children}
+          {sectionAllowed ? children : <section className="panel"><EmptyState title={t("state.officerOnlyTitle")} icon="shield">{t("state.officerOnlyBody")}</EmptyState></section>}
           <footer className="workspace-footer">
-            <span><span className="footer-dot" />MODE starter workspace</span>
-            <p>{dashboard?.club.demo === false ? "Local database" : "Fictional seed records · Local database"} · Reimbursements record payments made outside MODE.</p>
+            <span><span className="footer-dot" />{t("shell.footerBrand")}</span>
+            <p>{dashboard?.club.demo === false ? t("shell.footerLive") : t("shell.footerDemo")} · {t("shell.footerNote")}</p>
           </footer>
         </main>
       </div>

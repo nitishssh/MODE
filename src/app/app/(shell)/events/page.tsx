@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import type { EventDetails } from "@/lib/contracts";
 import { api, useLoad } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
-import { dateTime, money } from "../../_lib/format";
+import { useT } from "../../_lib/i18n";
 import { Button, EmptyState, ErrorState, PageHead, PreviewNote, Skeleton, StatusBadge, Tabs } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
 
@@ -14,41 +14,40 @@ import { Icon } from "../../_components/icons";
 
 type Tab = "upcoming" | "past" | "drafts";
 
-function monthShort(iso: string) { return new Intl.DateTimeFormat("en-IN", { month: "short", timeZone: "Asia/Kolkata" }).format(new Date(iso)).toUpperCase(); }
-function dayOfMonth(iso: string) { return new Intl.DateTimeFormat("en-IN", { day: "numeric", timeZone: "Asia/Kolkata" }).format(new Date(iso)); }
-
 function EventCard({ event, href, door, index }: { event: EventDetails; href: string; door: boolean; index: number }) {
+  const { t, fmt } = useT();
   const used = event.capacity > 0 ? Math.min(100, ((event.capacity - event.available) / event.capacity) * 100) : 0;
   return (
     <article className="panel event-card">
       <div className="event-card-top">
         <div className={`date-tile ${index % 2 ? "purple" : "coral"}`}>
-          <span>{monthShort(event.startsAt)}</span>
-          <strong>{dayOfMonth(event.startsAt)}</strong>
+          <span>{fmt.month(event.startsAt).toUpperCase()}</span>
+          <strong>{fmt.day(event.startsAt)}</strong>
         </div>
         {event.status === "published"
-          ? <span className={`badge ${event.available === 0 ? "amber" : "green"}`}>{event.available === 0 ? "Sold out" : "Bookings open"}</span>
+          ? <span className={`badge ${event.available === 0 ? "amber" : "green"}`}>{event.available === 0 ? t("events.card.soldOut") : t("events.card.bookingsOpen")}</span>
           : <StatusBadge status={event.status} />}
       </div>
       <h2>{event.title}</h2>
-      <p>{event.venue} · {dateTime(event.startsAt)}</p>
+      <p>{event.venue} · {fmt.dateTime(event.startsAt)}</p>
       <div className="capacity-bar"><span style={{ width: `${used}%` }} /></div>
       <div className="event-numbers">
-        <span>{event.capacity - event.available} registered</span>
-        <span>{event.available} of {event.capacity} seats left</span>
+        <span>{t("events.card.registered", { count: event.capacity - event.available })}</span>
+        <span>{t("events.card.seatsLeft", { available: event.available, capacity: event.capacity })}</span>
       </div>
       <div className="ticket-prices">
-        <div><span>Member ticket</span><strong>{money(event.memberPricePaise)}</strong></div>
-        <div><span>Guest ticket</span><strong>{money(event.guestPricePaise)}</strong></div>
+        <div><span>{t("events.card.memberTicket")}</span><strong>{event.memberPricePaise === 0 ? t("state.free") : fmt.currency(event.memberPricePaise)}</strong></div>
+        <div><span>{t("events.card.guestTicket")}</span><strong>{event.guestPricePaise === 0 ? t("state.free") : fmt.currency(event.guestPricePaise)}</strong></div>
       </div>
       <div className="mx-row mx-mt">
-        <Link href={href} className="text-button">{door ? "Open door scanner" : "Details"}<Icon name="arrow" size={16} /></Link>
+        <Link href={href} className="text-button">{door ? t("events.card.openDoor") : t("action.details")}<Icon name="arrow" size={16} /></Link>
       </div>
     </article>
   );
 }
 
 function EventsList() {
+  const { t } = useT();
   const { can } = useSession();
   const params = useSearchParams();
   const door = params.get("door") === "1" && can("tickets:check_in");
@@ -64,30 +63,33 @@ function EventsList() {
   const list = tab === "upcoming" ? upcoming : tab === "past" ? past : drafts;
 
   const tabs: { value: Tab; label: string; count: number }[] = [
-    { value: "upcoming", label: "Upcoming", count: upcoming.length },
-    { value: "past", label: "Past", count: past.length },
+    { value: "upcoming", label: t("events.tabs.upcoming"), count: upcoming.length },
+    { value: "past", label: t("events.tabs.past"), count: past.length },
   ];
-  if (can("events:write")) tabs.push({ value: "drafts", label: "Drafts & cancelled", count: drafts.length });
+  if (can("events:write")) tabs.push({ value: "drafts", label: t("events.tabs.drafts"), count: drafts.length });
+
+  const emptyTitle = tab === "upcoming" ? t("events.empty.upcoming") : tab === "past" ? t("events.empty.past") : t("events.empty.drafts");
+  const emptyBody = tab === "upcoming" && can("events:write") ? t("events.empty.createHint") : tab === "upcoming" ? t("events.empty.checkBack") : t("events.empty.draftsHint");
 
   return (
     <>
       <PageHead
-        eyebrow={<>CLUB <span>/</span> {door ? "DOOR SCANNER" : "EVENTS"}</>}
-        title={door ? "Door scanner" : "Events"}
-        description={door ? "Pick the event you are admitting people to." : "Tickets hold a seat for 30 minutes until an officer confirms payment at the desk."}
-        actions={can("events:write") && !door ? <Link href="/app/events/new" className="button primary"><Icon name="plus" size={18} />New event</Link> : null}
+        eyebrow={<>{t("events.eyebrowClub")} <span>/</span> {door ? t("events.door.eyebrow") : t("events.eyebrow")}</>}
+        title={door ? t("events.door.pickTitle") : t("events.title")}
+        description={door ? t("events.door.pickDescription") : t("events.description")}
+        actions={can("events:write") && !door ? <Link href="/app/events/new" className="button primary"><Icon name="plus" size={18} />{t("events.new")}</Link> : null}
       />
       {door ? (
         <div className="outstanding-notice">
           <Icon name="scan" size={16} />
-          <div><strong>Choose an event below to open its scanner.</strong><p>Admission depends on a paid ticket for that event only.</p></div>
+          <div><strong>{t("events.door.chooseTitle")}</strong><p>{t("events.door.chooseBody")}</p></div>
         </div>
       ) : null}
       <Tabs value={tab} onChange={setTab} items={tabs} />
       {events.error ? <ErrorState error={events.error} onRetry={events.reload} /> : events.loading && !events.data ? <Skeleton rows={6} /> : !list.length ? (
         <section className="panel">
-          <EmptyState title={tab === "upcoming" ? "No upcoming events" : tab === "past" ? "No past events" : "No drafts or cancelled events"} icon="calendar" action={tab === "upcoming" && can("events:write") ? <Button variant="primary" onClick={() => { window.location.href = "/app/events/new"; }}>Create an event</Button> : undefined}>
-            {tab === "upcoming" && can("events:write") ? "Create one to open bookings." : tab === "upcoming" ? "Check back soon." : "Drafts and cancelled events will show here."}
+          <EmptyState title={emptyTitle} icon="calendar" action={tab === "upcoming" && can("events:write") ? <Button variant="primary" onClick={() => { window.location.href = "/app/events/new"; }}>{t("events.empty.createCta")}</Button> : undefined}>
+            {emptyBody}
           </EmptyState>
         </section>
       ) : (
@@ -95,7 +97,7 @@ function EventsList() {
           {list.map((event, index) => <EventCard key={event.id} event={event} index={index} door={door} href={door ? `/app/events/${event.id}/door` : `/app/events/${event.id}`} />)}
         </div>
       )}
-      <PreviewNote>Members with active dues pay the member price; everyone else pays the guest price. Prices are fixed when the seat is booked.</PreviewNote>
+      <PreviewNote>{t("events.note.pricing")}</PreviewNote>
     </>
   );
 }

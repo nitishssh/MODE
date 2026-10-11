@@ -4,25 +4,30 @@ import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { AuthMeResponse, AuthResponse, Dashboard } from "@/lib/contracts";
-import { api, ApiError, describeError } from "../../_lib/api";
+import type { AppKey } from "@/i18n/app";
+import { api, ApiError } from "../../_lib/api";
+import { useT } from "../../_lib/i18n";
 import { useSession } from "../../_lib/session";
+import { homeFor } from "../../_lib/access";
+import { AuthLanguage, AuthStory } from "../_story";
 
-/* Azman's scrapbook login page (login-page.css), with the form posting to /app. */
+/* Sign-in on the product's own paper: brand story on the left, a quiet form card on the right. */
 
-const DEMO_ACCOUNTS = [
-  ["lead@example.com", "Admin"],
-  ["organizer@example.com", "Organizer"],
-  ["treasurer@example.com", "Treasurer"],
-  ["volunteer@example.com", "Volunteer"],
-  ["active@example.com", "Active member"],
-  ["expired@example.com", "Expired member"],
-] as const;
+const DEMO_ACCOUNTS: readonly [string, AppKey][] = [
+  ["lead@example.com", "auth.demo.admin"],
+  ["organizer@example.com", "auth.demo.organizer"],
+  ["treasurer@example.com", "auth.demo.treasurer"],
+  ["volunteer@example.com", "auth.demo.volunteer"],
+  ["active@example.com", "auth.demo.activeMember"],
+  ["expired@example.com", "auth.demo.expiredMember"],
+];
 
 function safeNext(value: string | null): string {
   return value && value.startsWith("/app") && !value.startsWith("//") ? value : "/app";
 }
 
 function LoginForm() {
+  const { t, apiError } = useT();
   const router = useRouter();
   const params = useSearchParams();
   const session = useSession();
@@ -36,8 +41,8 @@ function LoginForm() {
   const [demo, setDemo] = useState(false);
 
   useEffect(() => {
-    if (session.status === "authenticated") router.replace(next);
-  }, [session.status, router, next]);
+    if (session.status === "authenticated" && session.user) router.replace(next === "/app" ? homeFor(session.user) : next);
+  }, [session.status, session.user, router, next]);
 
   // The sample-account shortcuts only make sense while the fictional seed is present.
   useEffect(() => {
@@ -47,8 +52,8 @@ function LoginForm() {
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors = {
-      email: email.trim() ? undefined : "Enter your club email address.",
-      password: password ? undefined : "Enter your password.",
+      email: email.trim() ? undefined : t("auth.login.emailRequired"),
+      password: password ? undefined : t("auth.login.passwordRequired"),
     };
     if (nextErrors.email || nextErrors.password) { setFieldErrors(nextErrors); return; }
     setFieldErrors({});
@@ -58,44 +63,58 @@ function LoginForm() {
       await api.post<AuthResponse>("/api/auth/login", { email: email.trim(), password });
       const me = await api.get<AuthMeResponse>("/api/auth/me");
       session.setSession(me);
-      router.replace(next);
+      router.replace(next === "/app" ? homeFor(me.user) : next);
     } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 401) setError("We could not sign you in. Check your details and try again.");
-      else setError(describeError(caught, "We could not sign you in. Please try again."));
+      if (caught instanceof ApiError && caught.status === 401) setError(t("auth.login.badCredentials"));
+      else setError(apiError(caught, "auth.login.failed"));
       setBusy(false);
     }
   }
 
   return (
-    <main className="mode-login">
-      <section className="mode-login-form-column" aria-label="Sign in">
-        <section className="mode-login-card" aria-labelledby="login-title">
-          <h1 id="login-title">Welcome back!</h1>
-          <p>Sign in to your Student Organization System (SOS).<br />Events · Members · Money in one place.</p>
+    <main className="mx-login">
+      <AuthStory />
+      <section className="mx-login-form" aria-label={t("auth.login.ariaLabel")}>
+        <AuthLanguage />
+        <div className="mx-login-card">
+          <h2>{t("auth.login.title")}</h2>
+          <p>{t("shell.description")}</p>
           <form onSubmit={signIn} noValidate>
-            <label htmlFor="email">Email or Student ID</label>
-            <input id="email" name="email" type="email" autoComplete="username" value={email} aria-invalid={Boolean(fieldErrors.email)} aria-describedby={fieldErrors.email ? "email-error" : undefined} onChange={(e) => { setEmail(e.target.value); setFieldErrors((c) => ({ ...c, email: undefined })); }} />
-            {fieldErrors.email && <span className="mode-field-error" id="email-error">{fieldErrors.email}</span>}
-            <label htmlFor="password">Password</label>
-            <span className="mode-password-field">
-              <input id="password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} aria-invalid={Boolean(fieldErrors.password)} aria-describedby={fieldErrors.password ? "password-error" : undefined} onChange={(e) => { setPassword(e.target.value); setFieldErrors((c) => ({ ...c, password: undefined })); }} />
-              <button type="button" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? "Hide" : "Show"}</button>
-            </span>
-            {fieldErrors.password && <span className="mode-field-error" id="password-error">{fieldErrors.password}</span>}
-            <div className="mode-login-options"><label><input type="checkbox" name="remember" />Remember me</label><span>Forgot password?</span></div>
-            {error && <p className="mode-login-error" role="alert">{error}</p>}
-            <button type="submit" disabled={busy}>{busy ? "Signing in…" : "Log In"}</button>
-          </form>
-          <p className="mode-login-help">New student? <Link href="/app/register"><strong>Join the Association</strong></Link><br />Treasurer &amp; Admin Help</p>
-          {demo ? <div className="mx-demo">
-            <strong>Demo accounts</strong> · password <code>mode-demo-2026</code>
-            <div style={{ marginTop: 4 }}>
-              {DEMO_ACCOUNTS.map(([address, label]) => (
-                <button key={address} type="button" title={address} onClick={() => { setEmail(address); setPassword("mode-demo-2026"); setFieldErrors({}); }}>{label}</button>
-              ))}
+            {error ? <div className="mx-login-alert" role="alert">{error}</div> : null}
+            <label>
+              {t("auth.login.emailLabel")}
+              <input name="email" type="email" autoComplete="username" value={email} aria-invalid={Boolean(fieldErrors.email)} autoFocus onChange={(e) => { setEmail(e.target.value); setFieldErrors((c) => ({ ...c, email: undefined })); }} />
+              {fieldErrors.email ? <span className="mx-login-error" role="alert">{fieldErrors.email}</span> : null}
+            </label>
+            <label>
+              {t("auth.login.passwordLabel")}
+              <span className="mx-login-pw">
+                <input name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} aria-invalid={Boolean(fieldErrors.password)} onChange={(e) => { setPassword(e.target.value); setFieldErrors((c) => ({ ...c, password: undefined })); }} />
+                <button type="button" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? t("auth.login.hidePassword") : t("auth.login.showPassword")}>{showPassword ? t("auth.login.hide") : t("auth.login.show")}</button>
+              </span>
+              {fieldErrors.password ? <span className="mx-login-error" role="alert">{fieldErrors.password}</span> : null}
+            </label>
+            <div className="mx-login-options">
+              <label><input type="checkbox" name="remember" />{t("auth.login.rememberMe")}</label>
+              <span>{t("auth.login.forgotPassword")}</span>
             </div>
-          </div> : null}
-        </section>
+            <button type="submit" className="button primary" disabled={busy}>{busy ? t("auth.login.submitting") : t("auth.login.submit")}</button>
+          </form>
+          <p className="mx-login-links">
+            {t("auth.login.newStudent")} <Link href="/app/register"><strong>{t("auth.login.joinLink")}</strong></Link><br />
+            <Link href="/">{t("shell.brandHome")}</Link>
+          </p>
+          {demo ? (
+            <div className="mx-login-demo">
+              <strong>{t("auth.login.demoTitle")}</strong> · {t("auth.login.demoPassword")} <code>mode-demo-2026</code>
+              <div>
+                {DEMO_ACCOUNTS.map(([address, labelKey]) => (
+                  <button key={address} type="button" title={address} onClick={() => { setEmail(address); setPassword("mode-demo-2026"); setFieldErrors({}); }}>{t(labelKey)}</button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
       </section>
     </main>
   );

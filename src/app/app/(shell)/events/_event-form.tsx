@@ -2,7 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import type { EventDetails, EventStatus } from "@/lib/contracts";
-import { ApiError, describeError } from "../../_lib/api";
+import { ApiError } from "../../_lib/api";
+import { useT } from "../../_lib/i18n";
 import { fromLocalInput, paiseToRupees, rupeesToPaise, toLocalInput } from "../../_lib/format";
 import { Button } from "../../_components/ui";
 
@@ -43,6 +44,7 @@ function FieldError({ message }: { message?: string }) {
 
 /** Shared create/edit form. `onSubmit` receives the full payload; for edits the caller diffs against the original. */
 export function EventForm({ initial, submitLabel, onSubmit, onCancel }: { initial?: EventDetails; submitLabel: string; onSubmit: (payload: EventPayload) => Promise<void>; onCancel: () => void }) {
+  const { t, apiError } = useT();
   const [form, setForm] = useState<Form>(() => toForm(initial));
   const [errors, setErrors] = useState<Errors>({});
   const [error, setError] = useState("");
@@ -56,16 +58,16 @@ export function EventForm({ initial, submitLabel, onSubmit, onCancel }: { initia
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const next: Errors = {};
-    if (form.title.trim().length < 3) next.title = "Title needs at least 3 characters.";
-    if (form.venue.trim().length < 2) next.venue = "Enter the venue.";
+    if (form.title.trim().length < 3) next.title = t("events.form.errTitle");
+    if (form.venue.trim().length < 2) next.venue = t("events.form.errVenue");
     const startsAt = fromLocalInput(form.startsAt);
-    if (!startsAt) next.startsAt = "Pick a date and time.";
+    if (!startsAt) next.startsAt = t("events.form.errStartsAt");
     const capacity = Number(form.capacity);
-    if (!/^\d+$/.test(form.capacity.trim()) || capacity > 100_000) next.capacity = "Enter a whole number of seats (0–100,000).";
+    if (!/^\d+$/.test(form.capacity.trim()) || capacity > 100_000) next.capacity = t("events.form.errCapacity");
     const memberPricePaise = rupeesToPaise(form.memberPrice);
-    if (memberPricePaise === null) next.memberPrice = "Enter a rupee amount, e.g. 50 or 49.50.";
+    if (memberPricePaise === null) next.memberPrice = t("events.form.errMemberPrice");
     const guestPricePaise = rupeesToPaise(form.guestPrice);
-    if (guestPricePaise === null) next.guestPrice = "Enter a rupee amount, e.g. 100.";
+    if (guestPricePaise === null) next.guestPrice = t("events.form.errGuestPrice");
     setErrors(next);
     if (Object.keys(next).length || !startsAt || memberPricePaise === null || guestPricePaise === null) return;
     setBusy(true);
@@ -76,7 +78,7 @@ export function EventForm({ initial, submitLabel, onSubmit, onCancel }: { initia
       if (caught instanceof ApiError && caught.details.length) {
         setErrors(Object.fromEntries(caught.details.map((d) => [FIELD_MAP[d.field] ?? d.field, d.message])));
       }
-      setError(describeError(caught, "The event could not be saved."));
+      setError(apiError(caught, "events.form.saveFailed"));
       setBusy(false);
     }
   }
@@ -85,53 +87,53 @@ export function EventForm({ initial, submitLabel, onSubmit, onCancel }: { initia
     <form onSubmit={submit} noValidate>
       <div className="task-form-grid">
         <label>
-          Title
+          {t("col.title")}
           <input value={form.title} onChange={(e) => update("title", e.target.value)} maxLength={140} autoFocus disabled={busy} aria-invalid={Boolean(errors.title)} />
           <FieldError message={errors.title} />
         </label>
         <label>
-          Venue
+          {t("col.venue")}
           <input value={form.venue} onChange={(e) => update("venue", e.target.value)} maxLength={200} disabled={busy} aria-invalid={Boolean(errors.venue)} />
           <FieldError message={errors.venue} />
         </label>
         <label>
-          Starts at
+          {t("events.form.startsAt")}
           <input type="datetime-local" value={form.startsAt} onChange={(e) => update("startsAt", e.target.value)} disabled={busy} aria-invalid={Boolean(errors.startsAt)} />
           <FieldError message={errors.startsAt} />
         </label>
         <label>
-          Capacity (seats)
+          {t("events.form.capacity")}
           <input type="number" min={0} max={100000} inputMode="numeric" value={form.capacity} onChange={(e) => update("capacity", e.target.value)} disabled={busy} aria-invalid={Boolean(errors.capacity)} />
-          {errors.capacity ? <FieldError message={errors.capacity} /> : initial ? <span className="subtext">Cannot go below seats already held or sold.</span> : null}
+          {errors.capacity ? <FieldError message={errors.capacity} /> : initial ? <span className="subtext">{t("events.form.capacityHint")}</span> : null}
         </label>
         <label>
-          Member price (₹)
-          <input inputMode="decimal" placeholder="0 for free" value={form.memberPrice} onChange={(e) => update("memberPrice", e.target.value)} disabled={busy} aria-invalid={Boolean(errors.memberPrice)} />
-          {errors.memberPrice ? <FieldError message={errors.memberPrice} /> : <span className="subtext">Charged to members with active dues.</span>}
+          {t("events.form.memberPrice")}
+          <input inputMode="decimal" placeholder={t("events.form.freePlaceholder")} value={form.memberPrice} onChange={(e) => update("memberPrice", e.target.value)} disabled={busy} aria-invalid={Boolean(errors.memberPrice)} />
+          {errors.memberPrice ? <FieldError message={errors.memberPrice} /> : <span className="subtext">{t("events.form.memberPriceHint")}</span>}
         </label>
         <label>
-          Guest price (₹)
-          <input inputMode="decimal" placeholder="0 for free" value={form.guestPrice} onChange={(e) => update("guestPrice", e.target.value)} disabled={busy} aria-invalid={Boolean(errors.guestPrice)} />
-          {errors.guestPrice ? <FieldError message={errors.guestPrice} /> : <span className="subtext">Everyone else, including expired members.</span>}
+          {t("events.form.guestPrice")}
+          <input inputMode="decimal" placeholder={t("events.form.freePlaceholder")} value={form.guestPrice} onChange={(e) => update("guestPrice", e.target.value)} disabled={busy} aria-invalid={Boolean(errors.guestPrice)} />
+          {errors.guestPrice ? <FieldError message={errors.guestPrice} /> : <span className="subtext">{t("events.form.guestPriceHint")}</span>}
         </label>
         <label>
-          Status
+          {t("col.status")}
           <select value={form.status} onChange={(e) => update("status", e.target.value as EventStatus)} disabled={busy}>
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
-            <option value="cancelled">Cancelled</option>
+            <option value="draft">{t("status.draft")}</option>
+            <option value="published">{t("status.published")}</option>
+            <option value="cancelled">{t("status.cancelled")}</option>
           </select>
-          {errors.status ? <FieldError message={errors.status} /> : <span className="subtext">Only published events accept bookings.</span>}
+          {errors.status ? <FieldError message={errors.status} /> : <span className="subtext">{t("events.form.statusHint")}</span>}
         </label>
         <label style={{ gridColumn: "1 / -1" }}>
-          Description
+          {t("col.description")}
           <textarea value={form.description} onChange={(e) => update("description", e.target.value)} maxLength={2000} rows={3} disabled={busy} />
-          {errors.description ? <FieldError message={errors.description} /> : <span className="subtext">Plain text, shown to members and guests.</span>}
+          {errors.description ? <FieldError message={errors.description} /> : <span className="subtext">{t("events.form.descriptionHint")}</span>}
         </label>
       </div>
       <div className="form-actions">
         <Button type="submit" variant="primary" loading={busy}>{submitLabel}</Button>
-        <Button onClick={onCancel} disabled={busy}>Cancel</Button>
+        <Button onClick={onCancel} disabled={busy}>{t("action.cancel")}</Button>
       </div>
       {error ? <p className="form-error" role="alert">{error}</p> : null}
     </form>

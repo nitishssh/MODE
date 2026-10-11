@@ -1,0 +1,38 @@
+import type en from "../en/pass";
+
+const pass: Record<keyof typeof en, string> = {
+  "pass.kicker": "সদস্যপদ",
+  "pass.kickerSection": "দরজায় প্রবেশ",
+  "pass.title": "আমার সদস্য পাস",
+  "pass.lede": "দরজায় এটি দেখান। প্রবেশ নির্ভর করে ভলান্টিয়ারের বেছে নেওয়া ইভেন্টের পরিশোধিত টিকিটের উপর, শুধু সদস্যপদের উপর নয়।",
+  "pass.refresh": "সদস্যপদ রিফ্রেশ করুন",
+  "pass.cardKicker": "MODE · সদস্য পাস",
+  "pass.notJoined": "যোগ দেননি",
+  "pass.membership.active": "সক্রিয় সদস্যপদ",
+  "pass.membership.expired": "সদস্যপদের মেয়াদ শেষ। পদাধিকারীর কাছে নবীকরণ করুন।",
+  "pass.membership.none": "এখনও চাঁদা দেওয়া সদস্য নন। চাঁদার বিষয়ে পদাধিকারীকে জিজ্ঞাসা করুন।",
+  "pass.doorCode": "ডোর কোড",
+  "pass.scan.kicker": "সদস্যপদ / দরজায় প্রবেশ",
+  "pass.scan.title": "স্ক্যান বা টাইপ",
+  "pass.scan.qrAlt": "সদস্য পাস QR কোড। টাইপ করার বিকল্প: {code}",
+  "pass.scan.body1": "ভলান্টিয়ার এই QR স্ক্যান করেন, বা আপনার ডোর কোড টাইপ করেন",
+  "pass.scan.body2": "সদস্য পাস থেকে বেছে নেওয়া ইভেন্টে আপনার একটিমাত্র চালু টিকিট খুঁজে নেওয়া হয়। টিকিট না থাকলে দরজা তা জানাবে; আগে ইভেন্ট থেকে একটি বুক করুন।",
+  "pass.scan.body3": "আপনার পাস কখনও বদলায় না। পদাধিকারী চাঁদা নথিভুক্ত করার পরে নতুন মেয়াদ দেখতে রিফ্রেশ করুন।",
+  "pass.tickets.kicker": "ইভেন্ট রেজিস্টার",
+  "pass.tickets.title": "আপনার টিকিট",
+  "pass.tickets.all": "সব টিকিট",
+  "pass.tickets.empty": "এখনও কোনো টিকিট নেই।",
+  "pass.tickets.findEvent": "ইভেন্ট খুঁজুন",
+  "pass.tickets.line": "{pricing} টিকিট · {price}",
+  "pass.tickets.holdUntil": "{time} পর্যন্ত হোল্ড",
+  "pass.tickets.checkedIn": "চেক ইন {time}",
+  "pass.tickets.footnote": "ডেস্কে পদাধিকারী আপনার পেমেন্ট নিশ্চিত করেন; তারপর আপনার QR দরজায় প্রবেশ করায়।",
+  "pass.orders.kicker": "ক্লাবের দোকান",
+  "pass.orders.title": "আপনার অর্ডার",
+  "pass.orders.all": "সব অর্ডার",
+  "pass.orders.empty": "এখনও কোনো মার্চেন্ডাইজ অর্ডার নেই।",
+  "pass.orders.openShop": "দোকান খুলুন",
+  "pass.previewNote": "ডোর স্ক্যানে আপনার পাস QR টোকেন বা টাইপ করা কোড দিয়ে চেনা হয়, কখনও অ্যাকাউন্ট আইডি দিয়ে নয়।",
+};
+
+export default pass;

@@ -1,10 +1,14 @@
+"use client";
+
+import { useT } from "../_lib/i18n";
 import { EmptyState, LinkButton } from "../_components/ui";
 
 export default function NotFound() {
+  const { t } = useT();
   return (
     <section className="panel">
-      <EmptyState title="There is nothing at this address" action={<LinkButton href="/app" variant="primary">Back to overview</LinkButton>}>
-        The page may have moved, or the record belongs to another club.
+      <EmptyState title={t("state.notFoundTitle")} action={<LinkButton href="/app" variant="primary">{t("state.backToOverview")}</LinkButton>}>
+        {t("state.notFoundBody")}
       </EmptyState>
     </section>
   );

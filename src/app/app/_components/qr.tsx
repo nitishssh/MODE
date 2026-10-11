@@ -3,6 +3,31 @@
 import { useEffect, useState } from "react";
 import { toDataURL } from "qrcode";
 
+/** Public ticket page for a ticket token: a phone camera opens the ticket itself. */
+export function ticketQrValue(token: string): string {
+  return `${window.location.origin}/t/${encodeURIComponent(token)}`;
+}
+
+/** Door-scanner deep link for a member pass: an officer's phone opens the scanner with the pass prefilled. */
+export function passQrValue(token: string): string {
+  return `${window.location.origin}/app/door?credential=${encodeURIComponent(token)}`;
+}
+
+/** Accepts a raw token/short code or any of the QR URLs above and returns the credential the API expects. */
+export function credentialFromScan(raw: string): string {
+  const value = raw.trim();
+  if (!/^https?:\/\//i.test(value)) return value;
+  try {
+    const url = new URL(value);
+    const fromQuery = url.searchParams.get("credential");
+    if (fromQuery) return fromQuery.trim();
+    const last = url.pathname.split("/").filter(Boolean).pop() ?? "";
+    return decodeURIComponent(last);
+  } catch {
+    return value;
+  }
+}
+
 /** Renders a QR code for a pass or ticket token. Falls back to the typed code when rendering fails. */
 export function QrCode({ value, alt, size = 220 }: { value: string; alt: string; size?: number }) {
   const [src, setSrc] = useState("");

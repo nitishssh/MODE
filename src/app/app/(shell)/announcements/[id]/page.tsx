@@ -4,8 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { Announcement, AnnouncementOutboxMessage } from "@/lib/contracts";
-import { api, describeError, useLoad } from "../../../_lib/api";
-import { date, dateTime } from "../../../_lib/format";
+import { api, useLoad } from "../../../_lib/api";
+import { useT } from "../../../_lib/i18n";
 import { Alert, Button, Card, EmptyState, ErrorState, Loading, PageHead, Skeleton, Table } from "../../../_components/ui";
 import { Icon } from "../../../_components/icons";
 import { useSession } from "../../../_lib/session";
@@ -15,6 +15,7 @@ import { useSession } from "../../../_lib/session";
 type OutboxResponse = { delivery: "simulated"; messages: AnnouncementOutboxMessage[] };
 
 function OutboxCard({ id }: { id: string }) {
+  const { t, fmt, apiError } = useT();
   const [state, setState] = useState<{ status: "idle" | "loading" | "ready" | "error"; data?: OutboxResponse; error?: string }>({ status: "idle" });
 
   async function load() {
@@ -23,29 +24,29 @@ function OutboxCard({ id }: { id: string }) {
       const data = await api.get<OutboxResponse>(`/api/announcements/${encodeURIComponent(id)}/outbox`);
       setState({ status: "ready", data });
     } catch (caught) {
-      setState({ status: "error", error: describeError(caught, "Could not load the outbox.") });
+      setState({ status: "error", error: apiError(caught) || t("announcements.outbox.loadError") });
     }
   }
 
   return (
-    <Card kicker="SIMULATED DELIVERY" title="Outbox" flush actions={state.status === "ready" ? <button type="button" className="text-button" onClick={() => void load()}>Reload <Icon name="arrow" size={14} /></button> : null}>
-      <div className="panel-footnote"><span className="tiny-dot" />One stored row per active member at publication time. A row proves what was recorded, not that any email or message was delivered: nothing is sent externally.</div>
-      {state.status === "idle" ? <div style={{ padding: 25 }}><Button variant="primary" onClick={() => void load()}><Icon name="mail" size={16} />Load recipients</Button></div> : null}
+    <Card kicker={t("announcements.outbox.kicker")} title={t("announcements.outbox.title")} flush actions={state.status === "ready" ? <button type="button" className="text-button" onClick={() => void load()}>{t("announcements.outbox.reload")} <Icon name="arrow" size={14} /></button> : null}>
+      <div className="panel-footnote"><span className="tiny-dot" />{t("announcements.outbox.footnote")}</div>
+      {state.status === "idle" ? <div style={{ padding: 25 }}><Button variant="primary" onClick={() => void load()}><Icon name="mail" size={16} />{t("announcements.outbox.load")}</Button></div> : null}
       {state.status === "loading" ? <div style={{ padding: 25 }}><Skeleton rows={4} /></div> : null}
       {state.status === "error" ? <div style={{ padding: 25 }}><Alert tone="error" onRetry={() => void load()}>{state.error}</Alert></div> : null}
       {state.status === "ready" && state.data ? (
         state.data.messages.length ? (
-          <Table head={<><th scope="col">Recipient</th><th scope="col">Subject</th><th scope="col">Recorded</th><th scope="col">Status</th></>}>
+          <Table head={<><th scope="col">{t("announcements.outbox.recipient")}</th><th scope="col">{t("announcements.outbox.subject")}</th><th scope="col">{t("announcements.outbox.recorded")}</th><th scope="col">{t("col.status")}</th></>}>
             {state.data.messages.map((message) => (
               <tr key={message.id}>
                 <td><strong>{message.recipientEmail}</strong></td>
                 <td>{message.subject}</td>
-                <td>{dateTime(message.createdAt)}</td>
-                <td><span className="badge purple">{message.status}</span></td>
+                <td>{fmt.dateTime(message.createdAt)}</td>
+                <td><span className="badge purple">{t("status.simulated")}</span></td>
               </tr>
             ))}
           </Table>
-        ) : <EmptyState title="No recipients recorded" icon="mail">No member had an active membership when this was published.</EmptyState>
+        ) : <EmptyState title={t("announcements.outbox.empty")} icon="mail">{t("announcements.outbox.emptyBody")}</EmptyState>
       ) : null}
     </Card>
   );
@@ -55,18 +56,19 @@ export default function AnnouncementPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
   const { can } = useSession();
+  const { t, fmt } = useT();
   const announcement = useLoad(() => api.get<{ announcement: Announcement }>(`/api/announcements/${encodeURIComponent(id)}`), [id]);
   const item = announcement.data?.announcement;
 
   return (
     <>
-      <PageHead eyebrow={<>CLUB <span>/</span> NOTICES</>} title={item ? item.title : "Announcement"} description={item ? `Published ${dateTime(item.publishedAt)}` : undefined} actions={<Link href="/app/announcements" className="text-button"><Icon name="back" size={14} />All announcements</Link>} />
-      {announcement.loading && !item ? <Loading label="Opening the notice…" /> : announcement.error ? <ErrorState error={announcement.error} onRetry={announcement.reload} fallback="This announcement could not be found." title="Announcement unavailable" /> : item ? (
+      <PageHead eyebrow={<>{t("announcements.eyebrow.club")} <span>/</span> {t("announcements.eyebrow.section")}</>} title={item ? item.title : t("announcements.detail.title")} description={item ? t("announcements.detail.publishedAt", { when: fmt.dateTime(item.publishedAt) }) : undefined} actions={<Link href="/app/announcements" className="text-button"><Icon name="back" size={14} />{t("announcements.detail.all")}</Link>} />
+      {announcement.loading && !item ? <Loading label={t("announcements.detail.loading")} /> : announcement.error ? <ErrorState error={announcement.error} onRetry={announcement.reload} fallback="announcements.detail.notFound" title={t("announcements.detail.unavailable")} /> : item ? (
         <div className="announcement-list">
           <article className="panel announcement-card">
             <span className="announcement-symbol"><Icon name="megaphone" size={22} /></span>
             <div>
-              <span className="eyebrow">{date(item.publishedAt)}</span>
+              <span className="eyebrow">{fmt.date(item.publishedAt)}</span>
               <h2>{item.title}</h2>
               <p>{item.body}</p>
             </div>

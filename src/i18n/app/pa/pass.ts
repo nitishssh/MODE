@@ -1,0 +1,38 @@
+import type en from "../en/pass";
+
+const pass: Record<keyof typeof en, string> = {
+  "pass.kicker": "ਮੈਂਬਰਸ਼ਿਪ",
+  "pass.kickerSection": "ਡੋਰ ਐਕਸੈਸ",
+  "pass.title": "ਮੇਰਾ ਮੈਂਬਰ ਪਾਸ",
+  "pass.lede": "ਇਹ ਦਰਵਾਜ਼ੇ 'ਤੇ ਵਿਖਾਓ। ਦਾਖਲਾ ਵਲੰਟੀਅਰ ਵੱਲੋਂ ਚੁਣੇ ਇਵੈਂਟ ਦੀ ਭੁਗਤਾਨ ਕੀਤੀ ਟਿਕਟ 'ਤੇ ਨਿਰਭਰ ਹੈ, ਸਿਰਫ਼ ਮੈਂਬਰਸ਼ਿਪ 'ਤੇ ਨਹੀਂ।",
+  "pass.refresh": "ਮੈਂਬਰਸ਼ਿਪ ਰੀਫ੍ਰੈਸ਼ ਕਰੋ",
+  "pass.cardKicker": "MODE · ਮੈਂਬਰ ਪਾਸ",
+  "pass.notJoined": "ਸ਼ਾਮਲ ਨਹੀਂ",
+  "pass.membership.active": "ਸਰਗਰਮ ਮੈਂਬਰਸ਼ਿਪ",
+  "pass.membership.expired": "ਮੈਂਬਰਸ਼ਿਪ ਦੀ ਮਿਆਦ ਖਤਮ। ਕਿਸੇ ਅਧਿਕਾਰੀ ਨਾਲ ਨਵਿਆਓ।",
+  "pass.membership.none": "ਅਜੇ ਭੁਗਤਾਨ ਕੀਤੇ ਮੈਂਬਰ ਨਹੀਂ। ਫੀਸ ਬਾਰੇ ਕਿਸੇ ਅਧਿਕਾਰੀ ਨੂੰ ਪੁੱਛੋ।",
+  "pass.doorCode": "ਡੋਰ ਕੋਡ",
+  "pass.scan.kicker": "ਮੈਂਬਰਸ਼ਿਪ / ਡੋਰ ਐਕਸੈਸ",
+  "pass.scan.title": "ਸਕੈਨ ਕਰੋ ਜਾਂ ਟਾਈਪ ਕਰੋ",
+  "pass.scan.qrAlt": "ਮੈਂਬਰ ਪਾਸ QR ਕੋਡ। ਟਾਈਪ ਕਰਨ ਵਾਲਾ ਬਦਲ: {code}",
+  "pass.scan.body1": "ਵਲੰਟੀਅਰ ਇਹ QR ਸਕੈਨ ਕਰਦਾ ਹੈ, ਜਾਂ ਤੁਹਾਡਾ ਡੋਰ ਕੋਡ ਟਾਈਪ ਕਰਦਾ ਹੈ",
+  "pass.scan.body2": "ਮੈਂਬਰ ਪਾਸ ਚੁਣੇ ਇਵੈਂਟ ਲਈ ਤੁਹਾਡੀ ਇੱਕੋ-ਇੱਕ ਚਾਲੂ ਟਿਕਟ ਨਾਲ ਜੁੜਦਾ ਹੈ। ਜੇ ਤੁਹਾਡੇ ਕੋਲ ਟਿਕਟ ਨਹੀਂ, ਦਰਵਾਜ਼ਾ ਇਹ ਦੱਸ ਦੇਵੇਗਾ; ਪਹਿਲਾਂ ਇਵੈਂਟ ਹੇਠ ਇੱਕ ਬੁੱਕ ਕਰੋ।",
+  "pass.scan.body3": "ਤੁਹਾਡਾ ਪਾਸ ਕਦੇ ਨਹੀਂ ਬਦਲਦਾ। ਅਧਿਕਾਰੀ ਵੱਲੋਂ ਫੀਸ ਦਰਜ ਕਰਨ ਤੋਂ ਬਾਅਦ ਨਵੀਂ ਮਿਆਦ ਵੇਖਣ ਲਈ ਰੀਫ੍ਰੈਸ਼ ਕਰੋ।",
+  "pass.tickets.kicker": "ਇਵੈਂਟ ਰਜਿਸਟਰ",
+  "pass.tickets.title": "ਤੁਹਾਡੀਆਂ ਟਿਕਟਾਂ",
+  "pass.tickets.all": "ਸਾਰੀਆਂ ਟਿਕਟਾਂ",
+  "pass.tickets.empty": "ਅਜੇ ਕੋਈ ਟਿਕਟ ਨਹੀਂ।",
+  "pass.tickets.findEvent": "ਇੱਕ ਇਵੈਂਟ ਲੱਭੋ",
+  "pass.tickets.line": "{pricing} ਟਿਕਟ · {price}",
+  "pass.tickets.holdUntil": "{time} ਤੱਕ ਹੋਲਡ",
+  "pass.tickets.checkedIn": "ਚੈੱਕ-ਇਨ {time}",
+  "pass.tickets.footnote": "ਅਧਿਕਾਰੀ ਡੈਸਕ 'ਤੇ ਤੁਹਾਡੇ ਭੁਗਤਾਨ ਦੀ ਪੁਸ਼ਟੀ ਕਰਦਾ ਹੈ; ਉਸ ਤੋਂ ਬਾਅਦ ਤੁਹਾਡਾ QR ਦਰਵਾਜ਼ੇ 'ਤੇ ਦਾਖਲਾ ਦਿੰਦਾ ਹੈ।",
+  "pass.orders.kicker": "ਕਲੱਬ ਸ਼ਾਪ",
+  "pass.orders.title": "ਤੁਹਾਡੇ ਆਰਡਰ",
+  "pass.orders.all": "ਸਾਰੇ ਆਰਡਰ",
+  "pass.orders.empty": "ਅਜੇ ਕੋਈ ਮਰਚੈਂਡਾਈਜ਼ ਆਰਡਰ ਨਹੀਂ।",
+  "pass.orders.openShop": "ਸ਼ਾਪ ਖੋਲ੍ਹੋ",
+  "pass.previewNote": "ਡੋਰ ਸਕੈਨਿੰਗ ਤੁਹਾਡੇ ਪਾਸ ਨੂੰ ਉਸ ਦੇ QR ਟੋਕਨ ਜਾਂ ਟਾਈਪ ਕੀਤੇ ਕੋਡ ਰਾਹੀਂ ਪਛਾਣਦੀ ਹੈ, ਕਦੇ ਵੀ ਖਾਤਾ ID ਰਾਹੀਂ ਨਹੀਂ।",
+};
+
+export default pass;

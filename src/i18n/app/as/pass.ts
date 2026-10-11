@@ -1,0 +1,38 @@
+import type en from "../en/pass";
+
+const pass: Record<keyof typeof en, string> = {
+  "pass.kicker": "সদস্যপদ",
+  "pass.kickerSection": "দুৱাৰত প্ৰৱেশ",
+  "pass.title": "মোৰ সদস্য পাছ",
+  "pass.lede": "দুৱাৰত এইটো দেখুৱাওক। প্ৰৱেশ স্বেচ্ছাসেৱকে বাছি লোৱা অনুষ্ঠানৰ পৰিশোধিত টিকটৰ ওপৰত নিৰ্ভৰ কৰে, কেৱল সদস্যপদৰ ওপৰত নহয়।",
+  "pass.refresh": "সদস্যপদ ৰিফ্ৰেশ্ব কৰক",
+  "pass.cardKicker": "MODE · সদস্য পাছ",
+  "pass.notJoined": "যোগদান কৰা নাই",
+  "pass.membership.active": "সক্ৰিয় সদস্যপদ",
+  "pass.membership.expired": "সদস্যপদৰ ম্যাদ উকলিল। পদাধিকাৰীৰ ওচৰত নবীকৰণ কৰক।",
+  "pass.membership.none": "এতিয়াও মাচুল দিয়া সদস্য নহয়। মাচুলৰ বিষয়ে পদাধিকাৰীক সোধক।",
+  "pass.doorCode": "দুৱাৰ ক'ড",
+  "pass.scan.kicker": "সদস্যপদ / দুৱাৰত প্ৰৱেশ",
+  "pass.scan.title": "স্কেন বা টাইপ",
+  "pass.scan.qrAlt": "সদস্য পাছ QR ক'ড। টাইপ কৰাৰ বিকল্প: {code}",
+  "pass.scan.body1": "স্বেচ্ছাসেৱকে এই QR স্কেন কৰে, বা আপোনাৰ দুৱাৰ ক'ড টাইপ কৰে",
+  "pass.scan.body2": "সদস্য পাছৰ পৰা বাছি লোৱা অনুষ্ঠানত আপোনাৰ একমাত্ৰ চলিত টিকট বিচাৰি উলিওৱা হয়। টিকট নাথাকিলে দুৱাৰে তাক জনাব; প্ৰথমে অনুষ্ঠানৰ পৰা এখন বুক কৰক।",
+  "pass.scan.body3": "আপোনাৰ পাছ কেতিয়াও সলনি নহয়। পদাধিকাৰীয়ে মাচুল লিপিবদ্ধ কৰাৰ পিছত নতুন ম্যাদ চাবলৈ ৰিফ্ৰেশ্ব কৰক।",
+  "pass.tickets.kicker": "অনুষ্ঠান পঞ্জী",
+  "pass.tickets.title": "আপোনাৰ টিকট",
+  "pass.tickets.all": "সকলো টিকট",
+  "pass.tickets.empty": "এতিয়াও কোনো টিকট নাই।",
+  "pass.tickets.findEvent": "অনুষ্ঠান বিচাৰক",
+  "pass.tickets.line": "{pricing} টিকট · {price}",
+  "pass.tickets.holdUntil": "{time} লৈকে হ'ল্ড",
+  "pass.tickets.checkedIn": "চেক ইন {time}",
+  "pass.tickets.footnote": "ডেস্কত পদাধিকাৰীয়ে আপোনাৰ পৰিশোধ নিশ্চিত কৰে; তাৰ পিছত আপোনাৰ QR-এ দুৱাৰত প্ৰৱেশ কৰায়।",
+  "pass.orders.kicker": "ক্লাবৰ দোকান",
+  "pass.orders.title": "আপোনাৰ অৰ্ডাৰ",
+  "pass.orders.all": "সকলো অৰ্ডাৰ",
+  "pass.orders.empty": "এতিয়াও কোনো সামগ্ৰীৰ অৰ্ডাৰ নাই।",
+  "pass.orders.openShop": "দোকান খোলক",
+  "pass.previewNote": "দুৱাৰ স্কেনে আপোনাৰ পাছ QR ট'কেন বা টাইপ কৰা ক'ডেৰে চিনে, কেতিয়াও একাউণ্ট আইডিৰে নহয়।",
+};
+
+export default pass;

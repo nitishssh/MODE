@@ -3,12 +3,14 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { api, ApiError, describeError, useAction } from "../../_lib/api";
+import { api, ApiError, useAction } from "../../_lib/api";
+import { useT } from "../../_lib/i18n";
 import { useSession } from "../../_lib/session";
 import { Alert, Button, Card, KeyValue, PageHead, PreviewNote, Skeleton, StatusBadge } from "../../_components/ui";
 import { Icon } from "../../_components/icons";
 
 export default function SettingsPage() {
+  const { t } = useT();
   const session = useSession();
   const router = useRouter();
   const { user, pass } = session;
@@ -19,51 +21,51 @@ export default function SettingsPage() {
   async function signOut() {
     setSigningOut(true);
     try { await session.logout(); } catch { /* cookie logout is idempotent */ }
-    router.replace("/app/login");
+    window.location.assign("/");
   }
 
   return (
     <>
       <PageHead
-        eyebrow={<>YOU <span>/</span> SETTINGS</>}
-        title="Settings"
-        description="Your account, your password, and where to find things."
-        actions={<Button variant="danger" onClick={() => void signOut()} loading={signingOut}><Icon name="logout" size={16} />Sign out</Button>}
+        eyebrow={<>{t("settings.kicker")} <span>/</span> {t("settings.kickerSection")}</>}
+        title={t("settings.title")}
+        description={t("settings.lede")}
+        actions={<Button variant="danger" onClick={() => void signOut()} loading={signingOut}><Icon name="logout" size={16} />{t("action.signOut")}</Button>}
       />
 
       <div className="treasury-overview-grid">
         <div className="mx-stack">
-          <Card kicker="WHO YOU ARE" title="Account">
+          <Card kicker={t("settings.account.kicker")} title={t("settings.account.title")}>
             <KeyValue items={[
-              { label: "Name", value: user.name },
-              { label: "Email", value: user.email },
-              { label: "Role", value: <StatusBadge status={user.role} /> },
-              { label: "Membership", value: pass ? <StatusBadge status={pass.membership} label={pass.membership === "none" ? "Not joined" : undefined} /> : "—" },
+              { label: t("col.name"), value: user.name },
+              { label: t("col.email"), value: user.email },
+              { label: t("col.role"), value: <StatusBadge status={user.role} /> },
+              { label: t("membership.label"), value: pass ? <StatusBadge status={pass.membership} label={pass.membership === "none" ? t("status.none") : undefined} /> : "—" },
             ]} />
-            <div className="eyebrow" style={{ marginTop: 18, marginBottom: 8 }}>PERMISSIONS</div>
+            <div className="eyebrow" style={{ marginTop: 18, marginBottom: 8 }}>{t("settings.account.permissions")}</div>
             <div className="mx-row" style={{ gap: 6 }}>
-              {user.permissions.length ? user.permissions.map((p) => <span key={p} className="badge neutral">{p}</span>) : <span className="mx-muted mx-small">No officer permissions. Members can book tickets, order merchandise and submit expenses.</span>}
+              {user.permissions.length ? user.permissions.map((p) => <span key={p} className="badge neutral">{p}</span>) : <span className="mx-muted mx-small">{t("settings.account.noPermissions")}</span>}
             </div>
           </Card>
 
           <section className="panel">
             <div className="panel-heading">
-              <div><div className="eyebrow">AROUND THE WORKSPACE</div><h2>Interface</h2></div>
+              <div><div className="eyebrow">{t("settings.interface.kicker")}</div><h2>{t("settings.interface.title")}</h2></div>
             </div>
             <div className="event-list">
               <Link href="/app/pass" className="event-row">
                 <span className="announcement-symbol"><Icon name="coin" size={20} /></span>
-                <div className="event-info"><h3>My pass</h3><p>Your QR and door code</p></div>
+                <div className="event-info"><h3>{t("settings.interface.pass")}</h3><p>{t("settings.interface.passHint")}</p></div>
                 <Icon name="chevron" size={14} />
               </Link>
               <Link href="/app/notifications" className="event-row">
                 <span className="announcement-symbol"><Icon name="megaphone" size={20} /></span>
-                <div className="event-info"><h3>Notifications</h3><p>Announcements and reminders</p></div>
+                <div className="event-info"><h3>{t("settings.interface.notifications")}</h3><p>{t("settings.interface.notificationsHint")}</p></div>
                 <Icon name="chevron" size={14} />
               </Link>
               <a href="/" className="event-row">
                 <span className="announcement-symbol"><Icon name="grid" size={20} /></span>
-                <div className="event-info"><h3>Legacy workspace</h3><p>The earlier interface at the site root</p></div>
+                <div className="event-info"><h3>{t("settings.interface.legacy")}</h3><p>{t("settings.interface.legacyHint")}</p></div>
                 <Icon name="chevron" size={14} />
               </a>
             </div>
@@ -73,12 +75,13 @@ export default function SettingsPage() {
         <PasswordCard />
       </div>
 
-      <PreviewNote>Changing your password keeps this session and signs out every other device.</PreviewNote>
+      <PreviewNote>{t("settings.previewNote")}</PreviewNote>
     </>
   );
 }
 
 function PasswordCard() {
+  const { t, apiError } = useT();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -88,56 +91,57 @@ function PasswordCard() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const e: typeof errors = {};
-    if (!current) e.current = "Enter your current password.";
-    if (next.length < 8 || next.length > 200) e.next = "Use 8 to 200 characters.";
-    if (next && next === current) e.next = "Choose a password you have not used just now.";
-    if (confirm !== next) e.confirm = "Passwords do not match.";
+    if (!current) e.current = t("settings.password.currentRequired");
+    if (next.length < 8 || next.length > 200) e.next = t("settings.password.length");
+    if (next && next === current) e.next = t("settings.password.sameAsCurrent");
+    if (confirm !== next) e.confirm = t("settings.password.mismatch");
     setErrors(e);
     if (Object.keys(e).length) return;
     const ok = await action.run("password", async () => {
       try {
         const result = await api.post<{ ok: true; revokedSessions: number }>("/api/auth/password", { currentPassword: current, newPassword: next });
         return result.revokedSessions > 0
-          ? `Password changed. ${result.revokedSessions} other session${result.revokedSessions === 1 ? " was" : "s were"} signed out; this one stays signed in.`
-          : "Password changed. No other sessions were open.";
+          ? t("settings.password.changedRevoked", { count: result.revokedSessions })
+          : t("settings.password.changedNone");
       } catch (caught) {
         if (caught instanceof ApiError && caught.status === 401) {
-          setErrors({ current: "That is not your current password." });
-          throw new Error("Check your current password and try again.");
+          setErrors({ current: t("settings.password.wrongCurrent") });
+          throw new Error(t("settings.password.checkCurrent"));
         }
-        throw new Error(describeError(caught, "We could not change your password."));
+        throw new Error(apiError(caught, "settings.password.failed"));
       }
     });
     if (ok) { setCurrent(""); setNext(""); setConfirm(""); }
   }
 
   const firstError = errors.current ?? errors.next ?? errors.confirm;
+  const busy = action.busy === "password";
 
   return (
     <section className="panel task-create-panel">
       <div className="form-heading">
-        <div><h2>Change password</h2><p>Keeps this session and signs out every other device.</p></div>
+        <div><h2>{t("settings.password.title")}</h2><p>{t("settings.password.lede")}</p></div>
       </div>
       {action.notice ? <Alert tone="success" onDismiss={action.clear}>{action.notice}</Alert> : null}
       {action.error ? <Alert tone="error" onDismiss={action.clear}>{action.error}</Alert> : null}
       <form onSubmit={submit} noValidate>
         <div className="task-form-grid">
           <label>
-            Current password
-            <input type="password" autoComplete="current-password" value={current} onChange={(e) => { setCurrent(e.target.value); setErrors((c) => ({ ...c, current: undefined })); }} aria-invalid={Boolean(errors.current)} disabled={action.busy === "password"} />
+            {t("settings.password.current")}
+            <input type="password" autoComplete="current-password" value={current} onChange={(e) => { setCurrent(e.target.value); setErrors((c) => ({ ...c, current: undefined })); }} aria-invalid={Boolean(errors.current)} disabled={busy} />
           </label>
           <label>
-            New password
-            <input type="password" autoComplete="new-password" value={next} onChange={(e) => { setNext(e.target.value); setErrors((c) => ({ ...c, next: undefined })); }} aria-invalid={Boolean(errors.next)} disabled={action.busy === "password"} />
+            {t("settings.password.new")}
+            <input type="password" autoComplete="new-password" value={next} onChange={(e) => { setNext(e.target.value); setErrors((c) => ({ ...c, next: undefined })); }} aria-invalid={Boolean(errors.next)} disabled={busy} />
           </label>
           <label>
-            Confirm new password
-            <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => { setConfirm(e.target.value); setErrors((c) => ({ ...c, confirm: undefined })); }} aria-invalid={Boolean(errors.confirm)} disabled={action.busy === "password"} />
+            {t("settings.password.confirm")}
+            <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => { setConfirm(e.target.value); setErrors((c) => ({ ...c, confirm: undefined })); }} aria-invalid={Boolean(errors.confirm)} disabled={busy} />
           </label>
         </div>
         <div className="form-actions">
-          <Button type="submit" variant="primary" loading={action.busy === "password"}>Change password</Button>
-          <span className="upload-progress" style={{ marginTop: 0 }}>8 to 200 characters.</span>
+          <Button type="submit" variant="primary" loading={busy}>{t("settings.password.submit")}</Button>
+          <span className="upload-progress" style={{ marginTop: 0 }}>{t("settings.password.hint")}</span>
         </div>
         {firstError ? <p className="form-error" role="alert">{firstError}</p> : null}
       </form>

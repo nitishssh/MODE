@@ -1,0 +1,38 @@
+import type en from "../en/pass";
+
+const pass: Record<keyof typeof en, string> = {
+  "pass.kicker": "सदस्यता",
+  "pass.kickerSection": "डोर एक्सेस",
+  "pass.title": "मेरा सदस्य पास",
+  "pass.lede": "इसे दरवाज़े पर दिखाएँ। प्रवेश वॉलंटियर द्वारा चुने गए ईवेंट के भुगतान किए गए टिकट पर निर्भर है, सिर्फ़ सदस्यता पर नहीं।",
+  "pass.refresh": "सदस्यता रीफ़्रेश करें",
+  "pass.cardKicker": "MODE · सदस्य पास",
+  "pass.notJoined": "शामिल नहीं",
+  "pass.membership.active": "सक्रिय सदस्यता",
+  "pass.membership.expired": "सदस्यता समाप्त। किसी पदाधिकारी से नवीनीकरण करवाएँ।",
+  "pass.membership.none": "अभी भुगतान किए हुए सदस्य नहीं हैं। शुल्क के बारे में किसी पदाधिकारी से पूछें।",
+  "pass.doorCode": "डोर कोड",
+  "pass.scan.kicker": "सदस्यता / डोर एक्सेस",
+  "pass.scan.title": "स्कैन करें या टाइप करें",
+  "pass.scan.qrAlt": "सदस्य पास QR कोड। टाइप करने का विकल्प: {code}",
+  "pass.scan.body1": "वॉलंटियर यह QR स्कैन करता है, या आपका डोर कोड टाइप करता है",
+  "pass.scan.body2": "सदस्य पास चुने गए ईवेंट के लिए आपके एकमात्र लाइव टिकट से जुड़ता है। अगर आपके पास टिकट नहीं है, तो दरवाज़े पर यह बता दिया जाएगा; पहले ईवेंट में जाकर टिकट बुक करें।",
+  "pass.scan.body3": "आपका पास कभी नहीं बदलता। पदाधिकारी द्वारा शुल्क दर्ज करने के बाद नई समाप्ति देखने के लिए रीफ़्रेश करें।",
+  "pass.tickets.kicker": "ईवेंट रजिस्टर",
+  "pass.tickets.title": "आपके टिकट",
+  "pass.tickets.all": "सभी टिकट",
+  "pass.tickets.empty": "अभी कोई टिकट नहीं।",
+  "pass.tickets.findEvent": "ईवेंट ढूँढें",
+  "pass.tickets.line": "{pricing} टिकट · {price}",
+  "pass.tickets.holdUntil": "{time} तक होल्ड",
+  "pass.tickets.checkedIn": "चेक-इन {time}",
+  "pass.tickets.footnote": "पदाधिकारी डेस्क पर आपके भुगतान की पुष्टि करता है; उसके बाद आपका QR दरवाज़े पर प्रवेश दिलाता है।",
+  "pass.orders.kicker": "क्लब शॉप",
+  "pass.orders.title": "आपके ऑर्डर",
+  "pass.orders.all": "सभी ऑर्डर",
+  "pass.orders.empty": "अभी कोई मर्चेंडाइज़ ऑर्डर नहीं।",
+  "pass.orders.openShop": "शॉप खोलें",
+  "pass.previewNote": "डोर स्कैनिंग आपके पास को उसके QR टोकन या टाइप किए गए कोड से पहचानती है, कभी खाता आईडी से नहीं।",
+};
+
+export default pass;

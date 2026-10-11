@@ -1,0 +1,38 @@
+import type en from "../en/pass";
+
+const pass: Record<keyof typeof en, string> = {
+  "pass.kicker": "ممبرشپ",
+  "pass.kickerSection": "ڈور رسائی",
+  "pass.title": "میرا ممبر پاس",
+  "pass.lede": "دروازے پر یہ دکھائیں۔ داخلہ اس ایونٹ کے ادا شدہ ٹکٹ پر منحصر ہے جو والنٹیئر نے منتخب کیا ہے، صرف ممبرشپ پر نہیں۔",
+  "pass.refresh": "ممبرشپ ریفریش کریں",
+  "pass.cardKicker": "MODE · ممبر پاس",
+  "pass.notJoined": "شامل نہیں",
+  "pass.membership.active": "فعال ممبرشپ",
+  "pass.membership.expired": "ممبرشپ کی میعاد ختم۔ کسی عہدیدار سے تجدید کروائیں۔",
+  "pass.membership.none": "ابھی فیس ادا کرنے والے ممبر نہیں۔ فیس کے بارے میں کسی عہدیدار سے پوچھیں۔",
+  "pass.doorCode": "ڈور کوڈ",
+  "pass.scan.kicker": "ممبرشپ / ڈور رسائی",
+  "pass.scan.title": "اسکین یا ٹائپ",
+  "pass.scan.qrAlt": "ممبر پاس QR کوڈ۔ ٹائپ کرنے کا متبادل: {code}",
+  "pass.scan.body1": "والنٹیئر یہ QR اسکین کرتا ہے، یا آپ کا ڈور کوڈ ٹائپ کرتا ہے",
+  "pass.scan.body2": "ممبر پاس منتخب ایونٹ میں آپ کے واحد زندہ ٹکٹ تک پہنچتا ہے۔ اگر ٹکٹ نہ ہو تو دروازہ بتا دے گا؛ پہلے ایونٹس سے ایک بک کریں۔",
+  "pass.scan.body3": "آپ کا پاس کبھی نہیں بدلتا۔ عہدیدار کے فیس درج کرنے کے بعد نئی میعاد دیکھنے کے لیے ریفریش کریں۔",
+  "pass.tickets.kicker": "ایونٹ رجسٹر",
+  "pass.tickets.title": "آپ کے ٹکٹ",
+  "pass.tickets.all": "تمام ٹکٹ",
+  "pass.tickets.empty": "ابھی کوئی ٹکٹ نہیں۔",
+  "pass.tickets.findEvent": "ایونٹ تلاش کریں",
+  "pass.tickets.line": "{pricing} ٹکٹ · {price}",
+  "pass.tickets.holdUntil": "{time} تک ہولڈ",
+  "pass.tickets.checkedIn": "چیک ان {time}",
+  "pass.tickets.footnote": "ڈیسک پر عہدیدار آپ کی ادائیگی کنفرم کرتا ہے؛ اس کے بعد آپ کا QR دروازے پر داخلہ دیتا ہے۔",
+  "pass.orders.kicker": "کلب کی دکان",
+  "pass.orders.title": "آپ کے آرڈر",
+  "pass.orders.all": "تمام آرڈر",
+  "pass.orders.empty": "ابھی کوئی مرچنڈائز آرڈر نہیں۔",
+  "pass.orders.openShop": "دکان کھولیں",
+  "pass.previewNote": "ڈور اسکیننگ آپ کے پاس کو اس کے QR ٹوکن یا ٹائپ کردہ کوڈ سے پہچانتی ہے، کبھی اکاؤنٹ آئی ڈی سے نہیں۔",
+};
+
+export default pass;

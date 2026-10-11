@@ -262,13 +262,14 @@ export const DEMO_OFFICERS = [
  * Synthetic demo credentials. Override with MODE_DEMO_PASSWORD; never reuse for real accounts.
  * Production refuses the published default so a hosted deploy never ships a known admin password.
  */
+export const PUBLIC_DEMO_PASSWORD = "mode-demo-2026";
+
 export function demoPassword(): string {
   const configured = process.env.MODE_DEMO_PASSWORD;
-  if (configured) return configured;
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("MODE_DEMO_PASSWORD must be set in production; the documented default is public.");
+  if (process.env.NODE_ENV === "production" && (!configured || configured === PUBLIC_DEMO_PASSWORD)) {
+    throw new Error("MODE_DEMO_PASSWORD must be set to a private value in production; the documented default is public.");
   }
-  return "mode-demo-2026";
+  return configured || PUBLIC_DEMO_PASSWORD;
 }
 
 function addIdentityAndRoles(db: SqlDatabase, now: Date) {
