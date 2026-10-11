@@ -405,3 +405,13 @@
 .mode-dark .mx-app .button-small:not(.green-btn):not(.red-btn) { background: #302b27; border-color: #4a4541; color: var(--ink); }
 .mode-dark .mx-app .icon-button { background: #302b27; border-color: #4a4541; }
 .mode-dark .mx-app .mx-side-shortcut kbd, .mode-dark .mx-app .mx-search-kbd { background: #302b27; border-color: #4a4541; color: #d9d3cb; }
+
+/* ── Sample imagery: club crest and role avatars ─────────────────────────── */
+.mx-app .mx-avatar, .mx-app .mx-crest { overflow: hidden; padding: 0; display: grid; place-items: center; }
+.mx-app .mx-avatar img, .mx-app .mx-crest img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; }
+.mx-app .club-monogram.mx-crest { width: 36px; height: 36px; border-radius: 10px; background: #24201e; border-color: #24201e; }
+.mx-app .avatar.mx-avatar { background: var(--paper-deep); border: 1px solid var(--line); }
+.mx-app .topbar-avatar-btn.mx-avatar { border-radius: 50%; background: var(--paper-deep); border: 1px solid var(--line); }
+.mx-app .topbar-avatar-btn.mx-avatar.active { box-shadow: var(--ring); }
+.mx-app .dropdown-user-avatar.mx-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--paper-deep); }
+.mx-app .sidebar-profile .profile-avatar.mx-avatar { border-radius: 50%; background: var(--paper-deep); border: 1px solid var(--line); }

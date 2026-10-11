@@ -73,7 +73,7 @@ function LoginForm() {
 
   return (
     <main className="mx-login">
-      <AuthStory />
+      <AuthStory cardName={email} />
       <section className="mx-login-form" aria-label={t("auth.login.ariaLabel")}>
         <AuthLanguage />
         <div className="mx-login-card">

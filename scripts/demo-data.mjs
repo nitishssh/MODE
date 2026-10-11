@@ -6,6 +6,10 @@
  * ledger posting as a real club would.
  *
  *   node scripts/demo-data.mjs [--base http://127.0.0.1:3000] [--password mode-demo-2026]
+ *     [--club-name "Spectrum Collective"] [--sqlite .data/mode.sqlite]
+ *
+ * --club-name renames the club directly in the SQLite file (there is no rename API);
+ * run it on the machine that hosts the database.
  *
  * Idempotent enough to re-run: members that already exist are signed in
  * instead of re-registered; events and products are matched by name.
@@ -316,6 +320,15 @@ async function main() {
   }
   const reminders = await post("/api/membership/reminders/run", { days: 365 }, organizer.token);
   bump("notifications (reminders)", reminders.sent);
+
+  // Club name: a direct SQLite update, since renaming has no API.
+  if (args["club-name"] && args["club-name"] !== "true") {
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(args.sqlite ?? ".data/mode.sqlite");
+    db.prepare("UPDATE clubs SET name = ?, description = ? WHERE id = (SELECT id FROM clubs ORDER BY rowid LIMIT 1)").run(args["club-name"], args["club-description"] ?? "NMIT's student collective for tech, culture and community: memberships, events, merchandise, volunteers and one shared ledger.");
+    db.close();
+    bump("club renamed");
+  }
 
   // Summary.
   const dash = await get("/api/dashboard", admin.token);

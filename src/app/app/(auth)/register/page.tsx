@@ -64,7 +64,7 @@ export default function RegisterPage() {
 
   return (
     <main className="mx-login">
-      <AuthStory />
+      <AuthStory cardName={form.name || form.email} />
       <section className="mx-login-form" aria-label={t("auth.register.ariaLabel")}>
         <AuthLanguage />
         <div className="mx-login-card">
