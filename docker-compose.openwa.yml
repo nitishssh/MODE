@@ -16,8 +16,8 @@ services:
       # Set to your club name for better organization
       INSTANCE_NAME: MODE_Club
       DEBUG: "openwa:*"
-      # Disable file storage for now, use memory/sqlite
-      STORAGE_TYPE: "memory"
+      # Use local storage for WhatsApp sessions
+      STORAGE_TYPE: "local"
       # Webhook settings - MODE will send events here
       WEBHOOK_URL: "http://127.0.0.1:3000/api/webhooks/whatsapp"
       WEBHOOK_EVENTS: "message:create,message:ack"
@@ -26,6 +26,9 @@ services:
     ports:
       # Dashboard and API on same port in Docker
       - "127.0.0.1:2785:2785"
+    volumes:
+      # Persist Open-WA data between restarts
+      - openwa-data:/app/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:2785/api/health"]
       interval: 10s
