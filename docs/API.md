@@ -72,6 +72,8 @@ Roles: `member`, `volunteer`, `organizer`, `treasurer`, `admin` (club lead). Sel
 | `outbox:manage` | | | ✓ | | ✓ |
 | `tasks:write` | | | ✓ | | ✓ |
 
+The `/app` web workspace additionally limits which sections each role sees (`src/app/app/_lib/access.ts`): the admin sees everything; organizers everything except Treasury; treasurers Overview, Members, Events, Merchandise, Expenses and Treasury; volunteers only the Door scanner; members the self-service pages (Events, My tickets, Merchandise, My Expenses, Announcements). Everyone keeps My pass, Notifications and Settings. This is a navigation convenience on top of the permission checks above, which the server still enforces on every request.
+
 Announcement publication and outbox inspection use the permissions above. Implemented membership, ticket, merchandise, task, reimbursement and announcement routes are documented below.
 
 ### Demo accounts
