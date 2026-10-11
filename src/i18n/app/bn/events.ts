@@ -170,7 +170,7 @@ const events: Record<keyof typeof en, string> = {
   "events.door.eventLoadFailed": "ইভেন্ট লোড করা গেল না",
   "events.door.cameraUnavailable": "এই ব্রাউজারে ক্যামেরা পাওয়া যাচ্ছে না। বদলে কোড টাইপ করুন।",
   "events.door.cameraFailed": "ক্যামেরা চালু করা গেল না। অনুমতি দেখুন, বা কোড টাইপ করুন।",
-  "events.door.placeholder": "10 অক্ষরের কোড টাইপ করুন বা QR টোকেন পেস্ট করুন",
+  "events.door.placeholder": "কোড বা স্ক্যান করা লিংক",
   "events.door.inputLabel": "টিকিট বা পাসের ক্রেডেনশিয়াল",
   "events.door.scan": "স্ক্যান",
   "events.door.scanFailed": "স্ক্যান যাচাই করা গেল না। আবার চেষ্টা করুন।",

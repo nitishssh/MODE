@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import jsQR from "jsqr";
@@ -57,6 +58,32 @@ function DoorScanner() {
   const frameRef = useRef<number>(0);
   const pausedUntil = useRef(0);
   const submitting = useRef(false);
+  const [flash, setFlash] = useState<ScanResult | null>(null);
+  const flashTimer = useRef(0);
+  const audio = useRef<AudioContext | null>(null);
+
+  // Three signals per scan: the takeover colour, a short tone, and a vibration on phones.
+  const announce = useCallback((outcome: ScanResult) => {
+    const tone = TONE[outcome.outcome];
+    try {
+      const ctx = audio.current ?? new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      audio.current = ctx;
+      const beep = (freq: number, at: number, length: number) => {
+        const osc = ctx.createOscillator(); const gain = ctx.createGain();
+        osc.type = "sine"; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime + at);
+        gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + at + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + length);
+        osc.connect(gain).connect(ctx.destination); osc.start(ctx.currentTime + at); osc.stop(ctx.currentTime + at + length + 0.02);
+      };
+      if (tone === "ok") { beep(880, 0, .12); beep(1320, .13, .18); } else if (tone === "warn") { beep(520, 0, .22); } else { beep(220, 0, .18); beep(220, .22, .28); }
+    } catch { /* no audio: the colour and the vibration still speak */ }
+    try { navigator.vibrate?.(tone === "ok" ? 80 : tone === "warn" ? [60, 60, 60] : [120, 60, 120, 60, 120]); } catch { /* unsupported */ }
+    setFlash(outcome);
+    window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlash(null), 2200);
+  }, []);
+  useEffect(() => () => window.clearTimeout(flashTimer.current), []);
 
   const scan = useCallback(async (value: string) => {
     const trimmed = value.trim();
@@ -67,6 +94,7 @@ function DoorScanner() {
     try {
       const outcome = await api.post<ScanResult>(`/api/events/${encodeURIComponent(id)}/scan`, { credential: credentialFromScan(trimmed) });
       setResult(outcome);
+      announce(outcome);
       setLog((current) => [{ at: new Date().toISOString(), credential: mask(trimmed), outcome: outcome.outcome, name: outcome.attendee?.name }, ...current].slice(0, 20));
       setCredential("");
     } catch (caught) {
@@ -76,7 +104,7 @@ function DoorScanner() {
       setBusy(false);
       inputRef.current?.focus();
     }
-  }, [id, apiError]);
+  }, [id, apiError, announce]);
 
   useEffect(() => {
     if (prefilled.current || !fromUrl) return;
@@ -160,6 +188,9 @@ function DoorScanner() {
 
   const e = event.data?.event;
   const tone: Tone | null = result ? TONE[result.outcome] : null;
+  const admittedCount = log.filter((entry) => entry.outcome === "admitted").length;
+  const turnedAway = log.length - admittedCount;
+  const flashTone: Tone | null = flash ? TONE[flash.outcome] : null;
 
   return (
     <>
@@ -177,7 +208,6 @@ function DoorScanner() {
           <section className="panel task-create-panel" style={{ marginBottom: 0 }}>
             <form onSubmit={submit} className="mx-row" style={{ flexWrap: "nowrap" }}>
               <input
-                className="mx-input"
                 ref={inputRef}
                 value={credential}
                 onChange={(ev) => setCredential(ev.target.value)}
@@ -186,7 +216,7 @@ function DoorScanner() {
                 autoComplete="off"
                 autoCapitalize="characters"
                 spellCheck={false}
-                style={{ height: 52, fontSize: 18, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", letterSpacing: 2 }}
+                className="mx-input mx-door-input"
               />
               <Button type="submit" variant="primary" loading={busy} disabled={!credential.trim()}>{t("events.door.scan")}</Button>
             </form>
@@ -202,11 +232,14 @@ function DoorScanner() {
 
           {result && tone ? (
             <div className={`mx-scan-result ${tone}`} role="status" aria-live="assertive">
-              <div className="eyebrow" style={{ color: "inherit", opacity: .85 }}>{result.admitted ? t("events.door.admit") : t("events.door.doNotAdmit")}</div>
-              <h2 style={{ marginTop: 6 }}>{t(`events.door.outcome.${result.outcome}`)}</h2>
-              {result.attendee ? <p style={{ fontSize: 18, marginTop: 10 }}>{result.attendee.name} <span style={{ opacity: .8 }}>{t("events.door.attendeeMembership", { state: t(MEMBERSHIP_KEY[result.attendee.membership]) })}</span></p> : null}
-              {result.outcome === "already_checked_in" && result.checkedInAt ? <p style={{ marginTop: 8, opacity: .9 }}>{t("events.door.firstCheckedIn", { time: fmt.dateTime(result.checkedInAt) })}</p> : null}
-              <p style={{ marginTop: 12, opacity: .9 }}>{t(`events.door.hint.${result.outcome}`)}</p>
+              <span className="mx-door-mark" aria-hidden="true"><Icon name={tone === "ok" ? "check" : tone === "warn" ? "alert" : "close"} size={26} /></span>
+              <div>
+                <div className="eyebrow" style={{ color: "inherit", opacity: .85 }}>{result.admitted ? t("events.door.admit") : t("events.door.doNotAdmit")}</div>
+                <h2 style={{ marginTop: 4 }}>{t(`events.door.outcome.${result.outcome}`)}</h2>
+                {result.attendee ? <p style={{ fontSize: 16 }}><strong>{result.attendee.name}</strong> <span style={{ opacity: .85 }}>{t("events.door.attendeeMembership", { state: t(MEMBERSHIP_KEY[result.attendee.membership]) })}</span></p> : null}
+                {result.outcome === "already_checked_in" && result.checkedInAt ? <p style={{ opacity: .9 }}>{t("events.door.firstCheckedIn", { time: fmt.dateTime(result.checkedInAt) })}</p> : null}
+                <p style={{ opacity: .9 }}>{t(`events.door.hint.${result.outcome}`)}</p>
+              </div>
             </div>
           ) : (
             <section className="panel">
@@ -220,6 +253,11 @@ function DoorScanner() {
             <div className="panel-heading">
               <div><div className="eyebrow">{t("events.door.sessionKicker")}</div><h2>{t("events.door.sessionTitle")}</h2></div>
               {log.length ? <button type="button" className="text-button" onClick={() => setLog([])}>{t("events.door.clear")}<Icon name="close" size={14} /></button> : null}
+            </div>
+            <div className="mx-door-stats" aria-live="polite">
+              <div><b className="ok">{admittedCount}</b><small>{t("events.door.admittedCount")}</small></div>
+              <div><b className={turnedAway ? "warn" : ""}>{turnedAway}</b><small>{t("events.door.turnedAway")}</small></div>
+              <div><b>{log.length}</b><small>{t("events.door.scanned")}</small></div>
             </div>
             {!log.length ? <EmptyState title={t("events.door.noScans")} icon="clock">{t("events.door.noScansBody")}</EmptyState> : (
               <div className="table-scroll">
@@ -246,6 +284,21 @@ function DoorScanner() {
           </article>
         </div>
       </div>
+
+      {flash && flashTone && typeof document !== "undefined" ? createPortal(
+        <div className={`mx-door-flash ${flashTone}`} role="status" aria-live="assertive" onClick={() => { setFlash(null); inputRef.current?.focus(); }}>
+          <div>
+            <span className="mx-door-mark" aria-hidden="true"><Icon name={flashTone === "ok" ? "check" : flashTone === "warn" ? "alert" : "close"} size={56} /></span>
+            <div className="eyebrow">{flash.admitted ? t("events.door.admit") : t("events.door.doNotAdmit")}</div>
+            <h2>{t(`events.door.outcome.${flash.outcome}`)}</h2>
+            {flash.attendee ? <div className="mx-door-name">{flash.attendee.name} <span>{t("events.door.attendeeMembership", { state: t(MEMBERSHIP_KEY[flash.attendee.membership]) })}</span></div> : null}
+            <p>{t(`events.door.hint.${flash.outcome}`)}</p>
+            <div className="mx-door-dismiss">{t("events.door.tapToDismiss")}</div>
+          </div>
+          <span className="mx-toast-life" style={{ animationDuration: "2200ms" }} aria-hidden="true" />
+        </div>,
+        document.body,
+      ) : null}
     </>
   );
 }

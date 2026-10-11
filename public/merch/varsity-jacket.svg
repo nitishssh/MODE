@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+<defs>
+  <pattern id="dots" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="#b8785d" opacity=".18"/></pattern>
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="#24201e" flood-opacity=".22"/></filter>
+  <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
+</defs>
+<rect width="800" height="800" fill="#f5f0e8"/>
+<rect width="800" height="800" fill="url(#dots)"/>
+<g filter="url(#shadow)">
+<path d="M310 190 Q400 160 490 190 L600 240 L650 350 L575 390 L555 350 L555 640 Q400 665 245 640 L245 350 L225 390 L150 350 L200 240 Z" fill="#2f4a53" stroke="#24201e" stroke-width="6" stroke-linejoin="round"/>
+<path d="M200 240 L150 350 L225 390 L245 350 L245 470 L300 470 L300 230 Z" fill="#f5f0e8" stroke="#24201e" stroke-width="6" stroke-linejoin="round"/>
+<path d="M600 240 L650 350 L575 390 L555 350 L555 470 L500 470 L500 230 Z" fill="#f5f0e8" stroke="#24201e" stroke-width="6" stroke-linejoin="round"/>
+<path d="M310 190 Q400 230 490 190 L490 215 Q400 260 310 215 Z" fill="#e8c878" stroke="#24201e" stroke-width="6" stroke-linejoin="round"/>
+<path d="M400 215 V640" stroke="#24201e" stroke-width="6"/>
+<circle cx="400" cy="300" r="7" fill="#e8c878"/><circle cx="400" cy="380" r="7" fill="#e8c878"/><circle cx="400" cy="460" r="7" fill="#e8c878"/><circle cx="400" cy="540" r="7" fill="#e8c878"/>
+<rect x="245" y="600" width="310" height="40" fill="#e8c878" stroke="#24201e" stroke-width="6"/>
+<text x="330" y="400" text-anchor="middle" font-family="Crimson Pro, Georgia, serif" font-size="92" font-weight="700" fill="#e8c878" stroke="#24201e" stroke-width="3">M</text></g>
+<text x="56" y="748" font-family="Crimson Pro, Georgia, serif" font-size="30" font-weight="700" fill="#24201e" letter-spacing="-1">MODE.<tspan fill="#cc785c">.</tspan></text>
+</svg>

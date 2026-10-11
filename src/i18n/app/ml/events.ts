@@ -170,7 +170,7 @@ const events: Record<keyof typeof en, string> = {
   "events.door.eventLoadFailed": "ഇവന്റ് ലോഡ് ചെയ്യാനായില്ല",
   "events.door.cameraUnavailable": "ഈ ബ്രൗസറിൽ ക്യാമറ ആക്സസ് ലഭ്യമല്ല. പകരം കോഡ് ടൈപ്പ് ചെയ്യുക.",
   "events.door.cameraFailed": "ക്യാമറ ആരംഭിക്കാനായില്ല. അനുമതികൾ പരിശോധിക്കുക, അല്ലെങ്കിൽ കോഡ് ടൈപ്പ് ചെയ്യുക.",
-  "events.door.placeholder": "10 അക്ഷര കോഡ് ടൈപ്പ് ചെയ്യുക അല്ലെങ്കിൽ QR ടോക്കൺ പേസ്റ്റ് ചെയ്യുക",
+  "events.door.placeholder": "കോഡ് അല്ലെങ്കിൽ സ്കാൻ ചെയ്ത ലിങ്ക്",
   "events.door.inputLabel": "ടിക്കറ്റ് അല്ലെങ്കിൽ പാസ് ക്രെഡൻഷ്യൽ",
   "events.door.scan": "സ്കാൻ",
   "events.door.scanFailed": "സ്കാൻ പരിശോധിക്കാനായില്ല. വീണ്ടും ശ്രമിക്കുക.",

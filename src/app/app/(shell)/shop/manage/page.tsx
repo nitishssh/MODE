@@ -9,6 +9,7 @@ import { Alert, Button, Card, EmptyState, ErrorState, FormPanel, Loading, PageHe
 import { Icon } from "../../../_components/icons";
 import { useSession } from "../../../_lib/session";
 import { ShopNav } from "../_nav";
+import { merchImage } from "@/lib/merch-art";
 
 /* Product management in Azman's workspace idiom: an inline task-create-panel form and a panel table. */
 
@@ -165,7 +166,7 @@ export default function ManageProductsPage() {
             <Table head={<><th scope="col">{t("shop.manage.col.product")}</th><th scope="col" className="amount-cell">{t("col.price")}</th><th scope="col" className="amount-cell">{t("shop.manage.col.memberPrice")}</th><th scope="col">{t("shop.manage.col.sizesStock")}</th><th scope="col">{t("col.status")}</th><th scope="col">{t("col.actions")}</th></>}>
               {rows.map((product) => (
                 <tr key={product.id}>
-                  <td><strong>{product.name}</strong>{product.description ? <span className="subtext">{product.description}</span> : null}</td>
+                  <td><span className="mx-row" style={{ flexWrap: "nowrap", gap: 12 }}><img src={merchImage(product.name)} alt="" width={44} height={44} style={{ borderRadius: 10, border: "1px solid var(--line)", flexShrink: 0 }} /><span><strong>{product.name}</strong>{product.description ? <span className="subtext">{product.description}</span> : null}</span></span></td>
                   <td className="amount-cell">{fmt.currency(product.pricePaise)}</td>
                   <td className="amount-cell">{product.memberPricePaise === null ? "—" : fmt.currency(product.memberPricePaise)}</td>
                   <td>

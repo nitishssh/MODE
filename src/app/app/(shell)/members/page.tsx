@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { ExpiringMember, Member, Role } from "@/lib/contracts";
 import { api, ApiError, useAction, useLoad } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
@@ -22,6 +22,7 @@ export default function MembersPage() {
 function MembersView() {
   const { can } = useSession();
   const { t, fmt } = useT();
+  const router = useRouter();
   const params = useSearchParams();
   const allowed = can("members:read");
   const members = useLoad(() => (allowed ? api.get<{ members: Member[] }>("/api/members") : Promise.resolve({ members: [] as Member[] })), [allowed]);
@@ -127,26 +128,28 @@ function MembersView() {
             <div><div className="eyebrow">{t("members.directory.kicker")}</div><h2>{t("members.directory.title")}</h2></div>
             <TextLink onClick={() => void members.reload()}>{t("action.refresh")}</TextLink>
           </div>
-          {members.loading && !members.data ? <div className="panel-body"><Skeleton rows={6} /></div> : !filtered.length ? (
+          {members.loading && !members.data ? <Skeleton rows={6} shape="table" /> : !filtered.length ? (
             <EmptyState title={list.length ? t("members.directory.noMatches") : t("members.directory.empty")} icon="people">{list.length ? t("members.directory.noMatchesBody") : t("members.directory.emptyBody")}</EmptyState>
           ) : (
-            <div className="table-scroll">
+            <div className="table-scroll mx-stack-table">
               <table>
                 <thead>
                   <tr><th scope="col">{t("col.member")}</th><th scope="col">{t("col.role")}</th><th scope="col">{t("col.joined")}</th><th scope="col">{t("members.col.dues")}</th><th scope="col">{t("col.expires")}</th><th scope="col">{t("col.code")}</th></tr>
                 </thead>
                 <tbody>
                   {filtered.map((m) => (
-                    <tr key={m.id}>
-                      <td><Link href={`/app/members/${m.id}`}><Person name={m.name} sub={m.email} /></Link></td>
-                      <td><StatusBadge status={m.role} label={t(`role.${m.role}`)} /></td>
-                      <td>{fmt.date(m.joinedAt)}</td>
-                      <td>
-                        <span className={`badge ${m.duesStatus === "paid" ? "green" : "amber"}`}>{m.duesStatus === "paid" ? t("status.paid") : t("status.unpaid")}</span>
-                        {m.membership !== "active" ? <span className="subtext">{m.membership === "expired" ? t("members.membershipExpired") : t("members.notYetJoined")}</span> : null}
+                    <tr key={m.id} className="mx-row-link" onClick={() => router.push(`/app/members/${m.id}`)}>
+                      <td><Link href={`/app/members/${m.id}`} onClick={(e) => e.stopPropagation()}><Person name={m.name} sub={m.email} /></Link></td>
+                      <td data-label={t("col.role")}><StatusBadge status={m.role} label={t(`role.${m.role}`)} /></td>
+                      <td data-label={t("col.joined")}>{fmt.date(m.joinedAt)}</td>
+                      <td data-label={t("members.col.dues")}>
+                        <span style={{ display: "inline-flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                          <span className={`badge ${m.duesStatus === "paid" ? "green" : "amber"}`}>{m.duesStatus === "paid" ? t("status.paid") : t("status.unpaid")}</span>
+                          {m.membership !== "active" ? <span className="subtext">{m.membership === "expired" ? t("members.membershipExpired") : t("members.notYetJoined")}</span> : null}
+                        </span>
                       </td>
-                      <td>{m.expiresOn ? fmt.date(m.expiresOn) : t("state.notSet")}</td>
-                      <td><span className="payment-ref">{m.shortCode}</span></td>
+                      <td data-label={t("col.expires")}>{m.expiresOn ? fmt.date(m.expiresOn) : t("state.notSet")}</td>
+                      <td data-label={t("col.code")}><span className="payment-ref">{m.shortCode}</span></td>
                     </tr>
                   ))}
                 </tbody>

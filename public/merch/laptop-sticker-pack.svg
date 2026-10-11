@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+<defs>
+  <pattern id="dots" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="#b8785d" opacity=".18"/></pattern>
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="#24201e" flood-opacity=".22"/></filter>
+  <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
+</defs>
+<rect width="800" height="800" fill="#f5f0e8"/>
+<rect width="800" height="800" fill="url(#dots)"/>
+<g filter="url(#shadow)">
+<rect x="180" y="180" width="440" height="440" rx="20" fill="#fffdf9" stroke="#24201e" stroke-width="6"/>
+<path d="M180 220 h440" stroke="#24201e" stroke-width="4" stroke-dasharray="12 10" opacity=".4"/>
+<g transform="translate(270 300)"><circle r="58" fill="#cc785c" stroke="#fff" stroke-width="10"/><text y="14" text-anchor="middle" font-family="Crimson Pro, Georgia, serif" font-size="44" font-weight="700" fill="#fff">M.</text></g>
+<g transform="translate(400 300)"><rect x="-60" y="-40" width="120" height="80" rx="16" fill="#2e7d5b" stroke="#fff" stroke-width="10"/><text y="10" text-anchor="middle" font-family="DM Sans, Arial, sans-serif" font-size="20" font-weight="800" fill="#fff" letter-spacing="2">SHIP IT</text></g>
+<g transform="translate(530 300)"><path d="M0 -60 L18 -18 L62 -14 L28 14 L38 58 L0 34 L-38 58 L-28 14 L-62 -14 L-18 -18 Z" fill="#f0a500" stroke="#fff" stroke-width="10" stroke-linejoin="round"/></g>
+<g transform="translate(270 430)"><path d="M-60 30 L0 -50 L60 30 Z" fill="#7657a5" stroke="#fff" stroke-width="10" stroke-linejoin="round"/></g>
+<g transform="translate(400 430)"><rect x="-62" y="-30" width="124" height="60" rx="30" fill="#24201e" stroke="#fff" stroke-width="10"/><text y="8" text-anchor="middle" font-family="DM Sans, Arial, sans-serif" font-size="18" font-weight="800" fill="#f0a58b" letter-spacing="2">NMIT</text></g>
+<g transform="translate(530 430)"><path d="M-60 20 L0 -50 L60 20 Q0 70 -60 20 Z" fill="#e0a257" stroke="#fff" stroke-width="10" stroke-linejoin="round"/></g>
+<g transform="translate(270 550)"><circle r="42" fill="#b8453a" stroke="#fff" stroke-width="10"/><text y="8" text-anchor="middle" font-family="DM Sans, Arial, sans-serif" font-size="18" font-weight="800" fill="#fff">404</text></g>
+<g transform="translate(400 550)"><rect x="-58" y="-28" width="116" height="56" rx="12" fill="#e7f2eb" stroke="#fff" stroke-width="10"/><text y="7" text-anchor="middle" font-family="DM Sans, Arial, sans-serif" font-size="16" font-weight="800" fill="#1f6446" letter-spacing="1">ADMITTED</text></g>
+<g transform="translate(530 550)"><circle r="42" fill="#fff" stroke="#cc785c" stroke-width="10"/><text y="8" text-anchor="middle" font-family="Crimson Pro, Georgia, serif" font-size="30" font-weight="700" fill="#cc785c">26</text></g>
+<text x="400" y="207" text-anchor="middle" font-family="DM Sans, Arial, sans-serif" font-size="14" font-weight="800" fill="#24201e" letter-spacing="5">12 DIE-CUT VINYL STICKERS · WATERPROOF</text></g>
+<text x="56" y="748" font-family="Crimson Pro, Georgia, serif" font-size="30" font-weight="700" fill="#24201e" letter-spacing="-1">MODE.<tspan fill="#cc785c">.</tspan></text>
+</svg>
