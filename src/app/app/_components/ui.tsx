@@ -305,7 +305,7 @@ export function Field({ label, hint, error, children, htmlFor }: { label: ReactN
     <div className="mx-field">
       <label htmlFor={htmlFor}>{label}</label>
       {children}
-      {error ? <span className="mx-error" role="alert">{error}</span> : hint ? <span className="mx-hint">{hint}</span> : null}
+      {error ? <span id={htmlFor ? `${htmlFor}-description` : undefined} className="mx-error" role="alert">{error}</span> : hint ? <span id={htmlFor ? `${htmlFor}-description` : undefined} className="mx-hint">{hint}</span> : null}
     </div>
   );
 }
@@ -322,47 +322,60 @@ export function Textarea({ className = "", invalid, ...rest }: TextareaHTMLAttri
   return <textarea {...rest} aria-invalid={invalid || undefined} className={`mx-textarea ${className}`.trim()} />;
 }
 
-export function TextField({ label, hint, error, ...rest }: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode; hint?: ReactNode; error?: string }) {
-  const id = useId();
-  return <Field label={label} hint={hint} error={error} htmlFor={id}><Input id={id} invalid={Boolean(error)} {...rest} /></Field>;
+export function TextField({ label, hint, error, id: suppliedId, "aria-describedby": describedBy, ...rest }: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode; hint?: ReactNode; error?: string }) {
+  const generatedId = useId();
+  const id = suppliedId ?? generatedId;
+  return <Field label={label} hint={hint} error={error} htmlFor={id}><Input {...rest} id={id} invalid={Boolean(error)} aria-describedby={[describedBy, error || hint ? `${id}-description` : undefined].filter(Boolean).join(" ") || undefined} /></Field>;
 }
 
-export function SelectField({ label, hint, error, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement> & { label: ReactNode; hint?: ReactNode; error?: string }) {
-  const id = useId();
-  return <Field label={label} hint={hint} error={error} htmlFor={id}><Select id={id} invalid={Boolean(error)} {...rest}>{children}</Select></Field>;
+export function SelectField({ label, hint, error, children, id: suppliedId, "aria-describedby": describedBy, ...rest }: SelectHTMLAttributes<HTMLSelectElement> & { label: ReactNode; hint?: ReactNode; error?: string }) {
+  const generatedId = useId();
+  const id = suppliedId ?? generatedId;
+  return <Field label={label} hint={hint} error={error} htmlFor={id}><Select {...rest} id={id} invalid={Boolean(error)} aria-describedby={[describedBy, error || hint ? `${id}-description` : undefined].filter(Boolean).join(" ") || undefined}>{children}</Select></Field>;
 }
 
-export function TextareaField({ label, hint, error, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: ReactNode; hint?: ReactNode; error?: string }) {
-  const id = useId();
-  return <Field label={label} hint={hint} error={error} htmlFor={id}><Textarea id={id} invalid={Boolean(error)} {...rest} /></Field>;
+export function TextareaField({ label, hint, error, id: suppliedId, "aria-describedby": describedBy, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: ReactNode; hint?: ReactNode; error?: string }) {
+  const generatedId = useId();
+  const id = suppliedId ?? generatedId;
+  return <Field label={label} hint={hint} error={error} htmlFor={id}><Textarea {...rest} id={id} invalid={Boolean(error)} aria-describedby={[describedBy, error || hint ? `${id}-description` : undefined].filter(Boolean).join(" ") || undefined} /></Field>;
 }
 
 // ── Modal ────────────────────────────────────────────────────────────────────
 
 export function Modal({ open, title, onClose, children, wide, description }: { open: boolean; title: string; onClose: () => void; children: ReactNode; wide?: boolean; description?: ReactNode }) {
   const { t } = useT();
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
   useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
+    const dialog = dialogRef.current;
+    if (!open || !dialog) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialog.showModal();
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = previous; };
-  }, [open, onClose]);
+    return () => {
+      dialog.close();
+      document.body.style.overflow = previous;
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [open]);
   if (!open) return null;
   return (
+    <dialog ref={dialogRef} className="mx-modal-dialog" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} onCancel={(event) => { event.preventDefault(); onClose(); }}>
     <div className="mx-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className={`mx-modal ${wide ? "wide" : ""}`.trim()} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`mx-modal ${wide ? "wide" : ""}`.trim()}>
         <div className="form-heading">
           <div>
-            <h2>{title}</h2>
-            {description ? <p>{description}</p> : null}
+            <h2 id={titleId}>{title}</h2>
+            {description ? <p id={descriptionId}>{description}</p> : null}
           </div>
           <button type="button" className="icon-button" aria-label={t("action.close")} onClick={onClose}><Icon name="close" /></button>
         </div>
         {children}
       </div>
     </div>
+    </dialog>
   );
 }
 
@@ -371,9 +384,9 @@ export function Modal({ open, title, onClose, children, wide, description }: { o
 /** The legacy treasury pill tabs. */
 export function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange: (value: T) => void; items: { value: T; label: ReactNode; count?: number }[] }) {
   return (
-    <div className="treasury-tabs" role="tablist">
+    <div className="treasury-tabs" role="group" aria-label="View options">
       {items.map((item) => (
-        <button key={item.value} type="button" role="tab" aria-selected={item.value === value} className={`treasury-tab ${item.value === value ? "active" : ""}`.trim()} onClick={() => onChange(item.value)}>
+        <button key={item.value} type="button" aria-pressed={item.value === value} className={`treasury-tab ${item.value === value ? "active" : ""}`.trim()} onClick={() => onChange(item.value)}>
           {item.label}{typeof item.count === "number" ? <span style={{ opacity: .7 }}> · {item.count}</span> : null}
         </button>
       ))}

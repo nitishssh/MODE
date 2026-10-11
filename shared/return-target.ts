@@ -12,6 +12,7 @@ const queryKeys: Record<PagePath, readonly string[]> = {
   "/pass": [],
   "/login": [],
   "/register": [],
+  "/privacy": [],
   "/events": [...listKeys, "eventId"],
   "/door": ["eventId"],
   "/booking": [...listKeys, "eventId"],

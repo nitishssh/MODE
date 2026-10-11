@@ -8,6 +8,7 @@ git pull --ff-only
 git switch -c auth-roles
 npm ci
 npm ci --prefix client
+npm run auth:setup
 npm run dev
 ```
 
@@ -30,6 +31,8 @@ After changing a database migration, run `npm run schema:dump` and commit both g
 For release changes, update the root `VERSION`, all seven manifest fields and `CHANGELOG.md` together. See [product versioning](docs/VERSIONING.md) for the checklist. `npm run check:version` works without installed dependencies and catches mismatched server, client, lockfile and Expo versions.
 
 Root lint reuses the ESLint, React/hooks and TypeScript packages already locked in the client, while client lint retains its Expo configuration. Neither command permits warnings. `.editorconfig` sets whitespace conventions; the prepared Prettier configuration is not enforced yet because Prettier and the Next.js-specific ESLint packages are not installed. See [quality tooling](docs/QUALITY.md) for that follow-up. Do not manually edit generated client contracts: run `npm run sync:contracts` after server contract changes.
+
+Tests generate their own throwaway `MODE_JWT_SECRET` (tests/setup-env.mjs); the local app needs the one `npm run auth:setup` writes to `.env.local`. See [quality checks](docs/CODE-QUALITY.md) for coverage, security scanning and dependency auditing.
 
 Use `Closes #<issue>` only when the PR completes that issue. Move the board item to In review and describe the user-visible change, verification and remaining limitations. Nitish coordinates integration and release; every contributor should review and explain their own code.
 

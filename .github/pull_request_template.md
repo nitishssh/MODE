@@ -5,6 +5,7 @@ Describe the completed behavior and link the issue.
 ## Verification
 
 - [ ] `npm run check:all` passes (root/client lint, types, contracts, tests, builds and HTTP acceptance)
+- [ ] Relevant production acceptance checks pass
 - [ ] Acceptance criteria demonstrated
 - [ ] Loading, empty and error states checked for UI changes
 - [ ] No secrets, local database or real student data committed

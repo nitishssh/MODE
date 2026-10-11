@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assertPaymentReferenceAvailable, lockPaymentReferences } from "./payment-reference";
 import { z } from "zod";
 import { hasPermission } from "../auth/permissions";
 import type { MerchOrder, ProductDetails, ProductVariant } from "../contracts";
@@ -259,8 +260,10 @@ export function createMerchandiseModule(ctx: DbContext, identity: IdentityModule
     const before = requireOrder(actor.clubId, orderId);
     releaseIfLapsed(); // its own transaction, so a conflict below cannot roll the release back (audit #24)
     return transaction(ctx, () => {
+      lockPaymentReferences(ctx, actor.clubId);
       const nowIso = ctx.now().toISOString();
       // One external payment pays for one order (audit #3); the UNIQUE index is the backstop.
+      if (requireOrder(actor.clubId, orderId).status === "pending_payment") assertPaymentReferenceAvailable(ctx, actor.clubId, data.reference);
       if (db.prepare("SELECT 1 FROM merch_orders WHERE club_id = ? AND payment_reference = ? AND id <> ?").get(actor.clubId, data.reference, orderId)) {
         throw new ConflictError("This payment reference is already recorded against another order.", "payment_reference_reused");
       }

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { PRIVACY_POLICY_VERSION } from '../src/generated/contracts';
 import { test } from 'node:test';
 import { ApiError, SessionClient, SessionChangedError } from '../src/lib/session-client';
 import { canVisit } from '../src/lib/navigation';
@@ -85,6 +86,24 @@ test('offline restoration preserves saved native token and retry restores identi
   await client.bootstrap(); assert.equal(client.snapshot().status, 'unavailable'); assert.equal(store.value, token);
   offline = false; await client.bootstrap(); assert.equal(client.snapshot().status, 'signedIn');
 });
+test('native GET retries overload but a failed mutation is never replayed', async () => {
+  let reads = 0; let writes = 0;
+  const { client } = setup('native', (url, init) => {
+    if ((init.method ?? 'GET') === 'GET') {
+      reads++;
+      return reads < 3
+        ? json({ error: 'Busy', code: 'server_busy', requestId: `busy-${reads}` }, 503)
+        : json({ ok: true });
+    }
+    writes++;
+    throw new Error(`lost response for ${url}`);
+  });
+  assert.deepEqual(await client.request('/api/tasks'), { ok: true });
+  assert.equal(reads, 3);
+  await assert.rejects(client.request('/api/tasks', { method: 'POST', body: '{}' }), (error: unknown) =>
+    error instanceof ApiError && error.code === 'unknown_outcome');
+  assert.equal(writes, 1);
+});
 test('storage failure never publishes authenticated native UI', async () => {
   const { client, store } = setup('native', () => json({ user, token }));
   store.write = async () => { throw new Error('Secure storage unavailable'); };
@@ -169,29 +188,33 @@ test('native resume clears the authenticated user when secure storage no longer 
 // Value: protects=Native registration stores its bearer and resume preserves mounted identity until validation; fails_when=Signup omits token storage or picker resume tears down private drafts; why_new=Login tests do not cover registration or authenticated resume; seam=none
 test('native signup stores its token and authenticated resume retains identity while validation is pending', async () => {
   let resolveMe: ((response: Response) => void) | undefined;
+  const immediate: Response[] = [];
   const { client, store } = setup('native', (url, init) => {
     if (url.endsWith('/register')) {
       assert.equal(new Headers(init.headers).get('Authorization'), null);
-      assert.deepEqual(JSON.parse(String(init.body)), { name: 'New Member', email: user.email, password: 'password' });
+      assert.deepEqual(JSON.parse(String(init.body)), { name: 'New Member', email: user.email, password: 'password', privacyPolicyVersion: PRIVACY_POLICY_VERSION });
       return json({ user, token }, 201);
     }
     assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`);
+    if (immediate.length) return immediate.shift()!;
     return new Promise(resolve => { resolveMe = resolve; });
   });
-  await client.signUp(' New Member ', ` ${user.email} `, 'password');
+  await client.signUp(' New Member ', ` ${user.email} `, 'password', PRIVACY_POLICY_VERSION);
   assert.equal(store.value, token); assert.equal(store.writes, 1); assert.equal(client.snapshot().status, 'signedIn');
   const priorUser = client.snapshot().user; const resume = client.bootstrap();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(client.snapshot().status, 'signedIn'); assert.equal(client.snapshot().user, priorUser);
   assert.ok(resolveMe); resolveMe(json({ user })); await resume;
   assert.equal(client.snapshot().status, 'signedIn'); assert.equal(client.snapshot().user?.id, user.id);
-  const offlineResume = client.bootstrap();
-  await new Promise(resolve => setImmediate(resolve));
-  resolveMe(json({ error: 'Temporary outage' }, 503)); await offlineResume;
+  immediate.push(
+    json({ error: 'Temporary outage', code: 'server_busy' }, 503),
+    json({ error: 'Temporary outage', code: 'server_busy' }, 503),
+    json({ error: 'Temporary outage', code: 'server_busy' }, 503),
+  );
+  await client.bootstrap();
   assert.equal(client.snapshot().status, 'signedIn'); assert.equal(client.snapshot().user?.id, user.id);
   assert.match(client.snapshot().error ?? '', /revalidate/);
-  const revokedResume = client.bootstrap();
-  await new Promise(resolve => setImmediate(resolve));
-  resolveMe(json({ error: 'Revoked' }, 401)); await revokedResume;
+  immediate.push(json({ error: 'Revoked' }, 401));
+  await client.bootstrap();
   assert.equal(client.snapshot().status, 'signedOut'); assert.equal(client.snapshot().user, null);
 });

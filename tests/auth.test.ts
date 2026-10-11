@@ -12,6 +12,7 @@ import { SESSION_TTL_MS } from "../src/lib/auth/session";
 import { optionalActor, requireActor } from "../src/lib/auth/authorize";
 import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from "../src/lib/errors";
 import { demoPassword } from "../src/lib/db/migrations";
+import { PRIVACY_POLICY_VERSION } from "../src/lib/contracts";
 import { DEMO, actorFor, apiRequest, cookieFrom, loginCookie, memoryDatabase, routeParams, withRouteDatabase } from "./helpers";
 
 test("role matrix: only admin manages roles, only officers see members, finance is treasurer/admin", () => {
@@ -24,7 +25,7 @@ test("role matrix: only admin manages roles, only officers see members, finance 
 
 test("register, login, session lookup and logout work through the HTTP routes", async () => {
   await withRouteDatabase(async () => {
-    const body = { name: "New Student", email: "new@example.com", password: "correct horse battery" };
+    const body = { name: "New Student", email: "new@example.com", password: "correct horse battery", privacyPolicyVersion: PRIVACY_POLICY_VERSION };
     const weak = await register(apiRequest("/api/auth/register", { body: { ...body, password: "short" } }));
     assert.equal(weak.status, 400);
     assert.equal((await weak.json()).details[0].field, "password");
@@ -165,7 +166,7 @@ test("native login returns the same session as the cookie and bearer writes stil
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("cache-control"), "no-store");
     const { token } = await response.json();
-    assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+    assert.match(token, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
     const cookie = cookieFrom(response);
     assert.equal(cookie, `mode_session=${token}`);
     const authorization = `Bearer ${token}`;

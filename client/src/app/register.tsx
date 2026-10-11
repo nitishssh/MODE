@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Switch, View } from "react-native";
+import { PRIVACY_POLICY_VERSION } from "../generated/contracts";
 import { Link } from "expo-router";
 import { useSession } from "../lib/session";
 import { AuthRedirect } from "../lib/auth-redirect";
@@ -12,6 +14,7 @@ export default function Register() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   if (user) return <AuthRedirect user={user} returnTo={returnTo} />;
   if (status === "loading") return <Screen title="Opening your register"><LoadingRows /></Screen>;
   return (
@@ -42,9 +45,12 @@ export default function Register() {
         editable={!busy}
       />
       <ErrorNotice error={error} />
+      <Link href="/privacy">Read privacy policy & permissions</Link>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}><Switch value={privacyAccepted} onValueChange={setPrivacyAccepted} disabled={busy} accessibilityLabel="I have read the privacy policy and understand how MODE uses my profile and club activity" /><Copy style={{ flex: 1 }}>I have read the policy and understand how my profile and club activity are used to run my account.</Copy></View>
+      <Copy>Camera access is optional. Files are shared only when you select and upload them. Essential cookies or device storage keep you signed in.</Copy>
       <Action
-        disabled={busy || !name.trim() || !email.trim() || !password}
-        onPress={() => void client.signUp(name, email, password)}
+        disabled={busy || !privacyAccepted || !name.trim() || !email.trim() || !password}
+        onPress={() => void client.signUp(name, email, password, privacyAccepted ? PRIVACY_POLICY_VERSION : "")}
       >
         Create account
       </Action>

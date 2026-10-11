@@ -255,7 +255,7 @@ test("time-dependent overdue filters use the first page time", () => {
   } finally { db.close(); }
 });
 
-test("the actual upstream v13 schema upgrades through v15 without changing records, constraints or active sessions", () => {
+test("the actual upstream v13 schema upgrades through v17 without changing records or constraints; pre-JWT sessions must sign in again", () => {
   const directory = mkdtempSync(join(tmpdir(), "mode-pagination-migration-"));
   const filename = join(directory, "mode.sqlite");
   const indexes = ["members_page_idx", "tasks_page_idx", "tasks_assignee_page_idx", "expenses_page_idx", "expenses_owner_page_idx", "expenses_status_page_idx", "transactions_page_idx"];
@@ -286,17 +286,17 @@ test("the actual upstream v13 schema upgrades through v15 without changing recor
   } finally { raw.close(); }
   try {
     db = openClubDatabase(filename, { now: () => FIXED_NOW });
-    const admin = db.getActor(token)!;
-    assert.equal(admin.memberId, "v13-admin");
-    assert.equal(admin.sessionId, "v13-session");
+    // Pre-JWT opaque tokens cannot be verified, so upgraded clients sign in once; the session row itself is kept.
+    assert.equal(db.getActor(token), null);
+    const admin = { sessionId: "v13-session", memberId: "v13-admin", personId: "v13-admin", clubId: "club-sample", role: "admin" as const, name: "Existing admin", email: "v13@example.com" };
     assert.equal(db.getMembers(admin.clubId).length, 1);
     assert.equal(db.getTasksPage(admin).items[0].id, "v13-task");
     assert.equal(db.getLedgerSummary(admin).balancePaise, 400);
     const inspect = new DatabaseSync(filename);
     try {
-      assert.equal(inspect.prepare("PRAGMA user_version").get()?.user_version, 16);
-      // v14 rebuilds members around people; v16 adds join_code to clubs; every other table must be untouched by v14, v15 and v16.
-      const identityTables = new Set(["members", "people", "clubs"]);
+      assert.equal(inspect.prepare("PRAGMA user_version").get()?.user_version, 17);
+      // v14 rebuilds members around people; v16 adds join_code to clubs; v17 only adds the WhatsApp tables; every other table must be untouched.
+      const identityTables = new Set(["members", "people", "clubs", "whatsapp_preferences", "whatsapp_groups", "whatsapp_deliveries"]);
       const outsideIdentity = (tables: ReturnType<typeof snapshot>) => Object.fromEntries(Object.entries(tables).filter(([name]) => !identityTables.has(name)));
       assert.deepEqual(outsideIdentity(snapshot(inspect)), outsideIdentity(before), "all pre-upgrade rows, rowids and values survive");
       assert.deepEqual(inspect.prepare("SELECT id, person_id, email FROM members").all().map(row => ({ ...row })), [{ id: "v13-admin", person_id: "v13-admin", email: "v13@example.com" }], "the member keeps its id and gains a matching person");
@@ -316,7 +316,7 @@ test("the actual upstream v13 schema upgrades through v15 without changing recor
     } finally { inspect.close(); }
     db.close();
     db = openClubDatabase(filename, { now: () => FIXED_NOW });
-    assert.equal(db.getActor(token)?.sessionId, "v13-session", "reopening a migrated database remains safe");
+    assert.equal(db.getTasksPage(admin).items[0].id, "v13-task", "reopening a migrated database remains safe");
   } finally { db?.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 

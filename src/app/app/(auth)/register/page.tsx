@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { AuthMeResponse, AuthResponse } from "@/lib/contracts";
+import { PRIVACY_POLICY_VERSION } from "@/lib/contracts";
 import { api, ApiError } from "../../_lib/api";
 import { useT } from "../../_lib/i18n";
 import { useSession } from "../../_lib/session";
@@ -18,6 +19,7 @@ export default function RegisterPage() {
   const session = useSession();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
   const [busy, setBusy] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [error, setError] = useState("");
   const [errors, setErrors] = useState<Partial<Record<keyof typeof form, string>>>({});
 
@@ -39,15 +41,17 @@ export default function RegisterPage() {
     if (form.confirm !== form.password) next.confirm = t("auth.register.passwordMismatch");
     setErrors(next);
     if (Object.keys(next).length) return;
+    if (!privacyAccepted) { setError("Read and acknowledge the privacy policy before creating an account."); return; }
     setBusy(true);
     setError("");
     try {
-      await api.post<AuthResponse>("/api/auth/register", { name: form.name.trim(), email: form.email.trim(), password: form.password });
+      await api.post<AuthResponse>("/api/auth/register", { name: form.name.trim(), email: form.email.trim(), password: form.password, privacyPolicyVersion: PRIVACY_POLICY_VERSION });
       const me = await api.get<AuthMeResponse>("/api/auth/me");
       session.setSession(me);
       router.replace(homeFor(me.user));
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) setErrors({ email: t("auth.register.emailTaken") });
+      else if (caught instanceof ApiError && caught.details.some((d) => d.field === "privacyPolicyVersion")) setError("The privacy policy has changed. Reload this page and review the current policy.");
       else if (caught instanceof ApiError && caught.details.length) setErrors(Object.fromEntries(caught.details.map((d) => [d.field, d.message])));
       else setError(apiError(caught, "auth.register.failed"));
       setBusy(false);
@@ -76,6 +80,8 @@ export default function RegisterPage() {
             {field("email", t("auth.register.emailLabel"), "email", "email")}
             {field("password", t("auth.register.passwordLabel"), "password", "new-password")}
             {field("confirm", t("auth.register.confirmLabel"), "password", "new-password")}
+            <label className="privacy-ack"><input type="checkbox" checked={privacyAccepted} disabled={busy} onChange={(e) => { setPrivacyAccepted(e.target.checked); setError(""); }} /><span>I have read the <Link href="/privacy" target="_blank" rel="noopener">Privacy Policy (opens in a new tab)</Link> and understand how MODE uses my profile and club activity to run my account.</span></label>
+            <p className="privacy-data-note">Camera access and saved preferences are separate, optional choices. Essential cookies keep you signed in.</p>
             <button type="submit" className="button primary" disabled={busy}>{busy ? t("auth.register.submitting") : t("auth.register.submit")}</button>
           </form>
           <p className="mx-login-links">{t("auth.register.alreadyMember")} <Link href="/app/login"><strong>{t("auth.register.loginLink")}</strong></Link></p>

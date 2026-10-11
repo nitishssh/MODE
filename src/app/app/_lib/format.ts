@@ -21,7 +21,8 @@ export function rupeesToPaise(value: string): number | null {
   if (!trimmed) return null;
   if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
   const [whole, fraction = ""] = trimmed.split(".");
-  return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  const paise = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  return Number.isSafeInteger(paise) ? paise : null;
 }
 
 export function paiseToRupees(paise: number | null | undefined): string {

@@ -15,12 +15,13 @@ Use **Node.js 24 LTS**. Node 22.13+ within the 22.x line and Node 24+ are suppor
 ```sh
 npm ci
 npm ci --prefix client
+npm run auth:setup
 npm run dev
 ```
 
-Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 16 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
+Open http://127.0.0.1:3000. The first API request creates `.data/mode.sqlite`, applies schema version 17 and inserts clearly fictional sample records once. Existing starter databases migrate in place. Authorized member creation persists across restarts.
 
-Optional configuration is documented in `.env.example`; copy it to `.env.local` if needed. Never commit `.env.local` or the local database. To try a separate SQLite dataset without changing the existing one, clear `DATABASE_URL` and set `SQLITE_PATH` to a new filename. PostgreSQL takes precedence when `DATABASE_URL` is set.
+`auth:setup` generates the required private JWT signing key in `.env.local`. Additional configuration is documented in `.env.example`; add needed values to `.env.local` without replacing the generated key. Never commit `.env.local` or the local database. To try a separate SQLite dataset without changing the existing one, clear `DATABASE_URL` and set `SQLITE_PATH` to a new filename. PostgreSQL takes precedence when `DATABASE_URL` is set.
 
 ## Real club data
 
@@ -59,6 +60,8 @@ Native API clients can log in without browser Origin headers and use the returne
 
 ## What works today
 
+- Privacy policy at `/privacy`, versioned registration acknowledgement, essential-only or optional saved-preference choices, and camera/file permission explanations. The local demo contact is an example; configure the real operator before public use. See [privacy implementation](docs/PRIVACY.md).
+
 - SDK 57 Expo client in `client/`: registration, cookie-based web login, SecureStore native bearer sessions, permission-driven navigation, QR membership passes and dues, event booking and check-in, merchandise, announcements, task assignment, receipt claims and treasury/source/CSV views. See [the interactive journey](docs/DEMO.md#interactive-client-journey).
 - Public landing at `/`, sign-in at `/login`, and an authenticated overview at `/dashboard`. Optional same-origin Expo delivery serves business screens while keeping the Next landing and login pages; `/legacy` retains the original workspace. Native camera scanning, receipt selection and private-file sharing are implemented; bundle compilation does not establish physical-device acceptance.
 - Responsive dashboard and navigation for all six club areas.
@@ -67,7 +70,7 @@ Native API clients can log in without browser Origin headers and use the returne
 - Backend APIs for dues/renewals, simulated reminders, ticket holds, payment confirmation, check-in and merchandise orders with stock holds.
 - Announcement publication API with a public dated archive, active-member notifications, atomic simulated outbox delivery and safe retries. See the [announcement demo](docs/DEMO.md#announcement-publication-8).
 - SQLite/PostgreSQL-backed dashboard, health check and member directory; bounded v2 member, task, expense and ledger lists.
-- Registration, login, logout, hashed sessions and role-protected member APIs; native bearer tokens and browser HttpOnly cookies share the same session.
+- Registration, login, logout, signed JWTs backed by revocable hashed sessions, and role-protected member APIs; native bearer tokens and browser HttpOnly cookies share the same session. Run `npm run auth:setup` before signing in; see [JWT authentication](docs/AUTHENTICATION.md).
 - Create a member through the authorized API with server validation and case-insensitive duplicate prevention.
 - Server-calculated member/event counts and a sample ledger balance in integer paise.
 - Fictional records showing how events, announcements, merchandise, volunteer work and finances will fit together.
@@ -75,11 +78,21 @@ Native API clients can log in without browser Origin headers and use the returne
 
 ## Remaining acceptance
 
+WhatsApp preparation is available in `/app/settings`: members can save their number
+and preferences; officers can configure a group and inspect queued deliveries.
+Announcements queue both audiences, while renewal reminders remain private. Schema
+14 adds durable queues with duplicate prevention and conservative retry handling.
+The OpenWA sender is not connected yet, so no WhatsApp messages are sent. See
+[OpenWA implementation and remaining setup](docs/OPENWA.md).
+
 Physical Android/iOS camera, picker, haptics and sharing, LAN journeys and installed Windows PWA behavior remain tracked in [the MVP tickets](https://github.com/nitishssh/MODE/milestone/1). Selected local browser journeys and automated API/restart checks are recorded in [the demo guide](docs/DEMO.md#interactive-client-journey); they do not complete every native/web acceptance criterion. Payment confirmations record external payments; no gateway transfer or real email is performed.
 
 The starter is a single-club, local development scaffold with synthetic demo accounts. The web and Expo client have sign-in and business screens; physical-device acceptance remains outstanding. Anonymous dashboard responses withhold the member directory and finance data. See [API contracts and demo accounts](docs/API.md) to exercise the authenticated endpoints. Hosted SQLite needs a persistent disk and one writable instance; a serverless ephemeral filesystem is not durable storage. Set `DATABASE_URL=postgres://…` to run the same application on PostgreSQL instead (`npm run postgres:up` starts a local server, `npm run postgres:push` moves an existing SQLite database across); see [docs/POSTGRESQL.md](docs/POSTGRESQL.md). Known schema and workflow gaps are tracked in [docs/DB-AUDIT.md](docs/DB-AUDIT.md).
 
 ## Stack and layout
+
+See [code quality and CI](docs/CODE-QUALITY.md) for linting, tests, coverage,
+security scanning, dependency updates and the required merge/deployment gate.
 
 Next.js App Router API · Expo Router · React Native Web · React · TypeScript · Zod · native SQLite / PostgreSQL.
 

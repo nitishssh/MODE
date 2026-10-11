@@ -1,12 +1,9 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
+import { MAX_SESSION_TOKEN_LENGTH } from "./jwt";
 import { configuredPublicOrigin } from "./public-origin";
+export { SESSION_TTL_MS } from "./jwt";
 
 export const SESSION_COOKIE = "mode_session";
-export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-export function generateSessionToken(): string {
-  return randomBytes(32).toString("base64url");
-}
 
 /** Only a hash of the token is stored, so a database copy does not leak live sessions. */
 export function hashSessionToken(token: string): string {
@@ -18,14 +15,18 @@ export function readSessionToken(request: Request): string | null {
   // malformed. Never fall back to an ambient browser cookie.
   const authorization = request.headers.get("authorization");
   if (authorization !== null) {
-    return /^Bearer ([A-Za-z0-9_-]{43})$/i.exec(authorization)?.[1] ?? null;
+    if (authorization.length > MAX_SESSION_TOKEN_LENGTH + 7) return null;
+    return /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i.exec(authorization)?.[1] ?? null;
   }
   const header = request.headers.get("cookie");
   if (!header) return null;
   for (const part of header.split(";")) {
     const [name, ...rest] = part.trim().split("=");
     if (name === SESSION_COOKIE) {
-      try { return decodeURIComponent(rest.join("=")); }
+      try {
+        const token = decodeURIComponent(rest.join("="));
+        return token.length <= MAX_SESSION_TOKEN_LENGTH ? token : null;
+      }
       catch { return null; }
     }
   }

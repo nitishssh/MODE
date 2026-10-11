@@ -102,7 +102,8 @@ function LoginForm() {
           </form>
           <p className="mx-login-links">
             {t("auth.login.newStudent")} <Link href="/app/register"><strong>{t("auth.login.joinLink")}</strong></Link><br />
-            <Link href="/">{t("shell.brandHome")}</Link>
+            <Link href="/">{t("shell.brandHome")}</Link><br />
+            <Link href="/status">Service status · No sign-in required</Link>
           </p>
           {demo ? (
             <div className="mx-login-demo">

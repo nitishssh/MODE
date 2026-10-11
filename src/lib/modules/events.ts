@@ -9,6 +9,7 @@ import { parseInput } from "../validation";
 import { assertPermission, type Actor, type IdentityModule } from "./identity";
 import { SOURCE_RESOLVERS, postLedgerEntry } from "./ledger";
 import { membershipState } from "./membership-state";
+import { assertPaymentReferenceAvailable, lockPaymentReferences } from "./payment-reference";
 
 /** A pending booking holds its seat for this long; then releaseExpiredHolds() returns it. */
 export const HOLD_MINUTES = 30;
@@ -36,10 +37,11 @@ const eventFields = {
   capacity: z.number().int().min(0).max(100_000),
   memberPricePaise: z.number().int().min(0),
   guestPricePaise: z.number().int().min(0),
+  fundraiserGoalPaise: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   status: z.enum(["draft", "published", "cancelled"]),
 };
 export const createEventSchema = z
-  .object({ ...eventFields, description: eventFields.description.default(""), status: eventFields.status.default("published") })
+  .object({ ...eventFields, fundraiserGoalPaise: eventFields.fundraiserGoalPaise.default(0), description: eventFields.description.default(""), status: eventFields.status.default("published") })
   .strict();
 /** PATCH is built from the default-free fields: Zod 4 keeps `.default()` through `.partial()`. */
 export const updateEventSchema = z.object(eventFields).partial().strict();
@@ -66,6 +68,7 @@ function mapEvent(row: Row): EventDetails {
     registered,
     memberPricePaise: int(row.member_price_paise),
     guestPricePaise: int(row.guest_price_paise),
+    fundraiserGoalPaise: int(row.fundraiser_goal_paise),
     description: text(row.description),
     status: row.status as EventDetails["status"],
     available: Math.max(0, capacity - registered),
@@ -121,6 +124,7 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
   // ----- events -------------------------------------------------------------
 
   function listEvents(clubId: string, options: { includeUnpublished?: boolean } = {}): EventDetails[] {
+    releaseIfLapsed();
     const sql = options.includeUnpublished
       ? "SELECT * FROM events WHERE club_id = ? ORDER BY starts_at, id"
       : "SELECT * FROM events WHERE club_id = ? AND status = 'published' ORDER BY starts_at, id";
@@ -135,6 +139,7 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
 
   /** Public read: drafts are visible only to organizers. */
   function getEvent(actor: Actor | null, clubId: string, eventId: string): EventDetails {
+    releaseIfLapsed(eventId);
     const event = requireEvent(clubId, eventId);
     if (event.status === "draft" && !(actor && hasPermission(actor.role, "events:write"))) throw new NotFoundError("Event not found.");
     return event;
@@ -146,9 +151,9 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
     const id = randomUUID();
     return transaction(ctx, () => {
       db.prepare(
-        `INSERT INTO events (id, title, starts_at, venue, capacity, registered, member_price_paise, guest_price_paise, club_id, status, description)
-         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
-      ).run(id, data.title, new Date(data.startsAt).toISOString(), data.venue, data.capacity, data.memberPricePaise, data.guestPricePaise, actor.clubId, data.status, data.description);
+        `INSERT INTO events (id, title, starts_at, venue, capacity, registered, member_price_paise, guest_price_paise, club_id, status, description, fundraiser_goal_paise)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+      ).run(id, data.title, new Date(data.startsAt).toISOString(), data.venue, data.capacity, data.memberPricePaise, data.guestPricePaise, actor.clubId, data.status, data.description, data.fundraiserGoalPaise);
       identity.recordAudit(actor, "event.created", "event", id, { title: data.title, status: data.status });
       return requireEvent(actor.clubId, id);
     });
@@ -165,8 +170,8 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
       }
       const next = { ...current, ...data, startsAt: data.startsAt ? new Date(data.startsAt).toISOString() : current.startsAt };
       db.prepare(
-        "UPDATE events SET title = ?, description = ?, starts_at = ?, venue = ?, capacity = ?, member_price_paise = ?, guest_price_paise = ?, status = ? WHERE id = ? AND club_id = ?",
-      ).run(next.title, next.description, next.startsAt, next.venue, next.capacity, next.memberPricePaise, next.guestPricePaise, next.status, eventId, actor.clubId);
+        "UPDATE events SET title = ?, description = ?, starts_at = ?, venue = ?, capacity = ?, member_price_paise = ?, guest_price_paise = ?, status = ?, fundraiser_goal_paise = ? WHERE id = ? AND club_id = ?",
+      ).run(next.title, next.description, next.startsAt, next.venue, next.capacity, next.memberPricePaise, next.guestPricePaise, next.status, next.fundraiserGoalPaise, eventId, actor.clubId);
       let releasedHolds = 0;
       if (next.status === "cancelled" && current.status !== "cancelled") {
         // Cancelling an event ends its unpaid holds; paid tickets keep their record (refunds are outside this MVP) but the door refuses them (audit #1).
@@ -285,11 +290,14 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
   }
 
   /** Guest booking by name and email; no account. The response carries the /t/{qrToken} link. */
-  function bookGuestTicket(clubId: string, eventId: string, input: z.input<typeof guestBookingSchema>): Ticket {
+  function bookGuestTicket(clubId: string, eventId: string, input: z.input<typeof guestBookingSchema>, officer: Actor | null = null): Ticket {
     const data = parseInput(guestBookingSchema, input);
     return transaction(ctx, () => {
       releaseExpiredHolds(eventId);
       const event = requireEvent(clubId, eventId);
+      if (event.guestPricePaise === 0 && (!officer || officer.clubId !== clubId || !hasPermission(officer.role, "events:write"))) {
+        throw new ConflictError("Free guest tickets must be issued by an organizer at the desk. Members can sign in to book their own ticket.", "guest_verification_required");
+      }
       if (db.prepare("SELECT 1 FROM members WHERE club_id = ? AND email = ? AND left_at IS NULL").get(clubId, data.email)) {
         throw new ConflictError("This email belongs to a club member. Sign in to book at the member price.", "member_email");
       }
@@ -298,7 +306,7 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
         throw new ConflictError("Guest holds for this event are full right now; try again in a few minutes.", "guest_holds_full");
       }
       const id = issueTicket(clubId, event, { memberId: null, guestName: data.name, guestEmail: data.email }, "guest", event.guestPricePaise);
-      identity.recordAudit(null, "ticket.booked", "ticket", id, { eventId, pricing: "guest", guest: true }, clubId);
+      identity.recordAudit(officer, "ticket.booked", "ticket", id, { eventId, pricing: "guest", guest: true }, clubId);
       return mapTicket(requireTicketRow(clubId, id), { token: true });
     });
   }
@@ -315,7 +323,10 @@ export function createEventsModule(ctx: DbContext, identity: IdentityModule) {
     const before = mapTicket(requireTicketRow(actor.clubId, ticketId), { officer: true });
     releaseIfLapsed(before.eventId); // its own transaction, so a conflict below cannot roll the release back (audit #24)
     return transaction(ctx, () => {
+      lockPaymentReferences(ctx, actor.clubId);
       const nowIso = ctx.now().toISOString();
+      const current = mapTicket(requireTicketRow(actor.clubId, ticketId));
+      if (current.status === "pending_payment") assertPaymentReferenceAvailable(ctx, actor.clubId, data.reference);
       // One external payment pays for one ticket (audit #3); the UNIQUE index is the backstop.
       if (db.prepare("SELECT 1 FROM tickets WHERE club_id = ? AND payment_reference = ? AND id <> ?").get(actor.clubId, data.reference, ticketId)) {
         throw new ConflictError("This payment reference is already recorded against another ticket.", "payment_reference_reused");

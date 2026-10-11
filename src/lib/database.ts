@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { createServiceChecks } from "./service-checks";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { assertSafeDemoPasswords } from "./auth/demo-safety";
@@ -9,6 +10,7 @@ import { createWorkspaceModule } from "./modules/workspace";
 import { createDashboardModule } from "./modules/dashboard";
 import { createDuesModule } from "./modules/dues";
 import { createAnnouncementsModule } from "./modules/announcements";
+import { createWhatsAppModule } from "./modules/whatsapp";
 import { createEventsModule } from "./modules/events";
 import { createIdentityModule } from "./modules/identity";
 import { createMerchandiseModule } from "./modules/merchandise";
@@ -49,7 +51,8 @@ export function openClubDatabase(target: string, options: { now?: () => Date; re
 
   const ctx: DbContext = { db, now, depth: 0 };
   const identity = createIdentityModule(ctx);
-  const dues = createDuesModule(ctx, identity);
+  const whatsapp = createWhatsAppModule(ctx, identity);
+  const dues = createDuesModule(ctx, identity, whatsapp);
   const events = createEventsModule(ctx, identity);
   const merchandise = createMerchandiseModule(ctx, identity);
   const dashboard = createDashboardModule(ctx, identity, { beforeRead: () => { events.releaseIfLapsed(); merchandise.releaseIfLapsed(); } });
@@ -60,7 +63,8 @@ export function openClubDatabase(target: string, options: { now?: () => Date; re
     ...dashboard,
     ...createWorkspaceModule(ctx, identity, options.receiptsDir ?? defaultReceiptsDir(kind, path)),
     dues,
-    announcements: createAnnouncementsModule(ctx, identity),
+    announcements: createAnnouncementsModule(ctx, identity, whatsapp),
+    whatsapp,
     events,
     merchandise,
     ledger: {
@@ -76,6 +80,7 @@ export function openClubDatabase(target: string, options: { now?: () => Date; re
       db.prepare("SELECT 1").get();
       return { status: "ok" as const, database: kind, schemaVersion: SCHEMA_VERSION };
     },
+    statusChecks: createServiceChecks(db, options.receiptsDir ?? defaultReceiptsDir(kind, path)),
     close: () => {
       if (closed) return;
       closed = true;

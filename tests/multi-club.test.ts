@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PRIVACY_POLICY_VERSION } from "../src/lib/contracts";
 import { rmSync } from "node:fs";
 import { test } from "node:test";
 import { GET as me } from "../src/app/api/auth/me/route";
@@ -102,7 +103,7 @@ test("switching to a club the person is not in is refused, and other clubs' data
 test("self-registration refuses an email that already has an account", () => {
   const { db } = memoryDatabase();
   try {
-    assert.throws(() => db.register({ name: "Asha Again", email: DEMO.volunteer, password: "another-pass-123" }), DuplicateMemberError);
+    assert.throws(() => db.register({ name: "Asha Again", email: DEMO.volunteer, password: "another-pass-123", privacyPolicyVersion: PRIVACY_POLICY_VERSION }), DuplicateMemberError);
   } finally {
     db.close();
   }

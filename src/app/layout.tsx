@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { I18nProvider } from "@/i18n/client";
 import { requestI18n } from "@/i18n/server";
 import "./globals.css";
+import "@/components/privacy.css";
+import { PrivacyNotice } from "@/components/privacy-controls";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { dict } = await requestI18n();
@@ -23,6 +25,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       <body>
         <I18nProvider locale={locale} dict={dict}>
           {children}
+          <PrivacyNotice />
         </I18nProvider>
       </body>
     </html>

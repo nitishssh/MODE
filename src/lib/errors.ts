@@ -5,6 +5,8 @@ export class DomainError extends Error {
     readonly status: number,
     readonly code: string,
     readonly details?: { field: string; message: string }[],
+    readonly headers?: HeadersInit,
+    readonly internalCause?: unknown,
   ) {
     super(message);
     this.name = new.target.name;
@@ -51,6 +53,27 @@ export class DuplicateMemberError extends ConflictError {
 /** Login throttling (audit #10): the account is locked for a short window after repeated failures. */
 export class TooManyAttemptsError extends DomainError {
   constructor(readonly lockedUntil: string) {
-    super("Too many sign-in attempts. Try again in a few minutes.", 429, "too_many_attempts");
+    super("Too many sign-in attempts. Try again in a few minutes.", 429, "too_many_attempts", undefined, {
+      "Retry-After": new Date(lockedUntil).toUTCString(),
+    });
+  }
+}
+
+export class RateLimitError extends DomainError {
+  constructor(retryAfterSeconds: number, limit: number, remaining: number, resetAfterSeconds: number) {
+    super("Too many requests. Please retry shortly.", 429, "rate_limited", undefined, {
+      "Retry-After": String(retryAfterSeconds),
+      "RateLimit-Limit": String(limit),
+      "RateLimit-Remaining": String(remaining),
+      "RateLimit-Reset": String(resetAfterSeconds),
+    });
+  }
+}
+
+export class CapacityError extends DomainError {
+  constructor(message: string, resource: string, retryAfterSeconds: number, internalCause?: unknown) {
+    super(message, 503, "server_busy", [{ field: "resource", message: resource }], {
+      "Retry-After": String(retryAfterSeconds),
+    }, internalCause);
   }
 }

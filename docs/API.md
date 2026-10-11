@@ -35,9 +35,21 @@ Both database adapters use these queries. CI includes a serialized test job agai
 
 ## Identity and roles (#3)
 
-Authentication is a server-side session referenced by the `mode_session` cookie (`HttpOnly; SameSite=Lax; Path=/`, `Secure` on HTTPS). Sessions last 7 days, are stored hashed, and can be revoked by logout. Passwords are stored as salted scrypt hashes. Every member belongs to exactly one club; all reads and writes are scoped to the caller's club.
+Authentication uses an HS256-signed JWT in the `mode_session` cookie (`HttpOnly; SameSite=Lax; Path=/`, `Secure` on HTTPS). JWTs last 7 days. Each JWT is also bound to a database session by its SHA-256 hash, session ID, member ID and club ID, so logout and revocation take effect immediately. Passwords are stored as salted scrypt hashes. Every member belongs to exactly one club; all reads and writes are scoped to the caller's club.
+
+The JWT contains `iss=mode`, `aud=mode-api`, `sub` (member ID), `jti` (unique session ID), `clubId`, `iat` and `exp` (UTC epoch seconds). The server verifies the HMAC-SHA256 signature with a constant-time comparison, the fixed algorithm, issuer, audience, required claims and expiry before resolving the database session. Permissions come from the current database role; the JWT does not contain passwords, email, names or roles. This is a signed token, not encrypted data. Legacy opaque session tokens are rejected; existing users must sign in again after this change.
+
+Run `npm run auth:setup` once locally to generate a private `MODE_JWT_SECRET` in ignored `.env.local`, then restart the server. Every deployment must configure its own secret: exactly 64 hexadecimal characters representing 32 random bytes, shared by all server replicas. Never use `NEXT_PUBLIC_` or `EXPO_PUBLIC_` for the key. Missing or malformed keys fail closed. Changing the key invalidates all existing JWTs. See [JWT authentication](AUTHENTICATION.md) for setup, flow and verification instructions.
 
 Native clients may instead send `Authorization: Bearer <token>` using the token returned by login or registration. This references the same session row as the cookie. Whenever `Authorization` is present, the cookie is ignored: malformed, unknown, expired and revoked bearer tokens return 401, including on the optional-auth dashboard and logout. Valid bearer requests still enforce role permissions. Logout revokes only the selected session; the token and cookie for that session both stop working. Bearer logout sends no `Set-Cookie`, preserving unrelated browser cookies; cookie logout clears the browser session cookie.
+
+### Rate limiting and overload
+
+The first local admission controls apply bounded in-memory token buckets per process. `/api/workspace/summary` allows a burst of 5 per account and refills at 30/minute, with a club budget of 42,000/minute and burst 700. `/api/workspace/search` allows a burst of 6 per account and refills at 30/minute, with a club budget of 3,000/minute and burst 100. Login has a broad source budget plus an email failure budget; successful authentication refunds the email token, while the durable five-failure SQL lockout remains authoritative.
+
+Policy exhaustion returns `429 {error,code:"rate_limited"}` with `Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`. Server admission exhaustion returns `503 {error,code:"server_busy"}` with `Retry-After`. Both responses are `Cache-Control: no-store`. Web GETs retry these responses at most twice with capped exponential backoff and jitter; mutations are never automatically replayed. In-memory limits coordinate one process only. The hosted multi-instance design requires the atomic Redis backend described in [the rate-limit and queue plan](performance/RATE-LIMIT-QUEUE-PLAN.md).
+
+Every API route wrapped by `route()` returns a server-generated `X-Request-Id`; error JSON repeats it as `requestId`. Expected domain errors retain their stable status/code. Unexpected exceptions return `500 {error:"Something went wrong. Please try again.",code:"internal_error",requestId}` while the internal message and stack appear only in the structured server log. The web client applies a 15-second timeout, rejects malformed success responses, retries GET failures within a bounded budget, and reports a lost mutation response as an uncertain outcome without replaying it. See [exception handling and recovery](EXCEPTION-HANDLING.md).
 
 Web clients use the HttpOnly cookie and do not persist the response token in browser storage. The Expo native client uses `expo-secure-store`; its exported web app uses the Next host for same-origin cookies. Physical-device and installed-PWA acceptance remains tracked under #10/#14.
 
@@ -53,7 +65,8 @@ CORS does not authorize a request or relax cookie CSRF protection. Even an allow
 
 | Method | Path | Permission | Success | Failure |
 |---|---|---|---|---|
-| POST | `/api/auth/register` | public | 201 `AuthResponse` + cookie | 400 invalid; 403 cross-origin; 409 duplicate email |
+| POST | `/api/auth/register` | public | 201 `AuthResponse` + cookie | 400 invalid or missing/outdated privacy acknowledgement; 403 cross-origin; 409 duplicate email |
+| GET | `/api/privacy-policy` | public | 200 `PrivacyPolicyResponse` | 500 unexpected failure |
 | POST | `/api/auth/login` | public | 200 `AuthResponse` + cookie | 400 invalid; 401 wrong email/password (same message for both); 403 cross-origin; 429 `too_many_attempts` after 5 consecutive failures for an email (15-minute lock) |
 | POST | `/api/auth/password` | signed in, same-origin | 200 `{ok:true, revokedSessions}`; body `{currentPassword, newPassword}`; keeps this session, signs out every other one | 400 invalid; 401 current password wrong; 403 cross-origin |
 | POST | `/api/auth/logout` | cookie logout is idempotent; bearer must be valid | 200 `{ok:true}`; cookie auth also clears cookie | 401 invalid bearer; 403 cross-origin cookie request |
@@ -70,12 +83,16 @@ CORS does not authorize a request or relax cookie CSRF protection. Even an allow
 Request bodies:
 
 ```json
-{"name":"Demo Student","email":"student@example.com","password":"at least 8 characters"}
+{"name":"Demo Student","email":"student@example.com","password":"at least 8 characters","privacyPolicyVersion":"2026-10-11"}
 {"email":"student@example.com","password":"..."}
 {"role":"treasurer"}
 ```
 
 `SessionUser` is `{id,name,email,role,clubId,permissions:string[]}`. The UI should drive navigation from `permissions`, not from role names, so the matrix can evolve without screen changes. `AuthResponse` is `{user:SessionUser, expiresAt, token}`. Auth responses use `Cache-Control: no-store`.
+
+Self-registration requires the exact current `privacyPolicyVersion` after the user acknowledges the notice. Missing, false or outdated values return 400 with field `privacyPolicyVersion`. Registration writes `member.privacy_acknowledged` (entity ID = new member ID, details = `{policyVersion}`, timestamp = server clock) in the same transaction as the account and session. Existing/imported accounts are not silently marked as having acknowledged the policy. This acknowledgement does not grant camera, file, notification or optional-storage permissions.
+
+`GET /api/privacy-policy` returns `{version,effectiveDate,organization,contactEmail,localContact,sections:[{title,text}]}` without authentication. It contains public notice text only. The `/privacy` web page renders the same source. `MODE_PRIVACY_ORGANIZATION` and `MODE_PRIVACY_EMAIL` configure the public operator details; defaults are labelled local-demo examples. See [privacy implementation](PRIVACY.md).
 
 ### Role matrix
 
@@ -147,7 +164,7 @@ Ticketing was introduced in schema v6; reserved v5 remains skipped and workspace
 | GET | `/api/events/{id}` | public (drafts 404 unless `events:write`) | 200 `{event}` | 404 |
 | PATCH | `/api/events/{id}` | `events:write` | 200 `{event}` | 400 (incl. capacity below held seats); 401; 403; 404 |
 | POST | `/api/events/{id}/tickets` | `bookings:create` | 201 `{ticket:Ticket}` with `qrToken` | 401; 403; 404; 409 `duplicate_ticket` · `sold_out` · `event_not_open` · `event_started` |
-| POST | `/api/events/{id}/guest-tickets` `{name,email}` | public, same-origin | 201 `{ticket, url:"/t/{qrToken}"}` | 400; 403 cross-origin; 404; 409 `duplicate_ticket` · `sold_out` · `member_email` (sign in instead) |
+| POST | `/api/events/{id}/guest-tickets` `{name,email}` | public for paid tickets; `events:write` for free guests; same-origin | 201 `{ticket, url:"/t/{qrToken}"}` | 400; 401 invalid bearer; 403 cross-origin; 404; 409 `duplicate_ticket` · `sold_out` · `member_email` · `guest_verification_required` |
 | GET | `/t/{qrToken}` | public, token only | 200 HTML when Accept includes `text/html`; otherwise `{ticket:PublicTicket}` JSON | 404 |
 | GET | `/api/tickets/mine` | signed in | 200 `{tickets:Ticket[]}` with `qrToken` | 401 |
 | GET | `/api/events/{id}/holds` | `payments:confirm` | 200 `{holds:Ticket[]}` pending only, soonest expiry first | 401; 403; 404 |
@@ -158,6 +175,9 @@ Ticketing was introduced in schema v6; reserved v5 remains skipped and workspace
 | GET | `/api/events/{id}/report` | `events:report` | 200 `EventReport` | 401; 403; 404 |
 
 - **Pricing** is fixed at booking from `membershipState`: active members pay `memberPricePaise`, everyone else `guestPricePaise`. Guests book by name and email (normalised lower-case); an email that belongs to a club member is refused with `member_email`.
+- **Free guests** need an organizer (`events:write`) from the same club to issue their ticket. Anonymous and ordinary-member attempts return `409 guest_verification_required` without reserving a seat. This prevents invented email addresses from bypassing unpaid-hold limits. Members still book their own free tickets; verified free guests remain paid immediately without a ledger entry.
+- **Fundraising**: event create accepts optional `fundraiserGoalPaise` (default 0), PATCH accepts it when changing the target, and `EventDetails` returns it. It must be a nonnegative safe integer. Zero means no target, with report `onTrack:false`; the web form accepts rupees. The existing database column is reused, so no migration or history rewrite is needed.
+- **Availability reads**: event list and detail release lapsed holds before returning counts. Active holds remain occupied; cleanup only takes a write lock when a hold has expired.
 - **One live ticket** per member or guest email per event (`pending_payment` or `paid`), enforced by partial UNIQUE indexes. Cancelled and expired tickets do not block rebooking.
 - **Seats**: `registered` is incremented with a conditional `UPDATE … WHERE registered < capacity` inside `BEGIN IMMEDIATE`, with no awaits; the last seat can never be sold twice. Zero-price tickets are `paid` at booking and post no ledger row.
 - **Holds**: a pending ticket holds its seat for 30 minutes (`holdExpiresAt`). `releaseExpiredHolds()` runs inside the transaction before booking, confirmation, cancellation, scan, hold lists and the report; it marks lapsed holds `expired` and returns their seats exactly once. Indexes: `(event_id, status, hold_expires_at)`, `(status, hold_expires_at)`.
@@ -205,14 +225,18 @@ Schema v8 (v7 is reserved for Nitish's P5). `products` gains `clubId`, `descript
 
 | Method | Path | Permission | Success | Failure |
 |---|---|---|---|---|
-| GET | `/api/health` | public | 200 `{status:"ok",database:"sqlite",schemaVersion:number}` | 503 `{status:"error",error}` |
+| GET | `/api/health` | public, admission bypass | 200 `{status:"ok",database:"sqlite",schemaVersion:number}` | 503 `server_busy` with resource `database` |
 | GET | `/api/dashboard` | public, richer when signed in | 200 `Dashboard` | 401 invalid bearer; 500 |
+| GET | `/api/workspace/summary` | signed in | 200 `WorkspaceChromeSummary` with club identity and member/task/unread counts | 401; 500 |
+| GET | `/api/workspace/search?q=...` | signed in | 200 `{results:WorkspaceSearchResult[]}`; 2–100 literal characters, at most 6 results | 400; 401; 500 |
 | GET | `/api/members` | `members:read` | 200 `{members:Member[]}` | 401; 403; 500 |
 | POST | `/api/members` | `members:create` | 201 `{member:Member}` | 400 invalid/malformed; 401; 403; 409 duplicate email; 500 |
 
 Create-member request stays `{"name","email"}`. Name is trimmed, 2–120 characters. Email is trimmed, validated, lowercased, at most 254 characters, and unique case-insensitively. A new member has `duesStatus:"unpaid"`, `expiresOn:null` and `role:"member"`; the officer who created it is recorded in the audit trail. Creating a member does not record a payment, activate benefits or grant a login.
 
 `Dashboard` contains `club` (`{name, description, demo}`; `demo` is true while the fictional starter records are present, see "Real club data" in the README), `metrics`, `members`, `events`, `announcements`, `products`, `tasks`, `transactions` and `access:{members:boolean,finance:boolean}`. Anonymous callers and plain members receive `members:[]`, `transactions:[]` and `balancePaise:0`; the `access` flags tell the UI which sections were withheld rather than empty. Anonymous dashboard responses also return tasks:[]; task details require a signed-in club member. Products are scoped to the current club. The active-member metric uses the shared membership predicate against today's Asia/Kolkata date, including memberships expiring today.
+
+`WorkspaceChromeSummary` is the small polling contract used by persistent navigation: `{club:{name,demo},counts:{members,tasks,completedTasks,unreadNotifications}}`. It computes counts in SQL and never returns member, task or notification collections. Workspace search runs only on demand, treats `%`, `_` and `\` as literal text, scopes every query to the actor's club, and omits member/email results unless the actor has `members:read`.
 
 ## Data and invariants
 
@@ -325,3 +349,40 @@ Schema v11 follows the released receipt migration v10 (rather than filling a ski
 The workspace uses the existing HttpOnly cookie session for browsers. Native callers can use the existing bearer token returned by login; role and club checks are identical.
 
 Guest ticket links at `/t/{token}` retain JSON for API requests. Requests accepting `text/html` receive a private, noncached ticket page with QR, short code, fixed price, hold/payment/admission state and refresh link. No third-party QR service is used.
+## WhatsApp notification preparation
+
+Schema 14 adds a separate durable WhatsApp queue. OpenWA sending is not connected
+yet; every settings/queue response includes `senderReady: false`. Existing
+announcement `delivery: "simulated"` describes the unchanged email-shaped outbox,
+not the new WhatsApp queue. See [OpenWA implementation and limits](OPENWA.md).
+
+| Method | Route | Access | Body / response |
+| --- | --- | --- | --- |
+| GET | `/api/whatsapp/preferences` | Signed-in member, own record | `{ preferences: { phone, enabled }, senderReady: false }` |
+| PUT | `/api/whatsapp/preferences` | Signed-in member, own record | `{ phone: string or null, enabled: boolean }`; returns saved preferences |
+| GET | `/api/whatsapp/group` | `outbox:manage` | `{ group: { destination, enabled }, senderReady: false }` |
+| PUT | `/api/whatsapp/group` | `outbox:manage` | `{ destination: string or null, enabled: boolean }`; returns saved group |
+| GET | `/api/whatsapp/deliveries` | `outbox:manage` | `{ deliveries: [...], senderReady: false }`; latest 100 in the caller's club |
+| POST | `/api/whatsapp/deliveries/{id}/retry` | `outbox:manage` | `{ queued: true }`, or 409 `whatsapp_retry_unavailable` |
+
+PUT bodies reject unknown properties. Enabled preferences require a phone with a
+leading `+` and 8–15 digits; enabled groups require a nonempty opaque destination
+without whitespace, at most 256 characters. A missing record defaults to disabled
+with a null destination. Phone numbers are excluded from public member responses.
+The deliveries response exposes id, kind, audience, status, attempts, timestamps
+and a fixed error code, but no message body or recipient address.
+
+All mutations use the standard cookie same-origin checks or valid bearer-token
+authorization. Only confirmed `failed` deliveries below three total attempts can
+be requeued. `accepted`, `uncertain`, `sending` and cancelled entries cannot be
+retried through this API. There is no HTTP send endpoint in this release.
+
+## Payment identity and retry recovery
+
+Dues, ticket confirmations and merchandise confirmations share a club-scoped external-payment check. A reference already used by another revenue source returns `409 payment_reference_reused` and the whole attempt rolls back. References are trimmed by the request schemas and compared exactly, including case; a transfer cannot be split across modules in this release. Different clubs have independent reference namespaces.
+
+The check and financial write run in one transaction. SQLite uses its existing immediate write lock; PostgreSQL locks the club row before checking replay state or searching all three source tables. Same-source retries return the existing result and add no income. Historical references and ledger rows are not rewritten, including pre-existing cross-module collisions; replaying those original records remains supported. This guards application payment paths, not arbitrary direct SQL writes or external bank settlement.
+
+Web and Expo expense forms retain the original submission ID, receipt ID and payload after an ambiguous response. The fields remain locked while the user retries the same claim; a retry does not reupload the receipt. A definite validation/authentication rejection allows corrections. A conflict triggers a claims lookup: an existing submission is recovered, while a confirmed missing submission unlocks corrections with a new identity. A failed lookup preserves the pending attempt. Pending state is held in the current page session, so after a reload or leaving the screen, refresh the claims list before starting another claim.
+
+The main English workspace at `/app` links explicitly to the multilingual legacy view at `/legacy`. Signed-in visits to `/` route to `/app`. Event-task filters are encoded in the URL for direct links, refresh and browser navigation.

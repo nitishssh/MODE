@@ -221,7 +221,7 @@ test("#15 member passes never collide with ticket passes", () => {
   try {
     const admin = actorFor(db, DEMO.admin);
     const event = db.events.createEvent(admin, { title: "Codes", venue: "Hall", startsAt: "2026-11-01T13:30:00Z", capacity: 5, memberPricePaise: 0, guestPricePaise: 0 });
-    const ticket = db.events.bookGuestTicket(admin.clubId, event.id, { name: "Guest", email: "codes@example.com" });
+    const ticket = db.events.bookGuestTicket(admin.clubId, event.id, { name: "Guest", email: "codes@example.com" }, admin);
     const member = db.createMember({ name: "Fresh", email: "fresh@example.com" });
     assert.notEqual(member.shortCode, ticket.shortCode);
     assert.equal(db.findMemberByPass(admin.clubId, ticket.shortCode), null, "a ticket code never resolves to a member");

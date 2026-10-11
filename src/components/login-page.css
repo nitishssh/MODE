@@ -50,7 +50,22 @@
 @media(max-width:900px){.mode-login.mode-login{display:block;height:auto;min-height:100dvh;background:#f3e0bb}.mode-login.mode-login::before{position:relative;display:block;width:100%;height:min(44vh,370px);background-size:cover;background-position:left center}.mode-login-form-column{display:block;min-height:56dvh;padding:36px 24px;background:#f3e0bb!important}.mode-login-card{margin:auto}.mode-login-card h1{font-size:48px}}
 
 /* Continue the supplied torn-paper edge behind the live form so the artwork and UI read as one page. */
-.mode-login.mode-login{background:#f3e0bb url("/mode-login-paper-bg.png") center / cover no-repeat}
+.mode-login.mode-login{background:#f3e0bb url("/mode-login-paper-bg.webp") center / cover no-repeat}
 .mode-login.mode-login::before{display:none}
 .mode-login-form-column{background:transparent!important}
-@media(max-width:900px){.mode-login.mode-login{background:#f3e0bb url("/mode-login-paper-bg.png") center top / auto 100% no-repeat}.mode-login.mode-login::before{display:none}.mode-login-form-column{background:transparent!important}}
+@media(max-width:900px){.mode-login.mode-login{background:#f3e0bb url("/mode-login-paper-bg.webp") center top / auto 100% no-repeat}.mode-login.mode-login::before{display:none}.mode-login-form-column{background:transparent!important}}
+
+/* Keep validation, registration and enlarged text reachable on short screens. */
+.mode-login.mode-login { height: auto; min-height: 100dvh; overflow: visible; }
+.mode-login-form-column { min-width: 0; }
+.mode-login-card input { font-size: 16px; min-height: 44px; }
+.mode-password-field button { min-width: 44px; min-height: 44px; }
+.mode-login-card .mode-login-back { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 20px; }
+.mode-login-options { flex-wrap: wrap; }
+@media (min-width: 901px) and (max-width: 1200px) {
+  .mode-login.mode-login { grid-template-columns: minmax(0, 1fr) minmax(420px, 1fr); }
+  .mode-login-form-column { padding-inline: 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mode-login *, .mode-login *::before, .mode-login *::after { animation: none !important; transition: none !important; }
+}

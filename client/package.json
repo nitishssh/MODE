@@ -10,7 +10,8 @@
     "web": "expo start --web",
     "export:web": "expo export -p web",
     "typecheck": "tsc --noEmit",
-    "lint": "expo lint",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "npm run lint -- --fix",
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {

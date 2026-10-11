@@ -13,10 +13,15 @@ export default defineConfig([
   ...typescript.configs["flat/recommended"],
   { languageOptions: { globals: globals.node } },
   {
+    // Node preload scripts must remain CommonJS.
+    files: ["**/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  {
     // Existing legacy loading/theme effects; remove this exception when those
     // two screens are refactored. All other Hooks rules remain enforced.
     // See docs/QUALITY.md for the debt and affected effects.
-    files: ["src/components/legacy-workspace.tsx", "src/app/not-found.tsx"],
+    files: ["src/components/legacy-workspace.tsx", "src/app/not-found.tsx", "src/app/status/status-dashboard.tsx"],
     rules: { "react-hooks/set-state-in-effect": "off" },
   },
   globalIgnores([

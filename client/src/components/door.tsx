@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
-import { Platform, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { AppState, Linking, Platform, View } from "react-native";
+import { Link } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import type { ScanResult } from "../generated/contracts";
 import { useSession } from "../lib/session";
@@ -21,8 +22,14 @@ export function Door({
   const [credential, setCredential] = useState("");
   const [result, setResult] = useState<ScanResult | null>(null);
   const [camera, setCamera] = useState(false);
+  const [cameraPrompt, setCameraPrompt] = useState(false);
   const [permission, askPermission] = useCameraPermissions();
   const scanned = useRef(false);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => { if (state !== "active") setCamera(false); });
+    return () => subscription.remove();
+  }, []);
+  useEffect(() => { setCamera(false); setCameraPrompt(false); }, [eventId]);
   function scan(value: string) {
     if (scanned.current || !value.trim()) return;
     scanned.current = true;
@@ -65,8 +72,23 @@ export function Door({
         <>
           <Action
             disabled={write.busy}
+            onPress={() => setCameraPrompt(true)}
+          >
+            Scan QR with camera
+          </Action>
+          {cameraPrompt && <Row>
+            <Copy kind="label">Allow camera for QR scanning?</Copy>
+            <Copy>Codes are read on your device. Only the decoded pass or ticket code is sent to MODE for check-in. Video and audio are not recorded or uploaded. You can type a short code instead.</Copy>
+            <Link href="/privacy">Privacy policy</Link>
+            <Action onPress={() => setCameraPrompt(false)}>Not now — type a code</Action>
+            <Action disabled={write.busy}
             onPress={() =>
               void write.run(async () => {
+                setCameraPrompt(false);
+                if (permission && !permission.granted && !permission.canAskAgain) {
+                  write.setNotice("Camera access is blocked. Enable it in device settings or type the short code.");
+                  return;
+                }
                 const allowed =
                   permission?.granted || (await askPermission()).granted;
                 if (allowed) setCamera(true);
@@ -77,8 +99,10 @@ export function Door({
               })
             }
           >
-            Scan QR with camera
+            Continue to camera
           </Action>
+          </Row>}
+          {permission && !permission.granted && !permission.canAskAgain && <Action onPress={() => void Linking.openSettings()}>Open camera permission settings</Action>}
           {camera && permission?.granted && (
             <>
               <View style={{ height: 260 }}>

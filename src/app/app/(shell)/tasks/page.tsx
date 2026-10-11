@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useMemo, useState, type FormEvent } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { EventDetails, Member, TaskDetails } from "@/lib/contracts";
 import { api, useAction, useLoad } from "../../_lib/api";
 import { useSession } from "../../_lib/session";
@@ -18,6 +19,13 @@ const ORDER: Status[] = ["todo", "in_progress", "done"];
 const initials = (name: string) => name.split(" ").slice(0, 2).map((part) => part[0] ?? "").join("");
 
 export default function TasksPage() {
+  return <Suspense fallback={<p role="status">Loading tasks…</p>}><TaskBoard /></Suspense>;
+}
+
+function TaskBoard() {
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const { user, can } = useSession();
   const { t, apiError } = useT();
   const canWrite = can("tasks:write");
@@ -25,7 +33,12 @@ export default function TasksPage() {
 
   const [statusFilter, setStatusFilter] = useState<"" | Status>("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
-  const [eventFilter, setEventFilter] = useState("");
+  const eventFilter = searchParams.get("eventId") ?? "";
+  function setEventFilter(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) params.set("eventId", value); else params.delete("eventId");
+    router.push(`${pathname}${params.size ? `?${params}` : ""}`, { scroll: false });
+  }
   const [overdueOnly, setOverdueOnly] = useState(false);
   // People without tasks:write are here for their own assignments; officers start with the whole board.
   const [mine, setMine] = useState(!canWrite);
