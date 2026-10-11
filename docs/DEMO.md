@@ -10,7 +10,7 @@ Foundation acceptance was verified in [merged PR #26](https://github.com/nitishs
 4. Read `GET /api/members` with that session, restart the server, and read again: the new unpaid member remains present.
 5. Submit the same email again through the authorized API: expect 409 without adding another record.
 6. Check invalid name/email handling through the authorized API. Navigate all six web areas and confirm unfinished flows are marked as previews.
-7. Visit `/api/health`; it returns 200 and reports schema version 15 (`database` is `sqlite`, or `postgres` when `DATABASE_URL` is set).
+7. Visit `/api/health`; it returns 200 and reports schema version 16 (`database` is `sqlite`, or `postgres` when `DATABASE_URL` is set).
 8. Run `npm run check`, then `npm run test:foundation`. The first command includes version consistency, lint, typecheck, API documentation contracts, generated schemas, domain/API tests and the build; the second checks HTTP member/session persistence across a server restart using a temporary database.
 9. Set `MODE_DEMO_PASSWORD` before seeding a new production database, then run `npm start`. Public reads work; member creation requires an organizer/admin session. Verify missing authentication returns 401, insufficient permissions return 403, and cross-origin cookie writes return 403. Production ignores `MODE_CORS_ORIGINS`.
 

@@ -294,9 +294,9 @@ test("the actual upstream v13 schema upgrades through v15 without changing recor
     assert.equal(db.getLedgerSummary(admin).balancePaise, 400);
     const inspect = new DatabaseSync(filename);
     try {
-      assert.equal(inspect.prepare("PRAGMA user_version").get()?.user_version, 15);
-      // v14 rebuilds members around people; every other table must be untouched by v14 and v15.
-      const identityTables = new Set(["members", "people"]);
+      assert.equal(inspect.prepare("PRAGMA user_version").get()?.user_version, 16);
+      // v14 rebuilds members around people; v16 adds join_code to clubs; every other table must be untouched by v14, v15 and v16.
+      const identityTables = new Set(["members", "people", "clubs"]);
       const outsideIdentity = (tables: ReturnType<typeof snapshot>) => Object.fromEntries(Object.entries(tables).filter(([name]) => !identityTables.has(name)));
       assert.deepEqual(outsideIdentity(snapshot(inspect)), outsideIdentity(before), "all pre-upgrade rows, rowids and values survive");
       assert.deepEqual(inspect.prepare("SELECT id, person_id, email FROM members").all().map(row => ({ ...row })), [{ id: "v13-admin", person_id: "v13-admin", email: "v13@example.com" }], "the member keeps its id and gains a matching person");

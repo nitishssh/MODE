@@ -94,7 +94,7 @@ export function createDuesModule(ctx: DbContext, identity: IdentityModule) {
       db
         .prepare(
           `SELECT id, name, email, expires_on, ${MEMBERSHIP_STATE_SQL} AS state FROM members
-           WHERE club_id = ? AND expires_on IS NOT NULL AND expires_on BETWEEN ? AND ? ORDER BY expires_on, name COLLATE NOCASE`,
+           WHERE club_id = ? AND left_at IS NULL AND expires_on IS NOT NULL AND expires_on BETWEEN ? AND ? ORDER BY expires_on, name COLLATE NOCASE`,
         )
         .all(today, actor.clubId, today, horizon) as Row[]
     ).map((row) => ({

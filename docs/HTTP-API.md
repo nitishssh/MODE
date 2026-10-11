@@ -47,6 +47,9 @@ The UI receives `user.permissions`; visibility should use those permission strin
 | POST `/api/auth/logout` | Cookie logout may be anonymous/idempotent; bearer must validate | No body | `{ok:true}` |
 | GET `/api/auth/me` | Signed in | None | `{user:SessionUser,pass:MemberPass,memberships:ClubMembership[]}` |
 | POST `/api/auth/switch-club` | Signed in, origin guard for cookies | `{clubId}` | `AuthMeResponse` for the new active club; 403 when the person is not a member of it |
+| GET/POST/DELETE `/api/clubs/join-code` | `roles:manage` | none | `ClubJoinCode` — read, rotate or disable the active club's join code |
+| POST `/api/clubs/join` | Signed in, origin guard for cookies | `{joinCode}` | `JoinClubResponse`; 201 joined, 200 rejoined, 404 unknown/disabled code, 409 already a member |
+| POST `/api/clubs/{id}/leave` | Signed in, origin guard for cookies | none | `LeaveClubResponse`; 404 not a current member, 409 last admin |
 | GET `/api/health` | Public | None | `{status:"ok",database:"sqlite",schemaVersion:11}` at this snapshot |
 | GET `/api/dashboard` | Public, enriched by permissions | None | `Dashboard` |
 | GET `/api/members` | `members:read` | None | `{members:Member[]}` |

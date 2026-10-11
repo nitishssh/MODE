@@ -20,7 +20,7 @@ npm run postgres:up                               # PostgreSQL 17 on 127.0.0.1:5
 DATABASE_URL=postgres://mode:mode@127.0.0.1:5432/mode npm run dev
 ```
 
-The first request creates the schema (migrations v1–v15 run through the translator; v13 adds the club foreign keys with `ALTER TABLE … ADD CONSTRAINT`, v14 drops `members_email_key` on PostgreSQL instead of SQLite's table rebuilds and v15 adds the pagination indexes), seeds
+The first request creates the schema (migrations v1–v16 run through the translator; v13 adds the club foreign keys with `ALTER TABLE … ADD CONSTRAINT`, v14 drops `members_email_key` on PostgreSQL instead of SQLite's table rebuilds v15 adds the pagination indexes and v16 the join-code and leaving columns), seeds
 the same synthetic records as SQLite, and `/api/health` reports `"database": "postgres"`.
 Receipt files go to `MODE_RECEIPTS_DIR` (default `.data/receipts`). For `next start`, set
 `MODE_DEMO_PASSWORD` exactly as for SQLite: production refuses to seed with the public default.

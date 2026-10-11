@@ -46,6 +46,7 @@ const MIGRATIONS: Migration[] = [
   { version: 13, up: hardenSchema, rebuildsTables: true },
   { version: 14, up: splitPeopleFromMemberships, rebuildsTables: true },
   { version: 15, up: addListPaginationIndexes },
+  { version: 16, up: addJoinCodesAndLeaving },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -712,4 +713,12 @@ function splitPeopleFromMemberships(db: SqlDatabase) {
   }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS members_person_club_idx ON members (club_id, person_id)");
   db.exec("CREATE INDEX IF NOT EXISTS members_person_idx ON members (person_id)");
+}
+
+// v16 — self-service joining and leaving. A club may publish one join code (unique while set;
+// NULL means joining by code is off). Leaving keeps the membership row for history and stamps left_at.
+function addJoinCodesAndLeaving(db: SqlDatabase) {
+  addColumnIfMissing(db, "clubs", "join_code", "join_code TEXT");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS clubs_join_code_idx ON clubs (join_code)");
+  addColumnIfMissing(db, "members", "left_at", "left_at TEXT");
 }
