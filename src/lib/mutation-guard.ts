@@ -1,4 +1,5 @@
 import { ForbiddenError } from "./errors";
+import { configuredPublicOrigin } from "./auth/public-origin";
 
 /**
  * Cookie sessions need a same-origin check on every state-changing request so a
@@ -9,16 +10,19 @@ export function assertSameOrigin(request: Request): void {
   const origin = request.headers.get("origin");
   const requestUrl = new URL(request.url);
   const host = request.headers.get("host");
-  let expectedOrigin = requestUrl.origin;
+  const publicOrigin = configuredPublicOrigin();
+  let expectedOrigin = publicOrigin ?? requestUrl.origin;
   if (host !== null) {
     // Next.js can normalize request.url to localhost even when the browser uses
     // 127.0.0.1. The direct HTTP Host retains the actual requested authority.
-    // Forwarded / X-Forwarded-* headers are deliberately ignored.
+    // An explicitly configured public origin handles TLS termination or a rewritten
+    // internal Host. Forwarded / X-Forwarded-* headers cannot grant an origin.
     if (host.length === 0 || /[\\/\s@?#,]/.test(host)) {
       throw new ForbiddenError("Invalid request host.");
     }
     try {
-      expectedOrigin = new URL(`${requestUrl.protocol}//${host}`).origin;
+      const directOrigin = new URL(`${requestUrl.protocol}//${host}`).origin;
+      if (!publicOrigin) expectedOrigin = directOrigin;
     } catch {
       throw new ForbiddenError("Invalid request host.");
     }
