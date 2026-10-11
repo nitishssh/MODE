@@ -112,9 +112,13 @@ export function CountUp({ value, format }: { value: number; format?: (n: number)
   const from = useRef(0);
   useEffect(() => {
     const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduce || !Number.isFinite(value)) { setShown(value); from.current = value; return; }
     const start = from.current, delta = value - start, t0 = performance.now(), duration = 650;
     let frame = 0;
+    // Reduced motion jumps straight to the value, still from a frame callback rather than the effect body.
+    if (reduce || !Number.isFinite(value)) {
+      frame = requestAnimationFrame(() => { setShown(value); from.current = value; });
+      return () => cancelAnimationFrame(frame);
+    }
     const tick = (now: number) => {
       const p = Math.min(1, (now - t0) / duration);
       const eased = 1 - Math.pow(1 - p, 3);
