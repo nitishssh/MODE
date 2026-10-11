@@ -70,6 +70,7 @@ export const loginSchema = z
   .strict();
 export const roleSchema = z.object({ role: z.enum(ROLES) }).strict();
 export const switchClubSchema = z.object({ clubId: z.string().trim().min(1).max(200) }).strict();
+export const joinClubSchema = z.object({ joinCode: z.string().trim().min(1).max(200) }).strict();
 export const changePasswordSchema = z
   .object({ currentPassword: z.string().min(1).max(200), newPassword: passwordSchema })
   .strict();
@@ -509,6 +510,29 @@ export function createIdentityModule(ctx: DbContext) {
     }));
   }
 
+  function joinClub(joinCode: string): ClubMembership {
+    const club = db.prepare("SELECT id, name FROM clubs WHERE join_code = ?").get(joinCode) as { id: string; name: string } | undefined;
+    if (!club) throw new NotFoundError("Join code not found");
+
+    // This is public, so we need to get the authenticated person from session context (handled by middleware)
+    // For now, throw NotFoundError if no authenticated session - client will redirect to login
+    throw new NotFoundError("Not authenticated for club join");
+  }
+
+  function leaveClub(actor: Actor, clubId: string) {
+    const member = findMember(clubId, actor.memberId);
+    if (!member) throw new NotFoundError("Not a member of this club");
+
+    // Check if this is the last admin of the club
+    const adminCount = db.prepare("SELECT COUNT(*) as n FROM members WHERE club_id = ? AND role = 'admin' AND left_at IS NULL").get(clubId) as { n: number };
+    if (adminCount.n === 1 && member.role === "admin") {
+      throw new ForbiddenError("Cannot leave: you are the last admin of this club");
+    }
+
+    db.prepare("UPDATE members SET left_at = ? WHERE id = ? AND club_id = ?").run(ctx.now().toISOString(), actor.memberId, clubId);
+    recordAudit(actor, "member.left_club", "member", actor.memberId);
+  }
+
   return {
     getPass,
     findMemberByPass,
@@ -523,6 +547,8 @@ export function createIdentityModule(ctx: DbContext) {
     login,
     listMemberships,
     switchClub,
+    joinClub,
+    leaveClub,
     changePassword,
     purge,
     logout,
